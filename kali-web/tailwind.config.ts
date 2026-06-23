@@ -40,6 +40,36 @@ export default {
         safe: "env(safe-area-inset-bottom)",
         "safe-t": "env(safe-area-inset-top)",
       },
+      fontFamily: {
+        prose: ['"Iowan Old Style"', "Georgia", "Cambria", "serif"],
+        ui: ["Inter", "system-ui", "-apple-system", "sans-serif"],
+      },
+      transitionTimingFunction: {
+        stage: "cubic-bezier(0.22, 1, 0.36, 1)",
+      },
+      keyframes: {
+        breathe: {
+          "0%, 100%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.03)" },
+        },
+        blink: {
+          "0%, 50%": { opacity: "1" },
+          "51%, 100%": { opacity: "0" },
+        },
+        fadeIn: {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
+        shimmer: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(100%)" },
+        },
+      },
+      animation: {
+        breathe: "breathe 4s ease-in-out infinite",
+        fadeIn: "fadeIn 400ms ease-out",
+        shimmer: "shimmer 1.5s infinite",
+      },
     },
   },
   plugins: [],
