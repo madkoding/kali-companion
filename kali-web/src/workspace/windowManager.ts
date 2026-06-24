@@ -134,6 +134,9 @@ export function clearAllInArray(windows: ArtifactWindowData[]): ArtifactWindowDa
   return windows.map((w) => ({ ...w, closed: true, focused: false }));
 }
 
+/** Radius of the avatar outer edge (used for tether start point). */
+const AVATAR_EDGE_RADIUS = 90;
+
 /** Get the avatar center position (for tether anchoring). */
 export function getAvatarCenter(): Position {
   const el = document.getElementById("avatar-container");
@@ -142,17 +145,38 @@ export function getAvatarCenter(): Position {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
-/** Compute tether SVG path between avatar center and a window center. */
+/** Compute tether SVG path between avatar edge and a window center.
+ *  The path starts at the avatar's outer edge in the direction of the window,
+ *  and uses a cubic bezier with two control points to curve gracefully around. */
 export function computeTetherPath(windowEl: HTMLElement): string {
   const center = getAvatarCenter();
   const rect = windowEl.getBoundingClientRect();
   const nodeX = rect.left + rect.width / 2;
   const nodeY = rect.top + rect.height / 2;
-  const cp1x = center.x;
-  const cp1y = nodeY;
-  const cp2x = nodeX;
-  const cp2y = center.y;
-  return `M ${center.x} ${center.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${nodeX} ${nodeY}`;
+
+  // Direction from avatar center to window center
+  const dx = nodeX - center.x;
+  const dy = nodeY - center.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist === 0) return `M ${center.x} ${center.y} L ${nodeX} ${nodeY}`;
+
+  // Normalize direction
+  const nx = dx / dist;
+  const ny = dy / dist;
+
+  // Start point: avatar edge in the direction of the window
+  const startX = center.x + nx * AVATAR_EDGE_RADIUS;
+  const startY = center.y + ny * AVATAR_EDGE_RADIUS;
+
+  // Control points: pull the curve away from the straight line so it
+  // sweeps around the avatar rather than cutting through it
+  const midDist = dist * 0.4;
+  const cp1x = startX + nx * midDist;
+  const cp1y = startY + ny * midDist;
+  const cp2x = nodeX - nx * midDist * 0.5;
+  const cp2y = nodeY - ny * midDist * 0.5;
+
+  return `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${nodeX} ${nodeY}`;
 }
 
 /** Arrange windows in a circle around the avatar center. */
