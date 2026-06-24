@@ -75,7 +75,7 @@ export function DocumentWidget({ content, variant = "markdown" }: Props) {
   return (
     <ScrollableWidget searchable={true}>
       <div className="p-3">
-        <pre className="term-line text-xs text-muted whitespace-pre-wrap">{rawText}</pre>
+        <pre className="term-line text-muted whitespace-pre-wrap">{rawText}</pre>
       </div>
     </ScrollableWidget>
   );

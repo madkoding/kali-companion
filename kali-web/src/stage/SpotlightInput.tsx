@@ -89,7 +89,7 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
               className="w-full bg-transparent outline-none text-center text-fg placeholder:text-muted/40"
               style={{
                 fontFamily: "Fraunces, serif",
-                fontSize: "2rem",
+                fontSize: "calc(2rem * var(--mul-text))",
                 lineHeight: 1.4,
                 fontVariationSettings: '"SOFT" 60',
               }}

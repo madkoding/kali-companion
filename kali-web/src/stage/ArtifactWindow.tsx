@@ -19,6 +19,7 @@ interface Props {
   minW?: number;
   minH?: number;
   headerActions?: React.ReactNode;
+  winScale?: number;
 }
 
 const RESIZE_HANDLES: { edge: ResizeEdge; className: string; label: string }[] = [
@@ -47,6 +48,7 @@ export function ArtifactWindow({
   minW = 260,
   minH = 180,
   headerActions,
+  winScale = 1,
 }: Props) {
   const headerRef = useRef<HTMLDivElement>(null);
   const elRef = useRef<HTMLDivElement>(null);
@@ -98,7 +100,7 @@ export function ArtifactWindow({
         ref={elRef}
         data-window-id={w.id}
         className={`aw ${focused ? "focused" : ""} ${selected ? "selected" : ""} ${w.minimized ? "minimized" : ""}`}
-        style={{ width: w.size.width + "px", maxWidth: "100%" }}
+        style={{ width: (w.size.width * winScale) + "px", maxWidth: "100%" }}
         onPointerDown={onFocus}
         role="region"
         aria-label={w.title}
@@ -118,8 +120,8 @@ export function ArtifactWindow({
         position: "absolute",
         left: w.position.x + "px",
         top: w.position.y + "px",
-        width: w.size.width + "px",
-        ...(w.size.height ? { height: w.size.height + "px" } : {}),
+        width: (w.size.width * winScale) + "px",
+        ...(w.size.height ? { height: (w.size.height * winScale) + "px" } : {}),
         zIndex: w.zIndex,
       }}
       onPointerDown={onFocus}

@@ -238,7 +238,7 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
 
               {/* 3. Colors */}
               <div className="customizer-section">
-                <h3>{t("customizer.section.painter")} <span style={{ fontSize: "7px", color: "var(--muted)", marginLeft: 3 }}>{t("customizer.auto")}</span></h3>
+                <h3>{t("customizer.section.painter")} <span style={{ fontSize: "calc(7px * var(--mul-text))", color: "var(--muted)", marginLeft: 3 }}>{t("customizer.auto")}</span></h3>
                 <div className="cust-color-pickers">
                   {currentVariation?.activePickers.includes("base") && (
                     <ColorSwatchPicker label={currentVariation.labels.base || t("customizer.color.base")} value={config.colors.base} onChange={(v) => handleColorChange("base", v)} />
@@ -345,7 +345,7 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
               </div>
 
               {/* Save / Reset */}
-              <div className="flex gap-2" style={{ marginTop: 18, marginBottom: 4 }}>
+              <div className="flex gap-2" style={{ marginTop: "calc(18px * var(--mul-density))", marginBottom: "calc(4px * var(--mul-density))" }}>
                 <button onClick={handleSave} className="flex-1 py-2 rounded-xl bg-accent text-white text-xs font-bold hover:brightness-110 transition btn-glow">
                   {t("customizer.save")}
                 </button>

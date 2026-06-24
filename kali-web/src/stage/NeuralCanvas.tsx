@@ -51,9 +51,11 @@ interface Props {
   onThemeChange: (t: string) => void;
   canvasAutoExpand: boolean;
   onCanvasAutoExpandChange: (v: boolean) => void;
+  uiScale: { global: number; text: number; avatar: number; window: number; density: number };
+  onUIScaleChange: (patch: Partial<{ global: number; text: number; avatar: number; window: number; density: number }>) => void;
 }
 
-export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasAutoExpandChange }: Props) {
+export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasAutoExpandChange, uiScale, onUIScaleChange }: Props) {
   const { i18n } = useTranslation();
   const { chat, tts, ptt, voices } = useStage();
   const { isMobile } = useBreakpoint();
@@ -70,6 +72,14 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
 
   // Click override — petting the avatar → brief "ronroneando"
   const [overrideEmotion, setOverrideEmotion] = useState<{ emotion: AvatarEmotion; until: number } | null>(null);
+
+  // Scale
+  const avScale = uiScale.global * uiScale.avatar;
+  const winScale = uiScale.global * uiScale.window;
+  const avPx = (isMobile ? (customizerOpen ? 360 : 200) : (customizerOpen ? 580 : 280)) * avScale;
+  const ring1Px = (isMobile ? (customizerOpen ? 280 : 160) : (customizerOpen ? 460 : 200)) * avScale;
+  const ring2Px = (isMobile ? (customizerOpen ? 230 : 130) : (customizerOpen ? 390 : 170)) * avScale;
+  const innerPx = (isMobile ? (customizerOpen ? 300 : 160) : (customizerOpen ? 520 : 220)) * avScale;
 
   // Mood engine — derives state + emotion from runtime context
   const { state: avatarState, emotion: avatarEmotion } = useAvatarMoodEngine(typing, overrideEmotion);
@@ -173,29 +183,29 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
         className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none transition-all duration-500"
         style={{
           zIndex: customizerOpen ? 60 : 10,
-          paddingRight: customizerOpen && !isMobile ? "360px" : "0",
+          paddingRight: customizerOpen && !isMobile ? "calc(360px * var(--mul-density))" : "0",
         }}
       >
         {/* Avatar & Rings container */}
         <div className="relative flex items-center justify-center transition-all duration-500" style={{
-          width: isMobile ? (customizerOpen ? 360 : 200) : (customizerOpen ? 580 : 280),
-          height: isMobile ? (customizerOpen ? 360 : 200) : (customizerOpen ? 580 : 280),
+          width: avPx,
+          height: avPx,
         }}>
           <div className="absolute rounded-full border border-accent/10 transition-all duration-500" style={{
-            width: isMobile ? (customizerOpen ? 280 : 160) : (customizerOpen ? 460 : 200),
-            height: isMobile ? (customizerOpen ? 280 : 160) : (customizerOpen ? 460 : 200),
+            width: ring1Px,
+            height: ring1Px,
             animation: "spin 10s linear infinite",
           }} />
           <div className="absolute rounded-full border border-accent2/20 transition-all duration-500" style={{
-            width: isMobile ? (customizerOpen ? 230 : 130) : (customizerOpen ? 390 : 170),
-            height: isMobile ? (customizerOpen ? 230 : 130) : (customizerOpen ? 390 : 170),
+            width: ring2Px,
+            height: ring2Px,
             animation: "spin 15s linear infinite reverse",
           }} />
           {/* Avatar — pointer-events-auto so clicks work */}
           <div className="relative pointer-events-auto transition-all duration-500" id="avatar-container" style={{
             zIndex: customizerOpen ? 61 : 20,
-            width: isMobile ? (customizerOpen ? 300 : 160) : (customizerOpen ? 520 : 220),
-            height: isMobile ? (customizerOpen ? 300 : 160) : (customizerOpen ? 520 : 220),
+            width: innerPx,
+            height: innerPx,
             filter: customizerOpen ? "drop-shadow(0 0 40px rgba(124,92,255,0.35))" : undefined,
           }}>
             <AvatarSVG
@@ -221,7 +231,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
 
       {/* Artifact canvas — floating windows */}
       <ErrorBoundary>
-        <ArtifactCanvas api={api} />
+        <ArtifactCanvas api={api} winScale={winScale} />
       </ErrorBoundary>
 
       {/* HUD — top bar */}
@@ -311,6 +321,8 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
         onThemeChange={onThemeChange}
         canvasAutoExpand={canvasAutoExpand}
         onCanvasAutoExpandChange={onCanvasAutoExpandChange}
+        uiScale={uiScale}
+        onUIScaleChange={onUIScaleChange}
       />
 
       <ConsentModal request={chat.consentRequest} onRespond={chat.respondConsent} />
@@ -350,7 +362,7 @@ function ProjectionText({ messages }: { messages: import("../hooks/useChat").Cha
 
   if (!text) {
     return (
-      <p className="text-center text-muted/60 transition-opacity duration-300" style={{ fontFamily: "Fraunces, serif", fontSize: "1.2rem", lineHeight: 1.5 }}>
+      <p className="text-center text-muted/60 transition-opacity duration-300" style={{ fontFamily: "Fraunces, serif", fontSize: "calc(1.2rem * var(--mul-text))", lineHeight: 1.5 }}>
         Toca al avatar o escribe algo para empezar.
       </p>
     );
@@ -358,7 +370,7 @@ function ProjectionText({ messages }: { messages: import("../hooks/useChat").Cha
 
   if (isStreaming) {
     return (
-      <p className="text-center text-fg transition-opacity duration-300" style={{ fontFamily: "Fraunces, serif", fontSize: "1.6rem", lineHeight: 1.5, fontVariationSettings: '"SOFT" 60' }}>
+      <p className="text-center text-fg transition-opacity duration-300" style={{ fontFamily: "Fraunces, serif", fontSize: "calc(1.6rem * var(--mul-text))", lineHeight: 1.5, fontVariationSettings: '"SOFT" 60' }}>
         {text}
         <span className="inline-block w-0.5 h-em bg-accent ml-0.5" style={{ animation: "blink 1.1s steps(2,start) infinite" }} />
       </p>

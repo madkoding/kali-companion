@@ -3,6 +3,16 @@ import type { Config } from "tailwindcss";
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
+    fontSize: {
+      xs: ["calc(0.75rem * var(--mul-text))", { lineHeight: "1rem" }],
+      sm: ["calc(0.875rem * var(--mul-text))", { lineHeight: "1.25rem" }],
+      base: ["calc(1rem * var(--mul-text))", { lineHeight: "1.5rem" }],
+      lg: ["calc(1.125rem * var(--mul-text))", { lineHeight: "1.75rem" }],
+      xl: ["calc(1.25rem * var(--mul-text))", { lineHeight: "1.75rem" }],
+      "2xl": ["calc(1.5rem * var(--mul-text))", { lineHeight: "2rem" }],
+      "3xl": ["calc(1.875rem * var(--mul-text))", { lineHeight: "2.25rem" }],
+      "4xl": ["calc(2.25rem * var(--mul-text))", { lineHeight: "2.5rem" }],
+    },
     extend: {
       colors: {
         surface: "var(--bg)",

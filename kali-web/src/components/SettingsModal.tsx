@@ -14,6 +14,8 @@ interface Props {
   onThemeChange?: (t: string) => void;
   canvasAutoExpand?: boolean;
   onCanvasAutoExpandChange?: (v: boolean) => void;
+  uiScale: { global: number; text: number; avatar: number; window: number; density: number };
+  onUIScaleChange: (patch: Record<string, number>) => void;
 }
 
 const MODES = ["normal", "whisper", "robotic", "radio", "deep"];
@@ -38,6 +40,8 @@ export function SettingsModal({
   onThemeChange,
   canvasAutoExpand = true,
   onCanvasAutoExpandChange,
+  uiScale,
+  onUIScaleChange,
 }: Props) {
   const { t } = useTranslation();
   if (!open) return null;
@@ -144,6 +148,43 @@ export function SettingsModal({
               <option key={tname} value={tname}>{t(`theme.${tname}`)}</option>
             ))}
           </select>
+        </div>
+        {/* Appearance — UI Scale */}
+        <div className="flex flex-col gap-3 border-t border-border pt-3 mt-1">
+          <label className="text-xs text-muted font-semibold">{t("settings.appearance")}</label>
+          <div className="flex flex-col gap-1">
+            <div className="flex justify-between items-center">
+              <label className="text-xs text-muted">{t("settings.scale_global")}</label>
+              <span className="text-xs text-muted font-mono">{Math.round(uiScale.global * 100)}%</span>
+            </div>
+            <input
+              type="range" min="0.8" max="1.4" step="0.05"
+              value={uiScale.global}
+              onChange={(e) => onUIScaleChange({ global: parseFloat(e.target.value) })}
+              className="w-full accent-accent"
+            />
+          </div>
+          {([
+            ["text", "settings.scale_text"] as const,
+            ["avatar", "settings.scale_avatar"] as const,
+            ["window", "settings.scale_window"] as const,
+            ["density", "settings.scale_density"] as const,
+          ]).map(([key, labelKey]) => (
+            <div key={key} className="flex flex-col gap-1 pl-2 border-l border-border/30">
+              <div className="flex justify-between items-center">
+                <label className="text-xs text-muted">{t(labelKey)}</label>
+                <span className="text-xs text-muted font-mono">
+                  {uiScale[key] !== 1 ? `\u00D7${uiScale[key].toFixed(2)}` : "1\u00D7"}
+                </span>
+              </div>
+              <input
+                type="range" min="0.8" max="1.4" step="0.05"
+                value={uiScale[key]}
+                onChange={(e) => onUIScaleChange({ [key]: parseFloat(e.target.value) })}
+                className="w-full accent-accent/60"
+              />
+            </div>
+          ))}
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs text-muted">{t("settings.llm_model")}</label>

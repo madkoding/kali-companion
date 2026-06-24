@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { StageProvider } from "./stage/StageProvider";
 import { NeuralCanvas } from "./stage/NeuralCanvas";
+import { useUIScale } from "./hooks/useUIScale";
 
 export default function App() {
   const [theme, setTheme] = useState(
@@ -9,6 +10,7 @@ export default function App() {
   const [canvasAutoExpand, setCanvasAutoExpand] = useState(
     () => localStorage.getItem("kali.canvasAutoExpand") !== "false",
   );
+  const { scale, setScale } = useUIScale();
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -33,6 +35,8 @@ export default function App() {
           setCanvasAutoExpand(v);
           localStorage.setItem("kali.canvasAutoExpand", String(v));
         }}
+        uiScale={scale}
+        onUIScaleChange={setScale}
       />
     </StageProvider>
   );

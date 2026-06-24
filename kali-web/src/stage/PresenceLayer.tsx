@@ -33,7 +33,7 @@ export function PresenceLayer() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.25 }}
-            style={{ marginTop: "calc(50vh + 140px)" }}
+            style={{ marginTop: "calc(50vh + (140px * var(--mul-avatar)))" }}
           >
             <Cog size={11} className="animate-spin text-accent" />
             {t("tool.running", { tool: lastTool.tool })}
@@ -51,7 +51,7 @@ export function PresenceLayer() {
             animate={{ opacity: 0.55 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4 }}
-            style={{ marginTop: "calc(50vh - 200px)" }}
+            style={{ marginTop: "calc(50vh - (200px * var(--mul-avatar)))" }}
           >
             {reasoning.slice(-240)}
           </motion.p>

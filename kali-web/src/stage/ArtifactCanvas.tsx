@@ -6,9 +6,10 @@ import { widgetRegistry } from "../components/widgets/widgetRegistry";
 
 interface Props {
   api: WorkspaceAPI;
+  winScale?: number;
 }
 
-export function ArtifactCanvas({ api }: Props) {
+export function ArtifactCanvas({ api, winScale = 1 }: Props) {
   const { windows, gridMode, selectedIds, focusWindow, closeWindow, moveWindow, resizeWindow, toggleMinimize, toggleMaximize } = api;
 
   const handleMoveEnd = useCallback((id: number, prevPos: { x: number; y: number }) => {
@@ -24,7 +25,7 @@ export function ArtifactCanvas({ api }: Props) {
 
   if (gridMode) {
     return (
-      <div className="artifact-layer-grid pointer-events-none" style={{ display: "flex", flexWrap: "wrap", gap: "16px", padding: "80px 20px 120px", alignItems: "flex-start", justifyContent: "center", alignContent: "flex-start" }}>
+      <div className="artifact-layer-grid pointer-events-none" style={{ display: "flex", flexWrap: "wrap", gap: "calc(16px * var(--mul-density))", padding: "calc(80px * var(--mul-density)) calc(20px * var(--mul-density)) calc(120px * var(--mul-density))", alignItems: "flex-start", justifyContent: "center", alignContent: "flex-start" }}>
         {windows.filter((w) => !w.closed).map((w) => {
           const entry = widgetRegistry[w.type];
           return (
@@ -41,6 +42,7 @@ export function ArtifactCanvas({ api }: Props) {
               onResize={() => {}}
               minW={entry?.minW}
               minH={entry?.minH}
+              winScale={winScale}
             >
               <WindowContentRouter window={w} />
             </ArtifactWindow>
@@ -69,6 +71,7 @@ export function ArtifactCanvas({ api }: Props) {
             onResize={(size, pos) => handleResize(w.id, size, pos)}
             minW={entry?.minW}
             minH={entry?.minH}
+            winScale={winScale}
           >
             <WindowContentRouter window={w} />
           </ArtifactWindow>

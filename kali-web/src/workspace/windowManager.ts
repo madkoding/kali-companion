@@ -26,13 +26,14 @@ export function nextZ(): number {
 export function getNextPosition(width: number, height: number): Position {
   const cx = window.innerWidth / 2;
   const cy = window.innerHeight / 2;
-  const margin = 60;
+  const ws = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mul-window')) || 1;
+  const margin = 60 * ws;
   const maxW = window.innerWidth - width - margin;
   const maxH = window.innerHeight - (height || 300) - 120;
-  let x = cx + 180 + lastOffset.x;
-  let y = cy - 100 + lastOffset.y;
-  lastOffset.x += 36;
-  lastOffset.y += 36;
+  let x = cx + 180 * ws + lastOffset.x;
+  let y = cy - 100 * ws + lastOffset.y;
+  lastOffset.x += 36 * ws;
+  lastOffset.y += 36 * ws;
   if (x > maxW) { x = margin; lastOffset.x = 0; }
   if (y > maxH) { y = 80; lastOffset.y = 0; }
   if (x < margin) x = margin;
@@ -135,7 +136,10 @@ export function clearAllInArray(windows: ArtifactWindowData[]): ArtifactWindowDa
 }
 
 /** Radius of the avatar outer edge (used for tether start point). */
-const AVATAR_EDGE_RADIUS = 90;
+function getAvatarEdgeRadius(): number {
+  const s = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mul-avatar')) || 1;
+  return 90 * s;
+}
 
 /** Get the avatar center position (for tether anchoring). */
 export function getAvatarCenter(): Position {
@@ -165,8 +169,8 @@ export function computeTetherPath(windowEl: HTMLElement): string {
   const ny = dy / dist;
 
   // Start point: avatar edge in the direction of the window
-  const startX = center.x + nx * AVATAR_EDGE_RADIUS;
-  const startY = center.y + ny * AVATAR_EDGE_RADIUS;
+  const startX = center.x + nx * getAvatarEdgeRadius();
+  const startY = center.y + ny * getAvatarEdgeRadius();
 
   // Control points: pull the curve away from the straight line so it
   // sweeps around the avatar rather than cutting through it
@@ -180,8 +184,10 @@ export function computeTetherPath(windowEl: HTMLElement): string {
 }
 
 /** Arrange windows in a circle around the avatar center. */
-export function computeOrbitPositions(windows: ArtifactWindowData[], radius = 330): Array<{ id: number; pos: Position }> {
+export function computeOrbitPositions(windows: ArtifactWindowData[], _radius?: number): Array<{ id: number; pos: Position }> {
   const center = getAvatarCenter();
+  const ws = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mul-avatar')) || 1;
+  const radius = (_radius ?? 330) * ws;
   const visible = windows.filter((w) => !w.closed);
   if (visible.length === 0) return [];
   const step = (Math.PI * 2) / visible.length;
