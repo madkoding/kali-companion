@@ -14,6 +14,7 @@ import logging
 import uuid
 from typing import Any
 
+from kali_core.canvas import is_game_resource, resolve_window_type
 from kali_core.claws.base import ToolContext, ToolResult, get
 from kali_core.collar.consent import ConsentManager
 from kali_core.collar.gateway import PermissionGateway
@@ -134,17 +135,18 @@ class Executor:
             if not artifact_payload.get("id"):
                 artifact_payload["id"] = f"art_{uuid.uuid4().hex[:8]}"
 
-            # Safety-net: ensure windowType is always present.  If the tool
-            # didn't set it, derive a sensible default from type/widgetType.
-            if not artifact_payload.get("windowType"):
-                artifact_payload["windowType"] = _derive_window_type(artifact_payload)
+            # Safety-net: ensure windowType is always present. If the tool
+            # didn't set it, resolve from the artifact type + widgetType
+            # via the single registry (canvas.resolve_window_type).
+            wt = artifact_payload.get("windowType", "")
+            if not wt:
+                domain_type = _extract_domain_type(artifact_payload)
+                artifact_payload["windowType"] = resolve_window_type(domain_type)
 
-            # Check if this was a streamed artifact (adapter already
-            # sent it via ctx.emit, so we should NOT re-emit via WS).
-            is_streamed = (
-                isinstance(result.output, dict)
-                and result.output.get("_streamed")
-            )
+            # ``result.streamed`` is the formal flag (replaces the old
+            # implicit ``output["_streamed"]`` magic key). When True the
+            # tool already emitted via ctx.emit; we persist but skip WS.
+            is_streamed = result.streamed
 
             # Persist to session store ALWAYS (for replay on refresh).
             if self.session_store is not None:
@@ -172,6 +174,10 @@ class Executor:
 
     def _is_game_resource_artifact(self, payload: dict) -> bool:
         """Check if an artifact payload is a game_resource widget."""
+        domain_type = _extract_domain_type(payload)
+        if domain_type and is_game_resource(domain_type):
+            return True
+        # Fallback: inspect content for widgetType (legacy payloads).
         try:
             content = payload.get("content", "")
             data = json.loads(content) if isinstance(content, str) else content
@@ -181,60 +187,32 @@ class Executor:
             return False
 
 
-_WIDGET_TYPE_MAP: dict[str, str] = {
-    "game_resource": "entity",
-    "dota_hero_card": "entity",
-    "dota_item_card": "resource",
-    "hero_card": "entity",
-    "item_card": "resource",
-    "location_card": "place",
-    "music": "media",
-    "video": "media",
-    "markdown": "document",
-    "text": "document",
-    "longtext": "document",
-}
+def _extract_domain_type(payload: dict) -> str:
+    """Extract the domain type from an artifact payload.
 
-
-def _derive_window_type(payload: dict) -> str:
-    """Derive a sensible windowType from artifact type + widgetType.
-
-    Used as a safety-net when the tool didn't set windowType explicitly.
-    Returns generic types (entity, resource, document, etc.) instead of
-    domain types.  This is the single source of truth for the mapping
-    from backend domain/widget types to frontend generic window types.
+    For widget artifacts, the domain type is ``data.type`` (hero/item/...)
+    or the ``widgetType`` itself (game_resource, music, ...).
+    For html/markdown/diff artifacts, the domain type is the ``type`` field.
     """
     art_type = payload.get("type", "")
-    if art_type == "markdown":
-        return "document"
-    if art_type == "diff":
-        return "diff"
-    if art_type == "html":
-        return "html"
+    if art_type in ("html", "markdown", "diff"):
+        return art_type
     if art_type == "widget":
         try:
             content = payload.get("content", "")
             data = json.loads(content) if isinstance(content, str) else content
             items = data.get("items", []) if isinstance(data, dict) else []
             if items:
-                wt = items[0].get("widgetType", "")
-                # game_resource needs section inspection to distinguish
-                # entity (has abilities) from resource (has item_grid).
-                if wt == "game_resource":
-                    game_data = items[0].get("data", {})
-                    sections = game_data.get("sections", []) if isinstance(game_data, dict) else []
-                    for sec in sections:
-                        if sec.get("type") == "abilities":
-                            return "entity"
-                        if sec.get("type") == "item_grid":
-                            return "resource"
-                    return "entity"
-                # Map known widget types to generic window types.
-                if wt in _WIDGET_TYPE_MAP:
-                    return _WIDGET_TYPE_MAP[wt]
-                # Unknown widget type: if it's already a valid generic
-                # type, pass it through; otherwise fall back to widget.
-                return wt or "widget"
+                widget_type = items[0].get("widgetType", "")
+                game_data = items[0].get("data", {})
+                data_type = (
+                    game_data.get("type", "")
+                    if isinstance(game_data, dict) else ""
+                )
+                # For game_resource, the domain type is data.type (hero/item).
+                if widget_type == "game_resource" and data_type:
+                    return data_type
+                return widget_type
         except (json.JSONDecodeError, TypeError, AttributeError):
             pass
-    return "widget"
+    return ""
