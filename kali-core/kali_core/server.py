@@ -30,6 +30,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -184,6 +185,51 @@ class Server:
         images_dir = Path(settings.images_dir)
         images_dir.mkdir(parents=True, exist_ok=True)
         self.app.mount("/images", StaticFiles(directory=str(images_dir)))
+
+        # Static file serving for screen capture snapshots (kali-gaze).
+        # Lets the frontend render screenshots inline via <img src="/snapshots/...">.
+        snapshots_dir = Path(settings.snapshots_dir)
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        self.app.mount("/snapshots", StaticFiles(directory=str(snapshots_dir)))
+
+        # Generic file-serving endpoint: lets the agent display any image
+        # from an allowed directory on the user's PC. Path traversal is
+        # blocked by resolving the requested path and checking it stays
+        # inside one of the allowed roots.
+        _FILE_SERVE_ROOTS = [
+            Path(settings.data_dir).resolve(),
+            Path.home() / "Pictures",
+            Path.home() / "Downloads",
+            Path.cwd(),
+        ]
+
+        @self.app.get("/file")
+        async def serve_file(path: str) -> Any:
+            from fastapi.responses import FileResponse
+
+            if not path:
+                return {"error": "missing 'path' query param"}
+            req_path = Path(path).expanduser()
+            # If the path is relative, resolve against the cwd.
+            if not req_path.is_absolute():
+                req_path = (Path.cwd() / req_path).resolve()
+            else:
+                req_path = req_path.resolve()
+            # Security: block directory traversal. The requested path
+            # must be inside one of the allowed roots.
+            allowed = any(
+                req_path == root or root in req_path.parents
+                for root in _FILE_SERVE_ROOTS
+            )
+            if not allowed:
+                return {"error": f"path '{path}' is outside allowed directories"}
+            if not req_path.is_file():
+                return {"error": f"file not found: {path}"}
+            # Guess MIME from extension; fall back to octet-stream.
+            import mimetypes
+
+            media, _ = mimetypes.guess_type(str(req_path))
+            return FileResponse(str(req_path), media_type=media or "application/octet-stream")
 
         @self.app.websocket("/ws")
         async def ws_endpoint(ws: WebSocket) -> None:
@@ -528,33 +574,59 @@ class Connection:
     async def _handle_input(self, content: str) -> None:
         """Route a user message through the agent and TTS pipeline."""
         session_id = self.session_id or "sess_unknown"
+        truncated = content[:120] + ("…" if len(content) > 120 else "")
+        logger.info("[turn] input (%s): %s", session_id[:8], truncated)
         self._current_task = asyncio.create_task(self._run_turn(content, session_id))
 
     async def _run_turn(self, content: str, session_id: str) -> None:
         """Run one agent turn: stream deltas, execute tools, then synthesize TTS."""
         accumulated = ""
+        turn_start = time.monotonic()
+        first_token = True
+        logger.info("[turn] start (%s)", session_id[:8])
         try:
             # Set the emit callback for tool events.
             self.server.agent.set_emit_callback(self.send)
             async for event in self.server.agent.respond(content, session_id, language=self._stt_language):
                 if event.kind == "delta" and event.text:
+                    if first_token:
+                        first_token = False
+                        await self.send(
+                            {"event": "turn_start", "session_id": session_id}
+                        )
                     accumulated += event.text
                     await self.send(
                         {"event": "delta", "session_id": session_id, "text": event.text}
                     )
                 elif event.kind == "reasoning" and event.text:
+                    if first_token:
+                        first_token = False
+                        await self.send(
+                            {"event": "turn_start", "session_id": session_id}
+                        )
                     await self.send(
                         {"event": "reasoning_delta", "session_id": session_id, "text": event.text}
                     )
+                elif event.kind == "tool_call":
+                    if first_token:
+                        first_token = False
+                        await self.send(
+                            {"event": "turn_start", "session_id": session_id}
+                        )
                 elif event.kind == "done":
                     break
         except asyncio.CancelledError:
+            elapsed = time.monotonic() - turn_start
+            logger.info("[turn] cancelled (%s) after %.1fs", session_id[:8], elapsed)
             await self.send({"event": "turn_end", "session_id": session_id, "cancelled": True})
             return
         except Exception as exc:
             logger.exception("agent turn error")
             await self.send({"event": "error", "detail": str(exc)})
             return
+
+        elapsed = time.monotonic() - turn_start
+        logger.info("[turn] end (%s) after %.1fs (chars=%d)", session_id[:8], elapsed, len(accumulated))
 
         # Synthesize TTS from the accumulated response.
         if accumulated and self.server.tts_pipeline.auto_tts:
@@ -642,7 +714,7 @@ class Connection:
                 "voice": self.server.tts_pipeline.voice,
                 "tts_mode": self.server.tts_pipeline.mode,
                 "auto_tts": self.server.tts_pipeline.auto_tts,
-                "capture_backend": "hyprland" if self.server.gaze_client.connected else "none",
+                "capture_backend": "mss" if self.server.gaze_client.connected else "none",
                 "profile": self.server.executor.profile,
                 "stt_language": self._stt_language,
                 "wake_word_enabled": self._wake_word_enabled,

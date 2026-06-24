@@ -16,7 +16,15 @@ export function ImageWidget({ content }: Props) {
   const imgUrl = useMemo(() => {
     if (typeof d === "string") return d;
     if (d.url && typeof d.url === "string") return d.url;
-    if (d.path && typeof d.path === "string") return `/images/${d.path}`;
+    if (d.path && typeof d.path === "string") {
+      // Absolute path → serve via the /file endpoint (reads from disk).
+      if (d.path.startsWith("/")) {
+        return `http://127.0.0.1:8900/file?path=${encodeURIComponent(d.path)}`;
+      }
+      // Relative path under a known static mount.
+      if (d.path.startsWith("snapshots/")) return `/${d.path}`;
+      return `/images/${d.path}`;
+    }
     return null;
   }, [d]);
 
@@ -26,16 +34,20 @@ export function ImageWidget({ content }: Props) {
     <BaseWidget>
       <div className="relative">
         {/* Image placeholder with gradient */}
-        <div
-          className="w-full h-40 bg-gradient-to-br from-accent/20 via-accent/5 to-transparent flex items-center justify-center cursor-pointer border-b border-white/5"
-          onClick={() => setLightbox(true)}
-        >
-          {imgUrl ? (
-            <img src={imgUrl} alt={name} className="w-full h-full object-cover" loading="lazy" />
-          ) : (
+        {imgUrl ? (
+          <div className="w-full cursor-pointer" onClick={() => setLightbox(true)}>
+            <img
+              src={imgUrl}
+              alt={name}
+              className="w-full h-auto object-contain"
+              loading="lazy"
+            />
+          </div>
+        ) : (
+          <div className="w-full h-40 bg-gradient-to-br from-accent/20 via-accent/5 to-transparent flex items-center justify-center border-b border-white/5">
             <span className="text-3xl">{'\u{1F5BC}\uFE0F'}</span>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Info bar */}
         <div className="px-3 py-2 flex items-center justify-between text-xs">

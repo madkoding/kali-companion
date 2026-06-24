@@ -37,6 +37,7 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
 
   const onSubmit = useCallback(() => {
     const text = value.trim();
+    if (chat.isThinking) return;
     if (text) {
       chat.send(text);
     }
@@ -98,7 +99,11 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
               aria-label={t("chat.placeholder") as string}
             />
             <div className="text-center text-xs text-muted/50 mt-3">
-              <kbd className="kbd">Enter</kbd> {t("chat.send")} · <kbd className="kbd">Esc</kbd> {t("chat.cancel")}
+              {chat.isThinking ? (
+                <span>{t("stage.thinking")} · <kbd className="kbd">Esc</kbd> {t("chat.cancel")}</span>
+              ) : (
+                <><kbd className="kbd">Enter</kbd> {t("chat.send")} · <kbd className="kbd">Esc</kbd> {t("chat.cancel")}</>
+              )}
             </div>
           </motion.div>
         </motion.div>

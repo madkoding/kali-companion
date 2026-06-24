@@ -142,6 +142,11 @@ class AgentRuntime:
                     yield event
                 elif event.kind == "tool_call":
                     # Native API tool call.
+                    logger.info(
+                        "[tool_call] native name=%s args=%s",
+                        event.tool_name,
+                        json.dumps(event.tool_args),
+                    )
                     native_tool_call = True
                     tool_call_pending = True
                     if self._executor is not None:
@@ -195,6 +200,11 @@ class AgentRuntime:
                     accumulated = accumulated.strip()
                     # Execute each tool call sequentially.
                     for tool_name, tool_args, _match in tool_calls:
+                        logger.info(
+                            "[tool_call] prompt name=%s args=%s",
+                            tool_name,
+                            json.dumps(tool_args),
+                        )
                         result = await self._executor.execute(
                             tool_name,
                             tool_args,

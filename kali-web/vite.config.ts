@@ -31,6 +31,12 @@ export default defineConfig({
       "/images": {
         target: "http://127.0.0.1:8900",
       },
+      "/snapshots": {
+        target: "http://127.0.0.1:8900",
+      },
+      "/file": {
+        target: "http://127.0.0.1:8900",
+      },
     },
   },
   preview: {
@@ -43,6 +49,12 @@ export default defineConfig({
         ws: true,
       },
       "/images": {
+        target: "http://127.0.0.1:8900",
+      },
+      "/snapshots": {
+        target: "http://127.0.0.1:8900",
+      },
+      "/file": {
         target: "http://127.0.0.1:8900",
       },
     },

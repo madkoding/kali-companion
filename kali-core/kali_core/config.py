@@ -91,6 +91,8 @@ llm_system_prompt: str = os.getenv(
         '→ call fetch_game_resource with {"game": "League of Legends", "query": "Ahri build"}\n\n'
         'User: "Nemesis Resident Evil"\n'
         '→ call fetch_game_resource with {"game": "Resident Evil", "query": "Nemesis"}\n\n'
+        'User: "genera un juego 3D que explore un mundo"\n'
+        '→ call create_artifact with {"artifact_type": "html", "title": "Mundo 3D", "content": "<!DOCTYPE html>...Three.js via CDN..."}\n\n'
         'User: "Whats the weather?"\n'
         "→ call web_search.\n\n"
         "When in doubt, prefer the most specific tool.\n\n"
@@ -113,13 +115,39 @@ llm_system_prompt: str = os.getenv(
         "  expandable tree.\n"
         "- 'checklist': JSON {\"items\": [{\"text\": str, \"done\": bool}]} —\n"
         "  use for task lists, steps, or to-do items.\n"
-        "- 'html': raw HTML — use for custom interactive widgets or\n"
-        "  mockups.\n\n"
+        "- 'html': raw HTML — full interactive content including <canvas>,\n"
+        "  WebGL, Three.js (via CDN like unpkg/jsdelivr), 2D/3D games, audio,\n"
+        "  and custom widgets. The sandboxed iframe runs scripts with WebGL\n"
+        "  enabled. NEVER claim the canvas 'cannot' render WebGL, Three.js,\n"
+        "  games, or 3D scenes — it CAN. When asked for a game, a 3D scene,\n"
+        "  or any interactive visual, call create_artifact with type 'html'.\n\n"
         "Be proactive: if the user asks 'how does X work?' and X would be\n"
         "clearer as a diagram, call create_artifact with type 'mermaid'. If\n"
         "they ask for a comparison, use 'table'. If they ask to 'write up'\n"
         "or 'summarize', use 'document'. Do NOT dump long content as plain\n"
         "text when an artifact would be more useful.\n\n"
+        "ANTI-CONFABULATION RULE (critical):\n"
+        "- NEVER claim an artifact is 'shown', 'visible', 'above', or\n"
+        "  'on the canvas' unless you called create_artifact in THIS turn\n"
+        "  and it returned success. If you did not call the tool, the\n"
+        "  artifact does NOT exist on the canvas.\n"
+        "- NEVER invent technical limitations of the canvas (e.g. 'cannot\n"
+        "  run WebGL', 'does not support 3D', 'iframe blocks scripts'). If\n"
+        "  unsure whether something is possible, ATTEMPT create_artifact\n"
+        "  first — if the tool errors, report the actual error returned.\n"
+        "- When the user asks to generate, show, draw, render, or visualize\n"
+        "  something (a game, 3D scene, diagram, widget, mockup), you MUST\n"
+        "  call create_artifact. Do NOT explain why it is 'not possible' or\n"
+        "  'limited' — attempt it first.\n\n"
+        "TOOL ERROR REPORTING:\n"
+        "- If a tool returns an error or the user denies consent, EXPLAIN the\n"
+        "  actual reason. Do NOT say 'could not execute' vaguely. Say exactly\n"
+        "  what happened: 'command failed with exit code 1', 'consent denied',\n"
+        "  'the search returned no results', etc.\n"
+        "- GOOD: 'No pude ejecutar neofetch — el permiso fue denegado (la\n"
+        "  herramienta run_command necesita consentimiento explícito).'\n"
+        "- GOOD: 'El comando falló con: command not found: neofetch'\n"
+        "- BAD: 'No se pudo ejecutar el comando para obtener las stats.'\n\n"
         "STT NOTE: The user speaks to you via speech-to-text, which sometimes\n"
         "mishears English words used within Spanish speech. If the conversation\n"
         "context strongly suggests a word was mis-transcribed, interpret what\n"
@@ -175,7 +203,6 @@ searxng_url: str = os.getenv("KALI_SEARXNG_URL", "http://127.0.0.1:8080")
 
 # ── Vision / Gaze (kali-gaze) ──────────────────────────────
 vision_mode: str = os.getenv("KALI_VISION_MODE", "auto")
-kali_home_ipc_port: int = int(os.getenv("KALI_HOME_IPC_PORT", "8901"))
 
 # ── Permissions (kali-collar) ──────────────────────────────
 active_profile: str = os.getenv("KALI_PROFILE", "dev")
@@ -224,7 +251,6 @@ class _Settings:
     input_mode = input_mode
 
     vision_mode = vision_mode
-    kali_home_ipc_port = kali_home_ipc_port
 
     active_profile = active_profile
 
@@ -233,6 +259,7 @@ class _Settings:
     db_path = db_path
     images_dir = images_dir
     snapshots_dir = snapshots_dir
+    data_dir = data_dir
 
     voices_dir = voices_dir
     voice_configs_dir = voice_configs_dir

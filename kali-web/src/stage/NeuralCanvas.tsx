@@ -95,6 +95,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (typing) return;
+      if (chat.isThinking) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -104,7 +105,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [typing]);
+  }, [typing, chat.isThinking]);
 
   const newSession = useCallback(() => {
     setHistoryOpen(false);

@@ -152,6 +152,11 @@ export interface ArtifactEvent {
   update: "create" | "update" | "close";
 }
 
+export interface TurnStartEvent {
+  event: "turn_start";
+  session_id: string;
+}
+
 export interface ToolEvent {
   event: "tool_event";
   session_id: string;
@@ -291,6 +296,7 @@ export type OutgoingEvent =
   | TtsAudioEvent
   | TtsFilteredEvent
   | ArtifactEvent
+  | TurnStartEvent
   | ToolEvent
   | ConsentRequestEvent
   | SessionListEvent

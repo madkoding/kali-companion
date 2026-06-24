@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -83,9 +84,15 @@ class Executor:
             )
 
             if consent_decision != "allow":
+                logger.info(
+                    "[consent] %s for tool '%s' (%s)",
+                    consent_decision, tool_name, session_id[:8],
+                )
                 return ToolResult(error=f"Tool execution denied by user ({consent_decision}).")
 
         # Emit tool_event (running).
+        tool_start = time.monotonic()
+        logger.info("[tool] running: %s (%s) args=%s", tool_name, session_id[:8], json.dumps(params))
         if emit_event:
             await emit_event({
                 "event": "tool_event",
@@ -115,6 +122,13 @@ class Executor:
         except Exception as e:
             logger.exception("Tool %s failed", tool_name)
             result = ToolResult(error=str(e))
+
+        elapsed = time.monotonic() - tool_start
+        status = "ok" if result.error is None else "err"
+        logger.info(
+            "[tool] done: %s (%s) %s after %.1fs",
+            tool_name, session_id[:8], status, elapsed,
+        )
 
         # Emit tool_event (success/error).
         if emit_event:
@@ -161,6 +175,14 @@ class Executor:
                     )
                 except Exception:
                     logger.warning("Failed to persist artifact", exc_info=True)
+
+            art_type = artifact_payload.get("type", "?")
+            art_title = artifact_payload.get("title", "?")
+            art_id = artifact_payload.get("id", "?")
+            logger.info(
+                "[artifact] type=%s title=\"%s\" id=%s (%s)",
+                art_type, art_title, art_id, session_id[:8],
+            )
 
             # Only emit via WS if NOT streamed (streaming already sent it).
             if not is_streamed:

@@ -34,6 +34,7 @@ export function NeuralDock({ onToggleDrawer, onToggleCustomizer, onToggleConvers
 
   const isStreaming = chat.messages.some((m) => m.streaming);
   const isRecording = ptt.state === "recording";
+  const isActive = isStreaming || chat.isThinking;
 
   // While recording, the mic button acts as a stop; the live transcript
   // is shown by the floating MicIndicator above the dock.
@@ -42,16 +43,16 @@ export function NeuralDock({ onToggleDrawer, onToggleCustomizer, onToggleConvers
       <div className="glass-strong rounded-2xl px-3 py-2.5 flex items-center gap-2 shadow-2xl border border-white/10">
         {/* Mic / Stop button — toggles recording, or stops streaming */}
         <button
-          onClick={isStreaming ? onStop : onMic}
+          onClick={isActive ? onStop : onMic}
           className={`tooltip h-9 px-3 rounded-xl transition flex items-center gap-2 badge ${
-            isStreaming || isRecording
+            isActive || isRecording
               ? "bg-red-500/15 text-red-300 hover:brightness-110"
               : "hover:bg-white/8 text-muted hover:text-fg"
           }`}
-          aria-label={isStreaming || isRecording ? t("dock.stop") as string : t("dock.mic") as string}
-          title={isStreaming || isRecording ? t("dock.stop") as string : t("dock.mic") as string}
+          aria-label={isActive || isRecording ? t("dock.stop") as string : t("dock.mic") as string}
+          title={isActive || isRecording ? t("dock.stop") as string : t("dock.mic") as string}
         >
-          {isStreaming || isRecording ? (
+          {isActive || isRecording ? (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
           ) : (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>

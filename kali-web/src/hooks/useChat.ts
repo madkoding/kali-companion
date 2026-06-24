@@ -77,6 +77,7 @@ export interface ChatState {
   wsClient: WSClient | null;
   consentRequest: ConsentRequestEvent | null;
   toolEvents: ToolEvent[];
+  isThinking: boolean;
   send: (text: string) => void;
   stop: () => void;
   newSession: () => void;
@@ -98,16 +99,17 @@ function nextId(): string {
   return `m${Date.now()}_${idCounter}`;
 }
 
-// Tauri exposes registered commands on window.__TAURI__. Outside Tauri
-// (plain browser dev) we fall back to the env-provided port.
+// The Electron shell exposes a `window.kali.getSidecarPort()` API via
+// contextBridge (see kali-shell/src/preload.ts). Outside Electron (plain
+// browser dev) we fall back to the env-provided port.
 export async function getSidecarPort(): Promise<number | undefined> {
-  const tauri = (window as unknown as { __TAURI__?: { core?: { invoke: (c: string) => Promise<unknown> } } }).__TAURI__;
-  if (tauri?.core?.invoke) {
+  const kali = (window as unknown as { kali?: { getSidecarPort: () => Promise<unknown> } }).kali;
+  if (kali?.getSidecarPort) {
     try {
-      const port = await tauri.core.invoke("get_sidecar_port");
+      const port = await kali.getSidecarPort();
       return typeof port === "number" ? port : undefined;
     } catch {
-      // not running under Tauri yet
+      // not running under Electron yet
     }
   }
   return Number(import.meta.env.VITE_KALI_PORT ?? 8900);
@@ -130,6 +132,7 @@ export function useChat(): ChatState {
   const [systemStatus, setSystemStatus] = useState<StatusEvent | null>(null);
   const [consentRequest, setConsentRequest] = useState<ConsentRequestEvent | null>(null);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
 
   const clientRef = useRef<WSClient | null>(null);
   const ttsListeners = useRef<Array<(e: TtsAudioEvent) => void>>([]);
@@ -145,10 +148,10 @@ export function useChat(): ChatState {
         setStatus("error");
         return;
       }
-      const isTauri = !!(window as unknown as { __TAURI__?: unknown }).__TAURI__;
+      const isElectron = !!(window as unknown as { kali?: unknown }).kali;
       let wsUrl: string;
-      if (isTauri) {
-        // Tauri: connect directly to the core sidecar.
+      if (isElectron) {
+        // Electron: connect directly to the core sidecar.
         wsUrl = `ws://127.0.0.1:${port}/ws`;
       } else {
         // Browser dev: connect via Vite proxy (same origin, no mixed content).
@@ -193,7 +196,12 @@ export function useChat(): ChatState {
         setStatus("error");
       });
 
+      client.on("turn_start", () => {
+        setIsThinking(true);
+      });
+
       client.on("delta", (p) => {
+        setIsThinking(false);
         const ev = p as DeltaEvent;
         setMessages((prev) => {
           const last = prev[prev.length - 1];
@@ -213,6 +221,7 @@ export function useChat(): ChatState {
       });
 
       client.on("reasoning_delta", (p) => {
+        setIsThinking(false);
         const ev = p as ReasoningDeltaEvent;
         setMessages((prev) => {
           const last = prev[prev.length - 1];
@@ -229,6 +238,7 @@ export function useChat(): ChatState {
       });
 
       client.on("turn_end", () => {
+        setIsThinking(false);
         setMessages((prev) => {
           const updated = [...prev];
           const last = updated[updated.length - 1];
@@ -528,6 +538,7 @@ export function useChat(): ChatState {
     wsClient: clientRef.current,
     consentRequest,
     toolEvents,
+    isThinking,
     send,
     stop,
     newSession,

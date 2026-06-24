@@ -2,11 +2,11 @@
 //
 // This layer sits above the MomentStream and shows transient status: the
 // currently-running tool (a small pill near the avatar) and the latest
-// reasoning snippet (fades in/out). These complement the in-flow rendering
-// in Moment but give the Stage its "alive" feel.
+// reasoning snippet (fades in/out). Also shows a "Thinking…" indicator
+// during the gap between send and first token.
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Cog } from "lucide-react";
+import { Cog, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useStage } from "./StageProvider";
 
@@ -21,8 +21,29 @@ export function PresenceLayer() {
   const streamingMsg = chat.messages.find((m) => m.streaming && m.reasoning);
   const reasoning = streamingMsg?.reasoning ?? null;
 
+  // Thinking indicator: active between turn_start and first token/tool.
+  const showThinking = chat.isThinking && !lastTool && !reasoning;
+
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center">
+      {/* Thinking pill — visible during initial gap */}
+      <AnimatePresence>
+        {showThinking && (
+          <motion.div
+            key="thinking-pill"
+            className="hud-pill"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25 }}
+            style={{ marginTop: "calc(50vh + (140px * var(--mul-avatar)))" }}
+          >
+            <Sparkles size={11} className="animate-pulse text-accent" />
+            {t("stage.thinking")}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Tool pill — floats above the avatar */}
       <AnimatePresence>
         {lastTool && (
