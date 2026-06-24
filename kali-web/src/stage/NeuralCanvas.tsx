@@ -130,11 +130,22 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
     }
   }, [api]);
 
+  // Reset workspace when session changes (new session, attach, or refresh resume).
+  // Only reset when sessionId actually changes — not when `api` ref recalculates.
+  const processedRef = useRef(new Set<string>());
+  const prevSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (chat.sessionId && chat.sessionId !== prevSessionRef.current) {
+      prevSessionRef.current = chat.sessionId;
+      api.resetWorkspace();
+      processedRef.current.clear();
+    }
+  }, [chat.sessionId, api]);
+
   // Sync chat.artifacts with workspace windows.
   // "create" events are processed once; "update" events always flow
   // through so streaming content reaches the window; "close" events
   // clean up the tracking set so the same artifact ID can be re-used.
-  const processedRef = useRef(new Set<string>());
   useEffect(() => {
     const artifacts = chat.artifacts;
     if (!artifacts) return;

@@ -156,13 +156,15 @@ export function useChat(): ChatState {
         const host = window.location.host;
         wsUrl = `${proto}//${host}/ws`;
       }
-      client = new WSClient(wsUrl);
+      const savedSessionId = localStorage.getItem("kali.sessionId") || undefined;
+      client = new WSClient(wsUrl, savedSessionId);
       clientRef.current = client;
 
       client.on("ready", (p) => {
         const ev = p as ReadyEvent;
         setError(null);
         setSessionId(ev.session_id);
+        localStorage.setItem("kali.sessionId", ev.session_id);
         setStatus("ready");
         client?.send({ event: "list_sessions" });
       });
@@ -170,6 +172,7 @@ export function useChat(): ChatState {
         const ev = p as ConnectedEvent;
         setError(null);
         setSessionId(ev.session_id);
+        localStorage.setItem("kali.sessionId", ev.session_id);
       });
       client.on("session_list", (p) => {
         const ev = p as SessionListEvent;
@@ -444,6 +447,11 @@ export function useChat(): ChatState {
   const newSession = useCallback(() => {
     setMessages([]);
     setArtifacts(new Map());
+    setToolEvents([]);
+    setConsentRequest(null);
+    setTtsPlaying(false);
+    setTtsSegment(0);
+    setTtsTotal(0);
     clientRef.current?.send({ event: "new_session" });
   }, []);
 
@@ -454,6 +462,11 @@ export function useChat(): ChatState {
   const attachSession = useCallback((sid: string) => {
     setMessages([]);
     setArtifacts(new Map());
+    setToolEvents([]);
+    setConsentRequest(null);
+    setTtsPlaying(false);
+    setTtsSegment(0);
+    setTtsTotal(0);
     clientRef.current?.send({ event: "attach_session", session_id: sid });
   }, []);
 

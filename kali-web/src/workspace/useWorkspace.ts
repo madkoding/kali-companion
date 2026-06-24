@@ -40,7 +40,7 @@ export function useWorkspace(): import("./types").WorkspaceAPI {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const undoRedo = useUndoRedo();
   const selection = useMultiSelect();
-  const persistence = usePersistence(windows);
+  const persistence = usePersistence();
 
   // Create a window
   const createWindow = useCallback((type: WindowType, opts?: Partial<CreateWindowOpts>): number => {
@@ -53,13 +53,23 @@ export function useWorkspace(): import("./types").WorkspaceAPI {
   // Close a window
   const closeWindow = useCallback((id: number) => {
     undoRedo.push({ type: "close", windowId: id });
-    setWindows((prev) => closeInArray(prev, id));
-  }, [undoRedo]);
+    setWindows((prev) => {
+      const next = closeInArray(prev, id);
+      const closed = next.find((w) => w.id === id);
+      if (closed) persistence.saveWindowState(closed);
+      return next;
+    });
+  }, [undoRedo, persistence]);
 
   // Restore a closed window
   const restoreWindow = useCallback((id: number) => {
-    setWindows((prev) => restoreInArray(prev, id));
-  }, []);
+    setWindows((prev) => {
+      const next = restoreInArray(prev, id);
+      const restored = next.find((w) => w.id === id);
+      if (restored) persistence.saveWindowState(restored);
+      return next;
+    });
+  }, [persistence]);
 
   // Duplicate a window
   const duplicateWindow = useCallback((id: number) => {
@@ -105,9 +115,12 @@ export function useWorkspace(): import("./types").WorkspaceAPI {
       for (const { id, pos } of positions) {
         next = moveInArray(next, id, pos);
       }
+      for (const w of next) {
+        if (w.artifactId) persistence.saveWindowState(w);
+      }
       return next;
     });
-  }, [windows]);
+  }, [windows, persistence]);
 
   // Network pulse (visual feedback — handled by TetherLayer)
   const networkPulse = useCallback(() => {
@@ -170,29 +183,58 @@ export function useWorkspace(): import("./types").WorkspaceAPI {
     handleRedoAction(action);
   }, [undoRedo, handleRedoAction]);
 
-  // Move + resize
+    // Move + resize
   const moveWindow = useCallback((id: number, pos: Position) => {
-    setWindows((prev) => moveInArray(prev, id, pos));
-  }, []);
+    setWindows((prev) => {
+      const next = moveInArray(prev, id, pos);
+      const moved = next.find((w) => w.id === id);
+      if (moved) persistence.saveWindowState(moved);
+      return next;
+    });
+  }, [persistence]);
 
   const resizeWindow = useCallback((id: number, size: Size) => {
-    setWindows((prev) => resizeInArray(prev, id, size));
-  }, []);
+    setWindows((prev) => {
+      const next = resizeInArray(prev, id, size);
+      const resized = next.find((w) => w.id === id);
+      if (resized) persistence.saveWindowState(resized);
+      return next;
+    });
+  }, [persistence]);
 
   // Toggle minimize
   const toggleMinimize = useCallback((id: number) => {
-    setWindows((prev) => toggleMinimizeInArray(prev, id));
-  }, []);
+    setWindows((prev) => {
+      const next = toggleMinimizeInArray(prev, id);
+      const toggled = next.find((w) => w.id === id);
+      if (toggled) persistence.saveWindowState(toggled);
+      return next;
+    });
+  }, [persistence]);
 
   // Toggle maximize
   const toggleMaximize = useCallback((id: number) => {
-    setWindows((prev) => toggleMaximizeInArray(prev, id));
-  }, []);
-
-  // Save workspace
-  const saveWorkspace = useCallback(() => {
-    persistence.save();
+    setWindows((prev) => {
+      const next = toggleMaximizeInArray(prev, id);
+      const toggled = next.find((w) => w.id === id);
+      if (toggled) persistence.saveWindowState(toggled);
+      return next;
+    });
   }, [persistence]);
+
+  // Reset workspace — clear all windows and undo/redo stacks
+  const resetWorkspace = useCallback(() => {
+    setWindows([]);
+    undoRedo.clear();
+    selection.clearSelection();
+  }, [undoRedo, selection]);
+
+  // Save all windows to localStorage
+  const saveWorkspace = useCallback(() => {
+    for (const w of windows) {
+      if (w.artifactId) persistence.saveWindowState(w);
+    }
+  }, [windows, persistence]);
 
   // Sync with backend artifacts — creates/updates/closes windows from ArtifactEvent
   const syncArtifact = useCallback((event: ArtifactEvent) => {
@@ -212,9 +254,17 @@ export function useWorkspace(): import("./types").WorkspaceAPI {
         artifactId: event.id,
         content: event,
       });
-      void id;
+      // Restore saved position/size/state if available
+      const saved = persistence.getSavedState(event.id);
+      if (saved && id >= 0) {
+        setWindows((prev) => prev.map((w) =>
+          w.id === id
+            ? { ...w, position: saved.position, size: saved.size, minimized: saved.minimized, maximized: saved.maximized, closed: saved.closed, zIndex: saved.zIndex }
+            : w
+        ));
+      }
     }
-  }, [windows, createWindow]);
+  }, [windows, createWindow, persistence]);
 
   return useMemo(() => ({
     windows,
@@ -235,6 +285,7 @@ export function useWorkspace(): import("./types").WorkspaceAPI {
     undo,
     redo,
     saveWorkspace,
+    resetWorkspace,
     moveWindow,
     resizeWindow,
     toggleSelect: selection.toggleSelect,
@@ -246,7 +297,7 @@ export function useWorkspace(): import("./types").WorkspaceAPI {
     windows, gridMode, selection.selectedIds, audioEnabled,
     createWindow, closeWindow, restoreWindow, duplicateWindow,
     focusWindow, focusLast, clearAll, toggleGrid, arrangeOrbit,
-    networkPulse, toggleAudio, undo, redo, saveWorkspace,
+    networkPulse, toggleAudio, undo, redo, saveWorkspace, resetWorkspace,
     moveWindow, resizeWindow, selection.toggleSelect, selection.clearSelection,
     syncArtifact, toggleMinimize, toggleMaximize,
   ]);

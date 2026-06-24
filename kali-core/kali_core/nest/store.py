@@ -218,3 +218,11 @@ class SessionStore:
             )
             row = await cursor.fetchone()
             return dict(row) if row else None
+
+    async def session_exists(self, session_id: str) -> bool:
+        """Check if a session exists by ID."""
+        await self._ensure_db()
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,))
+            row = await cursor.fetchone()
+            return row is not None

@@ -508,7 +508,7 @@
   border: 1px solid rgba(255,255,255,0.06); border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
   transition: box-shadow 0.3s, border-color 0.3s, opacity 0.3s, transform 0.3s, filter 0.3s;
-  overflow: hidden;
+  overflow: clip;
   pointer-events: auto;
 }
 .aw.focused { border-color: rgba(34,211,238,0.4); box-shadow: 0 0 0 1px rgba(34,211,238,0.15), 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(34,211,238,0.12); }
@@ -733,24 +733,172 @@
 
 .cust-body { flex: 1; overflow-y: auto; padding: 14px; }
 
-.cust-body::-webkit-scrollbar { width: 4px; }
+/* ColorSwatchPicker — popover anchored to the LEFT of the swatch */
+.csp-wrap { position: relative; }
 
-.cust-body::-webkit-scrollbar-track { background: transparent; }
+.csp-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s, border-color 0.15s;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+.csp-swatch:hover { transform: scale(1.1); border-color: rgba(255, 255, 255, 0.4); }
+.csp-swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.cust-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+.csp-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 60;
+  width: 220px;
+  padding: 10px;
+  background: var(--bg-elevated, #1a1a1a);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transform-origin: top right;
+}
+.csp-popover.csp-flip-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+  transform-origin: bottom right;
+}
 
-.cust-section-divider { border: none; border-top: 1px solid rgba(255,255,255,0.05); margin: 6px 0; }
+.csp-section-label {
+  font-size: 9px;
+  color: var(--muted, #888);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+}
 
-.cust-eye-presets { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
+.csp-presets {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+.csp-preset {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.csp-preset:hover { transform: scale(1.15); border-color: rgba(255, 255, 255, 0.5); }
+.csp-preset.active { border-color: var(--accent, #22d3ee); box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.3); }
 
-.cust-eye-custom { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px; display: flex; justify-content: center; gap: 16px; }
-.btn-glow { box-shadow: 0 0 20px rgba(34,211,238,0.3); }
+.csp-divider { height: 1px; background: rgba(255, 255, 255, 0.08); margin: 2px 0; }
 
-/* Mobile — disable drag/resize, show windows in a scrollable column */
-@media (max-width: 768px) {
-  .aw { width: calc(100vw - 24px) !important; max-width: 400px; position: relative !important; left: auto !important; top: auto !important; }
-  .aw-handle { display: none; }
-  #minimize-dock { display: none; }
+.csp-hex-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.csp-hex-input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 4px 6px;
+  color: var(--fg, #fff);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  outline: none;
+}
+.csp-hex-input:focus { border-color: var(--accent, #22d3ee); }
+
+.csp-preview {
+  width: 100%;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.csp-sliders { display: flex; flex-direction: column; gap: 6px; }
+.csp-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.csp-slider-label {
+  font-size: 10px;
+  color: var(--muted, #888);
+  font-family: 'JetBrains Mono', monospace;
+  width: 10px;
+  text-align: center;
+}
+.csp-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.csp-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fg, #fff);
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+.csp-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fg, #fff);
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+.csp-slider-value {
+  font-size: 9px;
+  color: var(--muted, #888);
+  font-family: 'JetBrains Mono', monospace;
+  width: 28px;
+  text-align: right;
+}
+
+.csp-native-trigger {
+  width: 100%;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: var(--fg, #fff);
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.csp-native-trigger:hover { background: rgba(255, 255, 255, 0.1); }
+
+/* The native input is rendered inside the popover but pushed off-screen
+   so the native picker popup opens anchored to the popover area (away
+   from the right edge of the viewport). */
+.csp-native-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  left: 10px;
+  bottom: 10px;
 }
 
 /* Reduced motion — disable non-essential animations */

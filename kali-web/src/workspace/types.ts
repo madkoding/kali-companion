@@ -114,6 +114,7 @@ export interface WorkspaceAPI {
   undo: () => void;
   redo: () => void;
   saveWorkspace: () => void;
+  resetWorkspace: () => void;
   moveWindow: (id: number, pos: Position) => void;
   resizeWindow: (id: number, size: Size) => void;
   toggleSelect: (id: number) => void;

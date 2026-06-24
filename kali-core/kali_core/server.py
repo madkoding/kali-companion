@@ -272,17 +272,53 @@ class Connection:
         kind = event.get("event", "")
 
         if kind == "hello":
+            requested_sid = event.get("session_id")
+            if requested_sid:
+                exists = await self.server.session_store.session_exists(requested_sid)
+                if exists:
+                    self.session_id = requested_sid
+                    if self.server.agent:
+                        self.server.agent.reset_history(requested_sid)
+                    self.server.consent.set_send_callback(self.send)
+                    self.server.job_mgr.set_emit_callback(self.send)
+                    await self.send(
+                        {"event": "ready", "session_id": requested_sid, "version": "0.1.0"}
+                    )
+                    await self._emit_status()
+                    if self._wake_word_enabled:
+                        await self._start_wake_word()
+                    msgs = await self.server.session_store.get_messages(requested_sid)
+                    for msg in msgs:
+                        self.server.agent._get_history(requested_sid).append({
+                            "role": msg["role"],
+                            "content": msg["content"],
+                        })
+                        await self.send({
+                            "event": "message",
+                            "session_id": requested_sid,
+                            "role": msg["role"],
+                            "text": msg["content"],
+                        })
+                    artifacts = await self.server.session_store.get_artifacts(requested_sid)
+                    for art in artifacts:
+                        await self.send({
+                            "event": "artifact",
+                            "id": art["id"],
+                            "type": art["type"],
+                            "windowType": art.get("window_type", ""),
+                            "title": art["title"],
+                            "content": art["content"],
+                            "update": "create",
+                        })
+                    return
             sess = await self.server.session_store.create_session()
             self.session_id = sess["id"]
-            # Set up the consent manager's send callback for this connection.
             self.server.consent.set_send_callback(self.send)
-            # Set up the job manager's emit callback for this connection.
             self.server.job_mgr.set_emit_callback(self.send)
             await self.send(
                 {"event": "ready", "session_id": self.session_id, "version": "0.1.0"}
             )
             await self._emit_status()
-            # Start wake word detector if enabled.
             if self._wake_word_enabled:
                 await self._start_wake_word()
 
@@ -308,21 +344,24 @@ class Connection:
                 self.session_id = sid
                 if self.server.agent:
                     self.server.agent.reset_history(sid)
+                self.server.consent.set_send_callback(self.send)
+                self.server.job_mgr.set_emit_callback(self.send)
+                await self.send({"event": "connected", "session_id": sid})
+                await self._emit_status()
+                if self._wake_word_enabled:
+                    await self._start_wake_word()
                 msgs = await self.server.session_store.get_messages(sid)
                 for msg in msgs:
                     self.server.agent._get_history(sid).append({
                         "role": msg["role"],
                         "content": msg["content"],
                     })
-                await self.send({"event": "connected", "session_id": sid})
-                for msg in msgs:
                     await self.send({
                         "event": "message",
                         "session_id": sid,
                         "role": msg["role"],
                         "text": msg["content"],
                     })
-                # Replay persisted artifacts.
                 artifacts = await self.server.session_store.get_artifacts(sid)
                 for art in artifacts:
                     await self.send({

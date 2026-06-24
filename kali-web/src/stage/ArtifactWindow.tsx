@@ -86,7 +86,7 @@ export function ArtifactWindow({
       minW,
       minH,
       onResize: (_id, size, pos) => onResize(
-        { width: size.width, height: w.size.height === null ? null : size.height },
+        { width: size.width, height: size.height },
         pos,
       ),
     });
@@ -104,7 +104,7 @@ export function ArtifactWindow({
         aria-label={w.title}
       >
         <WindowHeader w={w} onClose={onClose} onMinimize={onMinimize} onMaximize={onMaximize} focused={focused} headerActions={headerActions} />
-        <div className="aw-body flex-1 overflow-hidden flex flex-col min-h-0">{children}</div>
+      <div className="aw-body flex-1 flex flex-col min-h-0">{children}</div>
       </div>
     );
   }
@@ -113,7 +113,7 @@ export function ArtifactWindow({
     <div
       ref={elRef}
       data-window-id={w.id}
-      className={`aw ${focused ? "focused" : ""} ${selected ? "selected" : ""} ${w.minimized ? "minimized" : ""} entering`}
+      className={`aw ${focused ? "focused" : ""} ${selected ? "selected" : ""} ${w.minimized ? "minimized" : ""} ${w.maximized ? "maximized" : ""} entering`}
       style={{
         position: "absolute",
         left: w.position.x + "px",
@@ -137,7 +137,7 @@ export function ArtifactWindow({
         headerRef={headerRef}
         headerActions={headerActions}
       />
-      <div className="aw-body flex-1 overflow-hidden flex flex-col min-h-0">{children}</div>
+      <div className="aw-body flex-1 flex flex-col min-h-0">{children}</div>
       {RESIZE_HANDLES.map(({ edge, className, label }) => (
         <div
           key={edge}

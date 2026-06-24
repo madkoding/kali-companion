@@ -18,6 +18,7 @@ import {
   resetAvatarConfig,
 } from "../avatar/avatarConfig";
 import { animalDatabase, type Breed, type Variation } from "../avatar/avatarPresets";
+import { ColorSwatchPicker } from "./ColorSwatchPicker";
 
 interface Props {
   open: boolean;
@@ -240,16 +241,16 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                 <h3>{t("customizer.section.painter")} <span style={{ fontSize: "7px", color: "var(--muted)", marginLeft: 3 }}>{t("customizer.auto")}</span></h3>
                 <div className="cust-color-pickers">
                   {currentVariation?.activePickers.includes("base") && (
-                    <ColorPicker label={currentVariation.labels.base || t("customizer.color.base")} value={config.colors.base} onChange={(v) => handleColorChange("base", v)} />
+                    <ColorSwatchPicker label={currentVariation.labels.base || t("customizer.color.base")} value={config.colors.base} onChange={(v) => handleColorChange("base", v)} />
                   )}
                   {currentVariation?.activePickers.includes("spot1") && (
-                    <ColorPicker label={currentVariation.labels.spot1 || t("customizer.color.spot1")} value={config.colors.spot1} onChange={(v) => handleColorChange("spot1", v)} />
+                    <ColorSwatchPicker label={currentVariation.labels.spot1 || t("customizer.color.spot1")} value={config.colors.spot1} onChange={(v) => handleColorChange("spot1", v)} />
                   )}
                   {currentVariation?.activePickers.includes("spot2") && (
-                    <ColorPicker label={currentVariation.labels.spot2 || t("customizer.color.spot2")} value={config.colors.spot2} onChange={(v) => handleColorChange("spot2", v)} />
+                    <ColorSwatchPicker label={currentVariation.labels.spot2 || t("customizer.color.spot2")} value={config.colors.spot2} onChange={(v) => handleColorChange("spot2", v)} />
                   )}
                   {currentVariation?.activePickers.includes("ears") && (
-                    <ColorPicker label={currentVariation.labels.ears || t("customizer.color.ears")} value={config.colors.ears} onChange={(v) => handleColorChange("ears", v)} />
+                    <ColorSwatchPicker label={currentVariation.labels.ears || t("customizer.color.ears")} value={config.colors.ears} onChange={(v) => handleColorChange("ears", v)} />
                   )}
                 </div>
               </div>
@@ -269,9 +270,9 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                   ))}
                 </div>
                 <div className="cust-eye-custom">
-                  <ColorPicker label={t("customizer.eye.iris")} value={config.eyes.main} onChange={(v) => setEyeColor(config.eyes.light, v, config.eyes.dark, config.eyes.pupil)} />
-                  <ColorPicker label={t("customizer.eye.border")} value={config.eyes.dark} onChange={(v) => setEyeColor(config.eyes.light, config.eyes.main, v, config.eyes.pupil)} />
-                  <ColorPicker label={t("customizer.eye.pupil")} value={config.eyes.pupil} onChange={(v) => setEyeColor(config.eyes.light, config.eyes.main, config.eyes.dark, v)} />
+                  <ColorSwatchPicker label={t("customizer.eye.iris")} value={config.eyes.main} onChange={(v) => setEyeColor(config.eyes.light, v, config.eyes.dark, config.eyes.pupil)} />
+                  <ColorSwatchPicker label={t("customizer.eye.border")} value={config.eyes.dark} onChange={(v) => setEyeColor(config.eyes.light, config.eyes.main, v, config.eyes.pupil)} />
+                  <ColorSwatchPicker label={t("customizer.eye.pupil")} value={config.eyes.pupil} onChange={(v) => setEyeColor(config.eyes.light, config.eyes.main, config.eyes.dark, v)} />
                 </div>
               </div>
 
@@ -301,14 +302,7 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                     {COLLAR_PRESETS.map((c) => (
                       <button key={c} className="cust-preset-color" style={{ background: c }} onClick={() => setCollarColor(c)} aria-label={t("customizer.color_preset", { color: c })} />
                     ))}
-                    <input
-                      type="color"
-                      value={config.collar}
-                      onChange={(e) => setCollarColor(e.target.value)}
-                      className="cust-preset-color"
-                      style={{ padding: 0, WebkitAppearance: "none", appearance: "none", border: "none" }}
-                      aria-label={t("customizer.custom_color")}
-                    />
+                    <ColorSwatchPicker label={t("customizer.custom_color")} value={config.collar} onChange={setCollarColor} />
                   </div>
                 </div>
               </div>
@@ -328,14 +322,7 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                       <option value="round">{t("customizer.hats.round")}</option>
                       <option value="square">{t("customizer.hats.square")}</option>
                     </select>
-                    <input
-                      type="color"
-                      value={config.glassesColor}
-                      onChange={(e) => onChange({ ...config, glassesColor: e.target.value })}
-                      className="cust-preset-color"
-                      style={{ padding: 0, WebkitAppearance: "none", appearance: "none", border: "none" }}
-                      aria-label={t("customizer.glasses_color")}
-                    />
+                    <ColorSwatchPicker label={t("customizer.glasses_color")} value={config.glassesColor} onChange={(v) => onChange({ ...config, glassesColor: v })} />
                   </div>
                 </div>
                 <hr className="cust-section-divider" />
@@ -352,14 +339,7 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                       <option value="copa">{t("customizer.hats.top_hat")}</option>
                       <option value="fiesta">{t("customizer.hats.party")}</option>
                     </select>
-                    <input
-                      type="color"
-                      value={config.hatColor}
-                      onChange={(e) => onChange({ ...config, hatColor: e.target.value })}
-                      className="cust-preset-color"
-                      style={{ padding: 0, WebkitAppearance: "none", appearance: "none", border: "none" }}
-                      aria-label={t("customizer.hat_color")}
-                    />
+                    <ColorSwatchPicker label={t("customizer.hat_color")} value={config.hatColor} onChange={(v) => onChange({ ...config, hatColor: v })} />
                   </div>
                 </div>
               </div>
@@ -378,14 +358,5 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
         </>
       )}
     </AnimatePresence>
-  );
-}
-
-function ColorPicker({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="cust-picker-wrap">
-      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
-      <span className="cust-picker-label">{label}</span>
-    </div>
   );
 }
