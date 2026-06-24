@@ -40,6 +40,7 @@ from fastapi.staticfiles import StaticFiles
 
 from kali_core.claws.base import available_tools, register
 from kali_core.claws.command import RunCommandTool
+from kali_core.claws.create_artifact import CreateArtifactTool
 from kali_core.claws.fs import FsListTool, FsReadTool
 from kali_core.claws.git import GitDiffTool, GitWorktreeTool
 from kali_core.claws.game.dota_live import DotaLiveStateTool
@@ -105,6 +106,8 @@ def _register_tools() -> None:
     register(ScreenshotTool())
     # Phase 4 tools.
     register(FetchGameResourceTool())
+    # Generic artifact generation (documents, diagrams, tables, code, etc.).
+    register(CreateArtifactTool())
     # Phase 5 — Dota 2 live match state via GSI.
     register(DotaLiveStateTool())
     # STT post-processing (applied automatically, not user-visible).
