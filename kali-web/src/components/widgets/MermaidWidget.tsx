@@ -82,7 +82,7 @@ export function MermaidWidget({ content }: Props) {
         </div>
       )}
       <div
-        className="mermaid-container flex-1"
+        className="mermaid-container flex-1 min-h-0 overflow-auto"
         ref={svgRef}
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}

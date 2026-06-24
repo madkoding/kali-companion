@@ -12,10 +12,17 @@ interface Props {
 export function JsonTreeWidget({ content }: Props) {
   const { t } = useTranslation();
   const { data } = useMemo(() => parseContent(content), [content]);
-  const d = (data ?? {}) as Record<string, unknown>;
+  const d = (data ?? {}) as unknown;
   const jsonStr = useMemo(() => {
     if (typeof d === "string") return d;
-    if (d.content && typeof d.content === "string") return d.content;
+    if (d && typeof d === "object" && "content" in (d as Record<string, unknown>)) {
+      const c = (d as Record<string, unknown>).content;
+      if (typeof c === "string") return c;
+    }
+    // parseContent may return an already-parsed JSON object (when
+    // event.content is valid JSON). Stringify it so we can re-parse
+    // into the tree below.
+    if (d !== null && typeof d === "object") return JSON.stringify(d, null, 2);
     return SAMPLE_JSON;
   }, [d]);
 
