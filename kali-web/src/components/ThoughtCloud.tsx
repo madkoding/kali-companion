@@ -37,7 +37,12 @@ export function ThoughtCloud({
   const w = expanded ? cfg.expandedWidth : cfg.collapsedWidth;
   const h = expanded ? cfg.expandedHeight : cfg.collapsedHeight;
 
-  const { placement, dragging, onPointerDown, wasDrag } = useThoughtCloudDrag(w, h, cfg.orbitRadius);
+  const { placement, dragging, onPointerDown, wasDrag } = useThoughtCloudDrag(w, h, {
+    avatarRingRadius: cfg.avatarRingRadius,
+    cloudCenterToTail: cfg.cloudCenterToTail,
+    tailGap: cfg.tailGap,
+    maxOrbitGap: cfg.maxOrbitGap,
+  });
 
   // Texto a mostrar.
   const lines = reasoning.split("\n\n").filter(Boolean);

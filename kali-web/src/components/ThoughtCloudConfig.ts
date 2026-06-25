@@ -99,8 +99,11 @@ export interface ThoughtCloudConfig {
   expandedWidth: number; // px
   expandedHeight: number; // px
 
-  // ── Radio de órbita (para el drag) ──
-  orbitRadius: number; // base (se multiplica por --mul-avatar)
+  // ── Órbita de la nube alrededor del avatar ──
+  avatarRingRadius: number;     // radio del anillo blanco exterior (escala base)
+  cloudCenterToTail: number;    // distancia del centro del wrapper al último círculo de cola (escala base)
+  tailGap: number;               // gap mínimo entre el anillo y el último círculo (escala base)
+  maxOrbitGap: number;           // gap máximo — rango de arrastre (escala base)
 
   // ── Texto truncado en colapsado ──
   collapsedCharLimit: number; // máx chars en colapsado antes de truncar (300)
@@ -167,7 +170,10 @@ export const defaultThoughtCloudConfig: ThoughtCloudConfig = {
   expandedWidth: 460,
   expandedHeight: 360,
 
-  orbitRadius: 180,
+  avatarRingRadius: 100,
+  cloudCenterToTail: 100,
+  tailGap: 10,
+  maxOrbitGap: 50,
 
   collapsedCharLimit: 300,
 };

@@ -5,22 +5,29 @@ import { getAvatarCenter } from "../workspace/windowManager";
 const STORAGE_KEY = "kali.thought-cloud.pos";
 const DRAG_THRESHOLD = 4; // px — diferencia entre clic y arrastre
 
-const DEFAULT_RADIUS = 180;
+export interface OrbitParams {
+  avatarRingRadius: number;     // radio del anillo blanco (escala base)
+  cloudCenterToTail: number;     // distancia centro→último círculo (escala base)
+  tailGap: number;               // gap mínimo anillo→cola (escala base)
+  maxOrbitGap: number;           // gap máximo — rango de arrastre (escala base)
+}
 
 export interface PolarPos {
   angle: number; // radianes, 0 = +X (derecha)
-  dist: number; // px en escala base (se multiplica por --mul-avatar)
+  gap: number;   // distancia anillo→último círculo de cola (escala base)
 }
 
-const DEFAULT_POS: PolarPos = { angle: -Math.PI / 4, dist: DEFAULT_RADIUS }; // sup-derecha
+const DEFAULT_POS: PolarPos = { angle: -Math.PI / 4, gap: 40 }; // sup-derecha, cerca del máximo
 
-function loadPos(radius: number): PolarPos {
+function loadPos(minGap: number, maxGap: number): PolarPos {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_POS;
-    const p = JSON.parse(raw) as Partial<PolarPos>;
-    if (typeof p.angle === "number" && typeof p.dist === "number" && isFinite(p.angle) && isFinite(p.dist)) {
-      return { angle: p.angle, dist: Math.min(Math.max(p.dist, 0), radius) };
+    const p = JSON.parse(raw) as Partial<PolarPos> & { dist?: number };
+    // Migración: si no hay "gap" pero hay "dist" (formato viejo), usar dist.
+    const gapVal = typeof p.gap === "number" ? p.gap : typeof p.dist === "number" ? p.dist : 40;
+    if (typeof p.angle === "number" && isFinite(p.angle) && isFinite(gapVal)) {
+      return { angle: p.angle, gap: Math.min(Math.max(gapVal, minGap), maxGap) };
     }
   } catch {
     // ignore
@@ -44,14 +51,14 @@ function getScale(): number {
 function computeInitialPixelPos(
   cloudW: number,
   cloudH: number,
-  orbitRadius: number,
+  orbit: OrbitParams,
 ): { x: number; y: number } {
-  const pos = loadPos(orbitRadius);
+  const pos = loadPos(orbit.tailGap, orbit.maxOrbitGap);
   const center = getAvatarCenter();
   const scale = getScale();
-  const dist = Math.min(pos.dist * scale, orbitRadius * scale);
-  const x = center.x + Math.cos(pos.angle) * dist - cloudW / 2;
-  const y = center.y + Math.sin(pos.angle) * dist - cloudH / 2;
+  const distWrapper = (orbit.avatarRingRadius + pos.gap + orbit.cloudCenterToTail) * scale;
+  const x = center.x + Math.cos(pos.angle) * distWrapper - cloudW / 2;
+  const y = center.y + Math.sin(pos.angle) * distWrapper - cloudH / 2;
   return { x, y };
 }
 
@@ -78,56 +85,60 @@ export interface UseThoughtCloudDragResult {
 
 /**
  * Mantiene la nube anclada al avatar center en coordenadas polares.
- * El arrastre recalcula θ/dist desde el cursor contra el avatar center,
- * con hard clamp al círculo de radio ORBIT_RADIUS_BASE·scale.
+ * `gap` = distancia desde el anillo blanco del avatar hasta el último círculo de cola.
+ * La distancia del avatar center al centro del wrapper es:
+ *   (avatarRingRadius + gap + cloudCenterToTail) × scale
  */
 export function useThoughtCloudDrag(
   cloudWidth: number,
   cloudHeight: number,
-  orbitRadius = DEFAULT_RADIUS
+  orbit: OrbitParams,
 ): UseThoughtCloudDragResult {
-  const [pos, setPos] = useState<PolarPos>(() => loadPos(orbitRadius));
+  const [pos, setPos] = useState<PolarPos>(() => loadPos(orbit.tailGap, orbit.maxOrbitGap));
   const [dragging, setDragging] = useState(false);
   const draggingRef = useRef(false);
   const wasDragRef = useRef(false);
   const downRef = useRef<{ x: number; y: number } | null>(null);
 
   // Inicializa los springs con la posición correcta (síncrono), no en (0,0).
-  // Esto evita que la nube "vuele" desde la esquina superior izquierda.
-  const [initPx] = useState(() => computeInitialPixelPos(cloudWidth, cloudHeight, orbitRadius));
+  const [initPx] = useState(() => computeInitialPixelPos(cloudWidth, cloudHeight, orbit));
   const mx = useSpring(useMotionValue(initPx.x), { stiffness: 350, damping: 32 });
   const my = useSpring(useMotionValue(initPx.y), { stiffness: 350, damping: 32 });
 
+  // Distancia del avatar center al centro del wrapper.
+  const distWrapperPx = useCallback(
+    (p: PolarPos, scale: number) =>
+      (orbit.avatarRingRadius + p.gap + orbit.cloudCenterToTail) * scale,
+    [orbit.avatarRingRadius, orbit.cloudCenterToTail],
+  );
+
   // Recalcula posición absoluta a partir de polar + avatar center.
-  // Se omite durante el arrastre (el handler de pointermove controla el motion value directo).
   const recompute = useCallback(() => {
     if (draggingRef.current) return;
     const center = getAvatarCenter();
     const scale = getScale();
-    const dist = Math.min(pos.dist * scale, orbitRadius * scale);
+    const dist = distWrapperPx(pos, scale);
     const x = center.x + Math.cos(pos.angle) * dist;
     const y = center.y + Math.sin(pos.angle) * dist;
     mx.set(x - cloudWidth / 2);
     my.set(y - cloudHeight / 2);
     return { center, x, y };
-  }, [pos, cloudWidth, cloudHeight, mx, my, orbitRadius]);
+  }, [pos, cloudWidth, cloudHeight, mx, my, distWrapperPx]);
 
   // Recompute forzado para el montaje inicial (ignora draggingRef).
-  // El avatar puede no estar listo en el primer render (transición CSS de 500ms).
   const recomputeInitial = useCallback(() => {
     const center = getAvatarCenter();
     const scale = getScale();
-    const dist = Math.min(pos.dist * scale, orbitRadius * scale);
+    const dist = distWrapperPx(pos, scale);
     const x = center.x + Math.cos(pos.angle) * dist;
     const y = center.y + Math.sin(pos.angle) * dist;
     mx.set(x - cloudWidth / 2);
     my.set(y - cloudHeight / 2);
-  }, [pos, cloudWidth, cloudHeight, mx, my, orbitRadius]);
+  }, [pos, cloudWidth, cloudHeight, mx, my, distWrapperPx]);
 
   // Aplica posición inicial y reancla en resize/scroll.
   useEffect(() => {
     recomputeInitial();
-    // Reintenta tras un frame y tras 500ms para capturar el avatar tras su transición CSS.
     const rafId = requestAnimationFrame(() => recomputeInitial());
     const timeout1 = setTimeout(() => recomputeInitial(), 100);
     const timeout2 = setTimeout(() => recomputeInitial(), 500);
@@ -152,7 +163,6 @@ export function useThoughtCloudDrag(
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
-      // Evita que el layer subyacente (pointer-events-none) o el navegador interfieran.
       e.preventDefault();
       (e.target as Element).setPointerCapture?.(e.pointerId);
       downRef.current = { x: e.clientX, y: e.clientY };
@@ -163,7 +173,6 @@ export function useThoughtCloudDrag(
     []
   );
 
-  // Ref a pos para guardar la última posición en onUp sin re-suscribir listeners.
   const posRef = useRef(pos);
   useEffect(() => {
     posRef.current = pos;
@@ -178,23 +187,29 @@ export function useThoughtCloudDrag(
       if (!down) return;
       const dx0 = e.clientX - down.x;
       const dy0 = e.clientY - down.y;
-      if (!wasDragRef.current && Math.hypot(dx0, dy0) < DRAG_THRESHOLD) return; // aún no es arrastre
+      if (!wasDragRef.current && Math.hypot(dx0, dy0) < DRAG_THRESHOLD) return;
       wasDragRef.current = true;
 
       const center = getAvatarCenter();
       const scale = getScale();
-      const radiusMax = orbitRadius * scale;
       const dx = e.clientX - center.x;
       const dy = e.clientY - center.y;
-      let dist = Math.hypot(dx, dy);
+      const distCursor = Math.hypot(dx, dy);
       const angle = Math.atan2(dy, dx);
-      if (dist > radiusMax) dist = radiusMax; // HARD CLAMP
 
-      const nx = center.x + Math.cos(angle) * dist - cloudWidth / 2;
-      const ny = center.y + Math.sin(angle) * dist - cloudHeight / 2;
+      // Convertir distancia del cursor a gap (anillo → último círculo de cola)
+      let gap = distCursor - orbit.avatarRingRadius * scale - orbit.cloudCenterToTail * scale;
+      const minGapPx = orbit.tailGap * scale;
+      const maxGapPx = orbit.maxOrbitGap * scale;
+      gap = Math.max(minGapPx, Math.min(gap, maxGapPx));
+
+      // Recalcular posición del wrapper
+      const distWrapper = orbit.avatarRingRadius * scale + gap + orbit.cloudCenterToTail * scale;
+      const nx = center.x + Math.cos(angle) * distWrapper - cloudWidth / 2;
+      const ny = center.y + Math.sin(angle) * distWrapper - cloudHeight / 2;
       mx.set(nx);
       my.set(ny);
-      setPos({ angle, dist: dist / scale });
+      setPos({ angle, gap: gap / scale });
     };
 
     const onUp = () => {
@@ -211,13 +226,14 @@ export function useThoughtCloudDrag(
       document.removeEventListener("pointerup", onUp);
       document.removeEventListener("pointercancel", onUp);
     };
-  }, [dragging, cloudWidth, cloudHeight, mx, my]);
+  }, [dragging, cloudWidth, cloudHeight, mx, my, orbit, distWrapperPx]);
 
   // Recalcula placement estático (para la colita y fallback).
   const center = getAvatarCenter();
   const scale = getScale();
-  const x = center.x + Math.cos(pos.angle) * Math.min(pos.dist * scale, orbitRadius * scale);
-  const y = center.y + Math.sin(pos.angle) * Math.min(pos.dist * scale, orbitRadius * scale);
+  const dist = distWrapperPx(pos, scale);
+  const x = center.x + Math.cos(pos.angle) * dist;
+  const y = center.y + Math.sin(pos.angle) * dist;
   const pointingAngle = Math.atan2(center.y - y, center.x - x);
 
   return {
