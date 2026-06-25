@@ -809,33 +809,6 @@
   stroke: var(--cloud-text);
 }
 
-/* Botón colapsar (sólo expandido) — fuera del SVG, en la esquina inferior derecha de la nube */
-.thought-cloud-collapse-btn {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  z-index: 10;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm) 0 var(--radius-sm) 0;
-  background: rgba(0, 0, 0, 0.12);
-  color: var(--cloud-text-muted);
-  cursor: pointer;
-  pointer-events: auto;
-  opacity: 0.5;
-  transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
-}
-
-.thought-cloud-collapse-btn:hover {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.25);
-  color: var(--cloud-text);
-}
-
 /* ── Stage presence / avatar ────────────────────────── */
 .presence-glow {
   background: radial-gradient(circle at 50% 50%, var(--presence-glow) 0%, transparent 70%);

@@ -1,13 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown } from "lucide-react";
-import { useTranslation } from "react-i18next";
+import { motion } from "framer-motion";
 import { ThoughtCloudSVG } from "./ThoughtCloudSVG";
 import { useThoughtCloudDrag } from "./useThoughtCloudDrag";
 import {
   mergeThoughtCloudConfig,
   type ThoughtCloudConfig,
-  type DistributionMode,
 } from "./ThoughtCloudConfig";
 
 type TailPhase = "idle" | "appearing" | "active";
@@ -17,6 +14,7 @@ interface ThoughtCloudProps {
   isStreaming?: boolean;
   dimmed?: boolean;
   onDismiss?: () => void;
+  onExpand?: () => void;
   className?: string;
   config?: Partial<ThoughtCloudConfig>;
 }
@@ -26,19 +24,17 @@ export function ThoughtCloud({
   isStreaming,
   dimmed = false,
   onDismiss,
+  onExpand,
   className = "",
   config: override,
 }: ThoughtCloudProps) {
-  const { t } = useTranslation();
   const cfg = mergeThoughtCloudConfig(override);
 
-  const [expanded, setExpanded] = useState(false);
   const [calculatedFontSize, setCalculatedFontSize] = useState(cfg.maxFontSize);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const mode: DistributionMode = expanded ? cfg.expandedMode : cfg.collapsedMode;
-  const w = expanded ? cfg.expandedWidth : cfg.collapsedWidth;
-  const h = expanded ? cfg.expandedHeight : cfg.collapsedHeight;
+  const w = cfg.collapsedWidth;
+  const h = cfg.collapsedHeight;
 
   const { placement, dragging, onPointerDown, wasDrag } = useThoughtCloudDrag(w, h, {
     avatarRingRadius: cfg.avatarRingRadius,
@@ -47,14 +43,11 @@ export function ThoughtCloud({
     maxOrbitGap: cfg.maxOrbitGap,
   });
 
-  const lines = reasoning.split("\n\n").filter(Boolean);
   const displayText =
     reasoning.length > cfg.collapsedCharLimit
       ? reasoning.slice(-cfg.collapsedCharLimit) + "…"
       : reasoning;
-  const textToShow = expanded ? reasoning : displayText;
 
-  // Fase de la cola: appearing cuando streaming sin texto aún, active cuando hay texto.
   const tailPhase: TailPhase =
     isStreaming && (!reasoning || reasoning.length < 5) ? "appearing" : isStreaming ? "active" : "idle";
 
@@ -64,10 +57,10 @@ export function ThoughtCloud({
     const vbH = cfg.viewBoxHeight;
     const scaleX = w / vbW;
     const scaleY = h / vbH;
-    const safeZone = mode === "comic" ? cfg.comicSafeZone : cfg.scrollSafeZone;
+    const safeZone = cfg.comicSafeZone;
     const effectiveWidth = safeZone.width;
     const effectiveHeight = safeZone.height;
-    const measureText = expanded ? reasoning : displayText;
+    const measureText = displayText;
     if (!measureText) return;
 
     const testContainer = document.createElement("div");
@@ -103,14 +96,7 @@ export function ThoughtCloud({
     document.body.removeChild(testContainer);
     setCalculatedFontSize(currentSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reasoning, expanded, mode, w, h, cfg.maxFontSize, cfg.minFontSize, cfg.fontScaleStep, cfg.lineHeight, cfg.shapeMargin, cfg.offsetTop, cfg.offsetBottom, cfg.offsetSides, cfg.shapeFloatWidth, cfg.shapeFloatMinHeight, cfg.leftShapePolygon, cfg.rightShapePolygon, cfg.textAlign, cfg.viewBoxWidth, cfg.viewBoxHeight, cfg.comicSafeZone, cfg.scrollSafeZone]);
-
-  // ── Auto-scroll al final (sólo modo scroll) ──
-  useLayoutEffect(() => {
-    if (mode === "scroll" && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [reasoning, mode]);
+  }, [reasoning, w, h, cfg.maxFontSize, cfg.minFontSize, cfg.fontScaleStep, cfg.lineHeight, cfg.shapeMargin, cfg.offsetTop, cfg.offsetBottom, cfg.offsetSides, cfg.shapeFloatWidth, cfg.shapeFloatMinHeight, cfg.leftShapePolygon, cfg.rightShapePolygon, cfg.textAlign, cfg.viewBoxWidth, cfg.viewBoxHeight, cfg.comicSafeZone]);
 
   // ── Notifica al avatar la posición del CENTRO de la nube ──
   useLayoutEffect(() => {
@@ -125,25 +111,17 @@ export function ThoughtCloud({
 
   const handleClick = () => {
     if (wasDrag) return;
-    setExpanded((v) => !v);
+    if (onExpand) onExpand();
   };
-
-  const isScrollMode = mode === "scroll";
 
   const scrollStyle: React.CSSProperties = {
     width: "100%",
     height: "100%",
     boxSizing: "border-box",
-    overflowY: isScrollMode ? "auto" : "hidden",
+    overflowY: "hidden",
     scrollbarWidth: "none",
     msOverflowStyle: "none",
     pointerEvents: "auto",
-    WebkitMaskImage: isScrollMode
-      ? `linear-gradient(to bottom, transparent 0%, black ${cfg.maskGradientStart}%, black ${cfg.maskGradientEnd}%, transparent 100%)`
-      : "none",
-    maskImage: isScrollMode
-      ? `linear-gradient(to bottom, transparent 0%, black ${cfg.maskGradientStart}%, black ${cfg.maskGradientEnd}%, transparent 100%)`
-      : "none",
   };
 
   const innerStyle: React.CSSProperties = {
@@ -189,14 +167,12 @@ export function ThoughtCloud({
     <motion.div
       className={`thought-cloud ${isStreaming ? "thought-cloud-streaming" : ""} ${
         dragging ? "thought-cloud-dragging" : ""
-      } ${expanded ? "thought-cloud-expanded" : ""} ${
-        dimmed ? "thought-cloud-dimmed" : ""
-      } ${className}`}
+      } ${dimmed ? "thought-cloud-dimmed" : ""} ${className}`}
       style={{ x: placement.mx, y: placement.my, width: w, height: h }}
       initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: dimmed ? 0.55 : 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.8 }}
-      transition={{ duration: 0.3, width: { duration: 0.3 }, height: { duration: 0.3 }, opacity: { duration: 0.4 } }}
+      transition={{ duration: 0.3, opacity: { duration: 0.4 } }}
       onPointerDown={onPointerDown}
       onClick={handleClick}
     >
@@ -212,11 +188,10 @@ export function ThoughtCloud({
               <div className="thought-cloud-shape-right" style={shapeRightStyle} />
 
               <div className="thought-cloud-text-wrap" style={textWrapStyle}>
-                {/* Sólo texto del razonamiento — sin header */}
                 <div className="thought-cloud-text-body">
                   {isStreaming ? (
                     <span>
-                      {textToShow}
+                      {displayText}
                       <span
                         className="thought-cloud-cursor"
                         style={{
@@ -230,15 +205,7 @@ export function ThoughtCloud({
                       />
                     </span>
                   ) : (
-                    <span>
-                      {expanded
-                        ? lines.map((l, i) => (
-                            <p key={i} className="thought-cloud-line">
-                              {l}
-                            </p>
-                          ))
-                        : textToShow}
-                    </span>
+                    <span>{displayText}</span>
                   )}
                 </div>
               </div>
@@ -246,25 +213,6 @@ export function ThoughtCloud({
           </div>
         </ThoughtCloudSVG>
       </div>
-
-      {/* Botón colapsar (sólo expandido) */}
-      <AnimatePresence>
-        {expanded && (
-          <motion.button
-            className="thought-cloud-collapse-btn"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded(false);
-            }}
-            aria-label={t("stage.collapse") as string}
-          >
-            <ChevronDown size={14} />
-          </motion.button>
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 }

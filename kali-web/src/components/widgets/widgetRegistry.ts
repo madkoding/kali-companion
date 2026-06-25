@@ -32,6 +32,7 @@ const LazyLink = React.lazy(() => import("./LinkWidget").then((m) => ({ default:
 const LazyQr = React.lazy(() => import("./QrWidget").then((m) => ({ default: m.QrWidget })));
 const LazyPlaceholder = React.lazy(() => import("./PlaceholderWidget").then((m) => ({ default: m.PlaceholderWidget })));
 const LazyHtml = React.lazy(() => import("./HtmlWidget").then((m) => ({ default: m.HtmlWidget })));
+const LazyReasoning = React.lazy(() => import("./ReasoningWidget").then((m) => ({ default: m.ReasoningWidget })));
 
 function sz(type: WindowType) {
   return DEFAULT_SIZES[type] || { width: 340, height: null };
@@ -216,6 +217,15 @@ export const widgetRegistry: Partial<Record<WindowType, WidgetEntry>> = {
     icon: WINDOW_ICONS.html,
     resizable: true,
     minW: 300,
+    minH: 200,
+  },
+  reasoning: {
+    component: LazyReasoning,
+    width: sz("reasoning").width,
+    height: sz("reasoning").height,
+    icon: WINDOW_ICONS.reasoning,
+    resizable: true,
+    minW: 280,
     minH: 200,
   },
 };

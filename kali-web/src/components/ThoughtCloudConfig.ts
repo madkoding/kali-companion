@@ -175,7 +175,7 @@ export const defaultThoughtCloudConfig: ThoughtCloudConfig = {
   tailGap: 10,
   maxOrbitGap: 50,
 
-  collapsedCharLimit: 300,
+  collapsedCharLimit: 120,
 };
 
 /** Mergea un Partial config con los defaults. */

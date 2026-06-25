@@ -12,7 +12,11 @@ import { useEffect, useRef, useState } from "react";
 import { useStage } from "./StageProvider";
 import { ThoughtCloud } from "../components/ThoughtCloud";
 
-export function PresenceLayer() {
+interface PresenceLayerProps {
+  onExpand?: () => void;
+}
+
+export function PresenceLayer({ onExpand }: PresenceLayerProps) {
   const { t } = useTranslation();
   const { chat } = useStage();
 
@@ -89,6 +93,7 @@ export function PresenceLayer() {
             isStreaming={isCurrentlyStreaming}
             dimmed={!isCurrentlyStreaming}
             onDismiss={() => setDismissed(true)}
+            onExpand={onExpand}
           />
         )}
       </AnimatePresence>

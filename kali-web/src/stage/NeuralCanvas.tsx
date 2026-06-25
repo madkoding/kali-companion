@@ -71,6 +71,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
   const [customizerOpen, setCustomizerOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(() => loadAvatarConfig());
+  const reasoningWindowIdRef = useRef<number | null>(null);
 
   // Click override — petting the avatar → brief "ronroneando"
   const [overrideEmotion, setOverrideEmotion] = useState<{ emotion: AvatarEmotion; until: number } | null>(null);
@@ -263,7 +264,21 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
       />
 
       {/* Presence layer — tool pills + reasoning snippets */}
-      <PresenceLayer />
+      <PresenceLayer onExpand={() => {
+        const existing = reasoningWindowIdRef.current !== null
+          ? api.windows.find(w => w.id === reasoningWindowIdRef.current && !w.closed)
+          : null;
+        if (existing) {
+          api.focusWindow(existing.id);
+        } else {
+          const id = api.createWindow("reasoning", {
+            title: "Razonamiento",
+            width: 420,
+            height: 350,
+          });
+          reasoningWindowIdRef.current = id;
+        }
+      }} />
 
       {/* Spotlight input overlay */}
       <SpotlightInput open={typing} onClose={() => setTyping(false)} firstCharRef={firstCharRef} />

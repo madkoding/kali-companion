@@ -29,7 +29,8 @@ export type WindowType =
   | "place"
   | "media"
   | "document"
-  | "image";
+  | "image"
+  | "reasoning";
 
 /** Position on the canvas (px). */
 export interface Position {
@@ -160,6 +161,7 @@ export const TETHER_COLORS: Record<string, string> = {
   controls: "#22d3ee",
   html: "#22d3ee",
   widget: "#22d3ee",
+  reasoning: "#7c5cff",
 };
 
 /** Default window dimensions by type. */
@@ -184,6 +186,7 @@ export const DEFAULT_SIZES: Record<WindowType, { width: number; height: number |
   media: { width: 320, height: null },
   document: { width: 420, height: 500 },
   image: { width: 260, height: null },
+  reasoning: { width: 420, height: 350 },
 };
 
 /** Icons (emoji) by window type. */
@@ -208,4 +211,5 @@ export const WINDOW_ICONS: Record<WindowType, string> = {
   media: "\u{1F3B5}",
   document: "\u{1F4DD}",
   image: "\u{1F5BC}\uFE0F",
+  reasoning: "\u{1F9E0}",
 };
