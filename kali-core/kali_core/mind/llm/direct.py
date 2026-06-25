@@ -25,6 +25,30 @@ from .provider import StreamEvent, ToolDef
 
 logger = logging.getLogger("kali_core.mind.direct")
 
+# Ollama and some other backends expose chain-of-thought via a non-standard
+# ``reasoning`` (or ``reasoning_content``) field on the streaming delta.
+# The OpenAI SDK doesn't type this, so we use getattr to access it safely.
+_REASONING_FIELDS = ("reasoning", "reasoning_content")
+
+
+def _extract_reasoning(delta: Any) -> str:
+    """Extract chain-of-thought text from a streaming delta.
+
+    Returns an empty string if the delta carries no reasoning content.
+    """
+    for field in _REASONING_FIELDS:
+        text = getattr(delta, field, None)
+        if text:
+            return text
+    # Also check model_extra (pydantic v2 stores unknown fields there).
+    extra = getattr(delta, "model_extra", None)
+    if isinstance(extra, dict):
+        for field in _REASONING_FIELDS:
+            text = extra.get(field)
+            if text:
+                return text
+    return ""
+
 
 class DirectLLMProvider:
     """OpenAI-compatible streaming LLM."""
@@ -134,7 +158,7 @@ class DirectLLMProvider:
                 "messages": full,
                 "stream": True,
                 "temperature": 0.7,
-                "max_tokens": 4096,
+                "max_tokens": 16384,
             }
             if tools_param:
                 kwargs["tools"] = tools_param
@@ -144,9 +168,18 @@ class DirectLLMProvider:
 
             # Accumulate tool calls across chunks.
             tool_calls_acc: dict[int, dict] = {}
+            has_reasoning = False
 
             async for chunk in stream:
                 delta = chunk.choices[0].delta
+
+                # Chain-of-thought / reasoning (non-standard Ollama field).
+                # Emitted as reasoning events so the frontend can show it
+                # in a collapsible panel; it does NOT become the response.
+                reasoning_text = _extract_reasoning(delta)
+                if reasoning_text:
+                    has_reasoning = True
+                    yield StreamEvent(kind="reasoning", text=reasoning_text)
 
                 # Text content.
                 if delta.content:
@@ -167,6 +200,12 @@ class DirectLLMProvider:
                                 tool_calls_acc[idx]["name"] += tc.function.name
                             if tc.function.arguments:
                                 tool_calls_acc[idx]["args"] += tc.function.arguments
+
+            if has_reasoning:
+                logger.info(
+                    "[llm] reasoning detected for model '%s' — emitted to frontend",
+                    self._model,
+                )
 
             # Emit accumulated tool calls.
             for idx in sorted(tool_calls_acc):
@@ -207,13 +246,24 @@ class DirectLLMProvider:
                 "model": self._model,
                 "messages": full,
                 "temperature": 0.7,
-                "max_tokens": 4096,
+                "max_tokens": 16384,
             }
             if tools_param:
                 kwargs["tools"] = tools_param
                 kwargs["tool_choice"] = "auto"
             resp = await self._try_create(kwargs)
-            return {"text": resp.choices[0].message.content or ""}
+            msg = resp.choices[0].message
+            # Include reasoning in the returned dict so callers can inspect it.
+            reasoning = _extract_reasoning(msg)
+            if reasoning:
+                logger.info(
+                    "[llm] reasoning detected in non-streaming response for '%s'",
+                    self._model,
+                )
+            return {
+                "text": msg.content or "",
+                **({"reasoning": reasoning} if reasoning else {}),
+            }
         except Exception as exc:
             logger.error("LLM error: %s", exc)
             return {"text": f"[LLM error: {exc}]"}

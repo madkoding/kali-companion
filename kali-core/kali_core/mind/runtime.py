@@ -251,6 +251,30 @@ class AgentRuntime:
                 fallback_msg = fallbacks.get(language, fallbacks["en"])
                 history.append({"role": "assistant", "content": fallback_msg})
                 yield StreamEvent(kind="delta", text=fallback_msg)
+            else:
+                # The LLM produced absolutely nothing — no text, no tool
+                # calls. This can happen with reasoning models that exhaust
+                # their token budget on chain-of-thought. Warn and emit a
+                # minimal message so the user is not left in silence.
+                logger.warning(
+                    "[turn] produced 0 chars and 0 tool calls (session %s)",
+                    session_id[:8],
+                )
+                fallbacks = {
+                    "es": (
+                        "No generé respuesta. El modelo podría haber "
+                        "agotado su contexto en razonamiento interno. "
+                        "Intenta reformular la petición."
+                    ),
+                    "en": (
+                        "I produced no response. The model may have "
+                        "exhausted its token budget on internal reasoning. "
+                        "Try rephrasing your request."
+                    ),
+                }
+                fallback_msg = fallbacks.get(language, fallbacks["en"])
+                history.append({"role": "assistant", "content": fallback_msg})
+                yield StreamEvent(kind="delta", text=fallback_msg)
 
     def get_history(self, session_id: str) -> list[dict]:
         """Return a copy of the session's message history."""
