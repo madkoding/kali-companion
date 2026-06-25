@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, ChevronDown, ChevronUp } from "lucide-react";
+import { Brain, ChevronDown, ChevronUp, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ThoughtCloudSVG } from "./ThoughtCloudSVG";
 import { useThoughtCloudDrag } from "./useThoughtCloudDrag";
@@ -13,6 +13,8 @@ import {
 interface ThoughtCloudProps {
   reasoning: string;
   isStreaming?: boolean;
+  dimmed?: boolean;
+  onDismiss?: () => void;
   className?: string;
   config?: Partial<ThoughtCloudConfig>;
 }
@@ -20,6 +22,8 @@ interface ThoughtCloudProps {
 export function ThoughtCloud({
   reasoning,
   isStreaming,
+  dimmed = false,
+  onDismiss,
   className = "",
   config: override,
 }: ThoughtCloudProps) {
@@ -53,21 +57,34 @@ export function ThoughtCloud({
   const textToShow = expanded ? reasoning : displayText;
 
   // ── Auto-escala de fuente: medición en DOM oculto replicando shape-outside ──
+  // El foreignObject cubre todo el viewBox (200×150) y se estira con preserveAspectRatio="none".
+  // El contenido HTML se renderiza en unidades del viewBox, escaladas al wrapper.
+  // scaleX = wrapperWidth / viewBoxWidth, scaleY = wrapperHeight / viewBoxHeight.
   useEffect(() => {
+    const vbW = cfg.viewBoxWidth;  // 200
+    const vbH = cfg.viewBoxHeight; // 150
+    const scaleX = w / vbW;
+    const scaleY = h / vbH;
+    // Zona segura efectiva en píxeles del viewBox (área interior de la nube).
+    // Usamos el ancho/alto útil del foreignObject original como referencia.
     const safeZone = mode === "comic" ? cfg.comicSafeZone : cfg.scrollSafeZone;
+    const effectiveWidth = safeZone.width;   // ancho útil en unidades viewBox
+    const effectiveHeight = safeZone.height; // alto útil en unidades viewBox
     const measureText = expanded ? reasoning : displayText;
     if (!measureText) return;
 
+    // Crear un entorno de medición que replique las dimensiones del foreignObject
+    // en el espacio del viewBox (no estirado). El texto se mide en estas unidades.
     const testContainer = document.createElement("div");
     testContainer.style.position = "absolute";
     testContainer.style.visibility = "hidden";
-    testContainer.style.width = `${safeZone.width}px`;
-    testContainer.style.height = `${safeZone.height}px`;
+    testContainer.style.width = `${effectiveWidth}px`;
+    testContainer.style.height = `${effectiveHeight}px`;
     testContainer.style.boxSizing = "border-box";
     testContainer.style.padding = "0";
 
     testContainer.innerHTML = `
-      <div id="tc-test-box" style="width: ${safeZone.width}px; height: ${safeZone.height}px; padding-top: ${cfg.offsetTop}px; padding-bottom: ${cfg.offsetBottom}px; box-sizing: border-box; overflow-y: auto;">
+      <div id="tc-test-box" style="width: ${effectiveWidth}px; height: ${effectiveHeight}px; padding-top: ${cfg.offsetTop}px; padding-bottom: ${cfg.offsetBottom}px; box-sizing: border-box; overflow-y: auto;">
         <div style="float: left; width: ${cfg.shapeFloatWidth}%; height: 100%; min-height: ${cfg.shapeFloatMinHeight}px; shape-outside: ${cfg.leftShapePolygon}; shape-margin: ${cfg.shapeMargin}px;"></div>
         <div style="float: right; width: ${cfg.shapeFloatWidth}%; height: 100%; min-height: ${cfg.shapeFloatMinHeight}px; shape-outside: ${cfg.rightShapePolygon}; shape-margin: ${cfg.shapeMargin}px;"></div>
         <div id="tc-test-text" style="line-height: ${cfg.lineHeight}; font-weight: ${cfg.fontWeight}; font-family: inherit; white-space: pre-wrap; word-break: break-word; text-align: ${cfg.textAlign}; padding: 0 ${cfg.offsetSides}px;"></div>
@@ -79,18 +96,25 @@ export function ThoughtCloud({
     const testText = testContainer.querySelector("#tc-test-text") as HTMLElement;
     testText.textContent = measureText;
 
-    let currentSize = cfg.maxFontSize;
+    // El font-size se mide en unidades del viewBox. El wrapper lo estira automáticamente.
+    // Empezar con un tamaño que ya considera el factor de escala.
+    // Como el texto se renderiza en unidades viewBox y se estira por el wrapper,
+    // el font-size efectivo en pantalla = fontSize × min(scaleX, scaleY).
+    // Para que el texto se vea a maxFontSize px en pantalla, el font-size en viewBox = maxFontSize / scale.
+    const scale = Math.min(scaleX, scaleY);
+    let currentSize = cfg.maxFontSize / scale;
     testText.style.fontSize = `${currentSize}px`;
 
-    while (testBox.scrollHeight > safeZone.height && currentSize > cfg.minFontSize) {
-      currentSize -= cfg.fontScaleStep;
+    while (testBox.scrollHeight > effectiveHeight && currentSize > cfg.minFontSize / scale) {
+      currentSize -= cfg.fontScaleStep / scale;
       testText.style.fontSize = `${currentSize}px`;
     }
 
     document.body.removeChild(testContainer);
+    // Guardar el font-size en unidades del viewBox (se estirará automáticamente).
     setCalculatedFontSize(currentSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reasoning, expanded, mode, cfg.maxFontSize, cfg.minFontSize, cfg.fontScaleStep, cfg.lineHeight, cfg.shapeMargin, cfg.offsetTop, cfg.offsetBottom, cfg.offsetSides, cfg.shapeFloatWidth, cfg.shapeFloatMinHeight, cfg.leftShapePolygon, cfg.rightShapePolygon, cfg.textAlign]);
+  }, [reasoning, expanded, mode, w, h, cfg.maxFontSize, cfg.minFontSize, cfg.fontScaleStep, cfg.lineHeight, cfg.shapeMargin, cfg.offsetTop, cfg.offsetBottom, cfg.offsetSides, cfg.shapeFloatWidth, cfg.shapeFloatMinHeight, cfg.leftShapePolygon, cfg.rightShapePolygon, cfg.textAlign, cfg.viewBoxWidth, cfg.viewBoxHeight, cfg.comicSafeZone, cfg.scrollSafeZone]);
 
   // ── Auto-scroll al final (sólo modo scroll) ──
   useLayoutEffect(() => {
@@ -116,12 +140,13 @@ export function ThoughtCloud({
   };
 
   // Estilos dinámicos del contenedor scroll.
-  const fo = mode === "comic" ? cfg.comicForeign : cfg.scrollForeign;
+  // El foreignObject cubre todo el viewBox (0 0 200 150) y el clipPath recorta.
+  // El contenido usa 100% para llenar el foreignObject estirado por preserveAspectRatio="none".
   const isScrollMode = mode === "scroll";
 
   const scrollStyle: React.CSSProperties = {
-    width: `${fo.width}px`,
-    height: `${fo.height}px`,
+    width: "100%",
+    height: "100%",
     boxSizing: "border-box",
     overflowY: isScrollMode ? "auto" : "hidden",
     scrollbarWidth: "none",
@@ -137,7 +162,7 @@ export function ThoughtCloud({
 
   const innerStyle: React.CSSProperties = {
     width: "100%",
-    minHeight: "100%",
+    height: "100%",
     paddingTop: `${cfg.offsetTop}px`,
     paddingBottom: `${cfg.offsetBottom}px`,
     boxSizing: "border-box",
@@ -170,7 +195,6 @@ export function ThoughtCloud({
     whiteSpace: "pre-wrap",
     textAlign: cfg.textAlign,
     padding: `0 ${cfg.offsetSides}px`,
-    transition: "font-size 0.15s ease",
   };
 
   const cursorColor = cfg.cursorColor ?? "var(--accent)";
@@ -179,12 +203,14 @@ export function ThoughtCloud({
     <motion.div
       className={`thought-cloud ${isStreaming ? "thought-cloud-streaming" : ""} ${
         dragging ? "thought-cloud-dragging" : ""
-      } ${expanded ? "thought-cloud-expanded" : ""} ${className}`}
+      } ${expanded ? "thought-cloud-expanded" : ""} ${
+        dimmed ? "thought-cloud-dimmed" : ""
+      } ${className}`}
       style={{ x: placement.mx, y: placement.my, width: w, height: h }}
       initial={{ opacity: 0, scale: 0.8 }}
-      animate={{ opacity: 1, scale: 1 }}
+      animate={{ opacity: dimmed ? 0.55 : 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.8 }}
-      transition={{ duration: 0.3, width: { duration: 0.3 }, height: { duration: 0.3 } }}
+      transition={{ duration: 0.3, width: { duration: 0.3 }, height: { duration: 0.3 }, opacity: { duration: 0.4 } }}
       onPointerDown={onPointerDown}
       onClick={handleClick}
     >
@@ -193,7 +219,7 @@ export function ThoughtCloud({
           isStreaming === true && cfg.breathingEnabled ? "thought-cloud-breathing" : ""
         }`}
       >
-        <ThoughtCloudSVG pointingAngle={placement.pointingAngle} isStreaming={isStreaming} mode={mode} config={cfg}>
+        <ThoughtCloudSVG pointingAngle={placement.pointingAngle} isStreaming={isStreaming} config={cfg}>
         <div ref={scrollRef} className="thought-cloud-scroll" style={scrollStyle}>
           <div className="thought-cloud-inner" style={innerStyle}>
             <div className="thought-cloud-shape-left" style={shapeLeftStyle} />
@@ -206,11 +232,23 @@ export function ThoughtCloud({
                 <span className="thought-cloud-label">
                   {isStreaming ? t("reasoning.thinking") : t("reasoning.thought")}
                 </span>
-                {!isStreaming && (
+                {!isStreaming && !expanded && (
                   <ChevronUp
                     size={12}
                     className={`thought-cloud-expand-icon ${expanded ? "opacity-100" : "opacity-50"}`}
                   />
+                )}
+                {onDismiss && (
+                  <button
+                    className="thought-cloud-dismiss"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDismiss();
+                    }}
+                    aria-label={t("stage.collapse") as string}
+                  >
+                    <X size={11} />
+                  </button>
                 )}
               </div>
 

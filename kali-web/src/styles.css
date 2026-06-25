@@ -356,6 +356,15 @@
   cursor: grabbing;
 }
 
+/* Estado dimmed: la nube permanece visible pero atenuada cuando no hay streaming */
+.thought-cloud-dimmed {
+  filter: saturate(0.6);
+}
+
+.thought-cloud-dimmed:hover {
+  filter: saturate(1);
+}
+
 /* Wrapper interno para breathing (separado del motion.div para no conflictar con transform) */
 .thought-cloud-breathing-wrap {
   width: 100%;
@@ -475,6 +484,31 @@
 
 .thought-cloud:hover .thought-cloud-expand-icon {
   transform: translateY(-2px);
+}
+
+/* Botón dismiss (X) — cierra la nube cuando no hay streaming */
+.thought-cloud-dismiss {
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--cloud-text-muted);
+  cursor: pointer;
+  pointer-events: auto;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.thought-cloud-dismiss:hover {
+  opacity: 1;
+  background: var(--cloud-text-muted);
+  color: var(--cloud-fill);
 }
 
 /* Cuerpo del texto */

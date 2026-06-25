@@ -8,6 +8,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Cog, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useEffect, useState } from "react";
 import { useStage } from "./StageProvider";
 import { ThoughtCloud } from "../components/ThoughtCloud";
 
@@ -18,12 +19,21 @@ export function PresenceLayer() {
   const runningTools = chat.toolEvents.filter((e) => e.status === "running");
   const lastTool = runningTools[runningTools.length - 1];
 
-  // Latest reasoning from the streaming message.
-  const streamingMsg = chat.messages.find((m) => m.streaming && m.reasoning);
-  const reasoning = streamingMsg?.reasoning ?? null;
+  // Latest message with reasoning (streaming OR finished).
+  // This keeps the cloud visible after streaming ends, dimmed instead of hidden.
+  const lastMsgWithReasoning = [...chat.messages].reverse().find((m) => m.reasoning);
+  const reasoning = lastMsgWithReasoning?.reasoning ?? null;
+  const isCurrentlyStreaming = lastMsgWithReasoning?.streaming === true;
+
+  // Dismissal: user can close the cloud; resets when a new stream starts.
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    if (isCurrentlyStreaming) setDismissed(false);
+  }, [isCurrentlyStreaming]);
 
   // Thinking indicator: active between turn_start and first token/tool.
   const showThinking = chat.isThinking && !lastTool && !reasoning;
+  const showCloud = reasoning && !dismissed;
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center">
@@ -65,12 +75,16 @@ export function PresenceLayer() {
         )}
       </AnimatePresence>
 
-      {/* Reasoning — ThoughtCloud orbitando el avatar (draggable, anclada al avatar center) */}
+      {/* Reasoning — ThoughtCloud orbitando el avatar (draggable, anclada al avatar center).
+          Permanece visible (dimmed) tras el streaming hasta que el usuario la cierre. */}
       <AnimatePresence>
-        {reasoning && (
+        {showCloud && (
           <ThoughtCloud
-            reasoning={reasoning}
-            isStreaming={streamingMsg?.streaming === true}
+            key="thought-cloud"
+            reasoning={reasoning ?? ""}
+            isStreaming={isCurrentlyStreaming}
+            dimmed={!isCurrentlyStreaming}
+            onDismiss={() => setDismissed(true)}
           />
         )}
       </AnimatePresence>

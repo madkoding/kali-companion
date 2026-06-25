@@ -1,10 +1,9 @@
 import { motion } from "framer-motion";
-import type { DistributionMode, ThoughtCloudConfig, ForeignObjectRect } from "./ThoughtCloudConfig";
+import type { ThoughtCloudConfig } from "./ThoughtCloudConfig";
 
 interface ThoughtCloudSVGProps {
   pointingAngle: number;
   isStreaming?: boolean;
-  mode: DistributionMode;
   config: ThoughtCloudConfig;
   children: React.ReactNode;
 }
@@ -23,14 +22,9 @@ interface ThoughtCloudSVGProps {
 export function ThoughtCloudSVG({
   pointingAngle,
   isStreaming = false,
-  mode,
   config,
   children,
 }: ThoughtCloudSVGProps) {
-  // foreignObject dinámico según modo.
-  const fo: ForeignObjectRect =
-    mode === "comic" ? config.comicForeign : config.scrollForeign;
-
   // Transform del clipPath: escala desde el centro de la nube.
   const clipTransform = `translate(${config.clipCenterX}, ${config.clipCenterY}) scale(${config.clipScale}) translate(${-config.clipCenterX}, ${-config.clipCenterY})`;
 
@@ -103,10 +97,10 @@ export function ThoughtCloudSVG({
 
       {/* Contenido textual recortado por la silueta de la nube (inset 94%) */}
       <foreignObject
-        x={fo.x}
-        y={fo.y}
-        width={fo.width}
-        height={fo.height}
+        x="0"
+        y="0"
+        width={config.viewBoxWidth}
+        height={config.viewBoxHeight}
         clipPath="url(#cloud-inner-clip)"
         className="thought-cloud-foreign"
       >
