@@ -22,6 +22,7 @@ from openai import AsyncOpenAI
 
 from kali_core.config import settings
 
+from ..json_stream_extractor import StreamingArtifactArgParser
 from .provider import StreamEvent, ToolDef
 
 logger = logging.getLogger("kali_core.mind.direct")
@@ -214,12 +215,41 @@ class DirectLLMProvider:
                                 "id": tc.id or "",
                                 "name": "",
                                 "args": "",
+                                # StreamingArtifactArgParser for live
+                                # re-streaming of streamable artifact content
+                                # (html/code/document/diff). None until the
+                                # tool name is known to be create_artifact.
+                                "art_parser": None,
+                                # True once we've started emitting synthetic
+                                # BEGIN_ARTIFACT deltas for this tool call.
+                                "art_streaming": False,
+                                # True if this tool call was fully handled via
+                                # streaming (skip the batch tool_call event).
+                                "art_streamed": False,
                             }
+                        acc = tool_calls_acc[idx]
                         if tc.function:
                             if tc.function.name:
-                                tool_calls_acc[idx]["name"] += tc.function.name
+                                acc["name"] += tc.function.name
                             if tc.function.arguments:
-                                tool_calls_acc[idx]["args"] += tc.function.arguments
+                                acc["args"] += tc.function.arguments
+                                # Live re-streaming of streamable artifacts.
+                                # When the model uses native function calling
+                                # to invoke create_artifact with an html/code/
+                                # document/diff payload, the full content lives
+                                # inside the JSON arguments (escaped). We parse
+                                # it incrementally and emit synthetic delta
+                                # events with [BEGIN_ARTIFACT]/[END_ARTIFACT]
+                                # markers so ArtifactStreamProcessor (in the
+                                # runtime) streams the artifact to the
+                                # frontend in real time, instead of waiting
+                                # for the whole JSON to arrive and executing
+                                # the tool in batch at stream end.
+                                if acc["name"] == "create_artifact":
+                                    for synth_evt in self._maybe_stream_artifact_tool(
+                                        acc, tc.function.arguments
+                                    ):
+                                        yield synth_evt
 
             if has_reasoning:
                 logger.info(
@@ -230,61 +260,147 @@ class DirectLLMProvider:
             # Emit accumulated tool calls.
             for idx in sorted(tool_calls_acc):
                 tc = tool_calls_acc[idx]
-                if tc["name"]:
-                    args = {}
-                    if tc["args"]:
-                        try:
-                            args = json.loads(tc["args"])
-                        except json.JSONDecodeError:
-                            # The streaming accumulation may have
-                            # truncated the JSON. Try to salvage it
-                            # by finding the last valid JSON block.
-                            raw = tc["args"].strip()
-                            # If it starts with { or [, try balanced
-                            # extraction as a last resort.
-                            if raw and raw[0] in "{[":
-                                try:
-                                    # Find the longest valid prefix.
-                                    for end in range(len(raw), 0, -1):
-                                        try:
-                                            candidate = raw[:end]
-                                            # Pad with closing braces if
-                                            # unbalanced (truncated).
-                                            opens = candidate.count("{") - candidate.count("}")
-                                            brackets = candidate.count("[") - candidate.count("]")
-                                            if opens > 0:
-                                                candidate += "}" * opens
-                                            if brackets > 0:
-                                                candidate += "]" * brackets
-                                            parsed = json.loads(candidate)
-                                            if isinstance(parsed, dict):
-                                                args = parsed
-                                                logger.warning(
-                                                    "Salvaged truncated tool args for '%s' "
-                                                    "(added %d closing braces)",
-                                                    tc["name"], opens + brackets,
-                                                )
-                                                break
-                                        except json.JSONDecodeError:
-                                            continue
-                                    if not args:
-                                        args = {"raw": raw}
-                                except Exception:
-                                    args = {"raw": raw}
-                            else:
-                                args = {"raw": raw}
-                    yield StreamEvent(
-                        kind="tool_call",
-                        tool_name=tc["name"],
-                        tool_args=args,
-                        tool_call_id=tc["id"],
+                if not tc["name"]:
+                    continue
+                # If this create_artifact was already streamed live via
+                # synthetic BEGIN/END deltas, skip the batch tool_call event
+                # (the artifact already reached the frontend in real time).
+                if tc.get("art_streamed"):
+                    logger.info(
+                        "[llm] create_artifact streamed live (id=%s, "
+                        "type=%s) — skipping batch tool_call event",
+                        tc["id"] or "?",
+                        tc.get("art_type", "?"),
                     )
+                    continue
+                args = {}
+                if tc["args"]:
+                    try:
+                        args = json.loads(tc["args"])
+                    except json.JSONDecodeError:
+                        # The streaming accumulation may have
+                        # truncated the JSON. Try to salvage it
+                        # by finding the last valid JSON block.
+                        raw = tc["args"].strip()
+                        # If it starts with { or [, try balanced
+                        # extraction as a last resort.
+                        if raw and raw[0] in "{[":
+                            try:
+                                # Find the longest valid prefix.
+                                for end in range(len(raw), 0, -1):
+                                    try:
+                                        candidate = raw[:end]
+                                        # Pad with closing braces if
+                                        # unbalanced (truncated).
+                                        opens = candidate.count("{") - candidate.count("}")
+                                        brackets = candidate.count("[") - candidate.count("]")
+                                        if opens > 0:
+                                            candidate += "}" * opens
+                                        if brackets > 0:
+                                            candidate += "]" * brackets
+                                        parsed = json.loads(candidate)
+                                        if isinstance(parsed, dict):
+                                            args = parsed
+                                            logger.warning(
+                                                "Salvaged truncated tool args for '%s' "
+                                                "(added %d closing braces)",
+                                                tc["name"], opens + brackets,
+                                            )
+                                            break
+                                    except json.JSONDecodeError:
+                                        continue
+                                if not args:
+                                    args = {"raw": raw}
+                            except Exception:
+                                args = {"raw": raw}
+                        else:
+                            args = {"raw": raw}
+                yield StreamEvent(
+                    kind="tool_call",
+                    tool_name=tc["name"],
+                    tool_args=args,
+                    tool_call_id=tc["id"],
+                )
 
             yield StreamEvent(kind="done")
         except Exception as exc:
             logger.error("LLM error: %s", exc)
             yield StreamEvent(kind="delta", text=f"[LLM error: {exc}]")
             yield StreamEvent(kind="done")
+
+    def _maybe_stream_artifact_tool(
+        self, acc: dict, arguments_chunk: str
+    ):  # -> Iterator[StreamEvent]
+        """Re-stream a streamable create_artifact tool call as synthetic deltas.
+
+        When the model uses native function calling for ``create_artifact`` with
+        a streamable type (html/code/document/diff), the full content lives
+        inside the escaped JSON ``arguments``. Instead of waiting for the whole
+        JSON to arrive and executing the tool in batch at stream end, we parse
+        the arguments incrementally and emit synthetic ``delta`` events shaped
+        like ``[BEGIN_ARTIFACT: html] {"title":"…"} …content… [END_ARTIFACT]``.
+
+        The runtime's ``ArtifactStreamProcessor`` (which only reads the delta
+        channel) then streams the artifact to the frontend in real time, exactly
+        as if the model had emitted the markers as plain text.
+
+        For non-streamable types (table/mermaid/json/checklist/chart) or if the
+        incremental parser fails, this method is a no-op: the tool call falls
+        back to the batch path (accumulated and executed at stream end).
+
+        Yields ``StreamEvent(kind="delta", ...)`` synthetic events. Is an
+        iterator (uses ``yield``) so the caller does ``yield from``.
+        """
+        # Lazily create the parser when we first see this tool call.
+        if acc["art_parser"] is None:
+            acc["art_parser"] = StreamingArtifactArgParser()
+        parser: StreamingArtifactArgParser = acc["art_parser"]
+
+        # If the parser already failed, stop trying — batch fallback.
+        if parser.failed:
+            return
+
+        events = parser.feed(arguments_chunk)
+        for ev in events:
+            if ev.kind == "field" and ev.key == "artifact_type":
+                # Record the type so we can log it when skipping batch path.
+                acc["art_type"] = ev.value
+            elif ev.kind == "field" and ev.key == "title":
+                # If we already started streaming (artifact_type was known and
+                # streamable and content began before title arrived), the
+                # create event used an empty title; that's fine — the close
+                # event carries the full content and the frontend shows the
+                # title from the create. We don't re-emit.
+                pass
+            elif ev.kind == "content_chunk":
+                # First content chunk: emit the BEGIN marker + header.
+                if not acc["art_streaming"]:
+                    if parser.is_streamable is not True:
+                        # Non-streamable type: don't stream. Fall back to batch.
+                        # Mark the parser as done so we don't process further.
+                        return
+                    # Emit the synthetic BEGIN_ARTIFACT marker.
+                    atype = parser.artifact_type
+                    title = parser.title or ""
+                    yield StreamEvent(
+                        kind="delta",
+                        text=f'[BEGIN_ARTIFACT: {atype}] {{"title":"{title}"}} ',
+                    )
+                    acc["art_streaming"] = True
+                # Emit the unescaped content chunk as a synthetic delta.
+                if ev.text:
+                    yield StreamEvent(kind="delta", text=ev.text)
+            elif ev.kind == "content_done":
+                if acc["art_streaming"]:
+                    # Emit the synthetic END_ARTIFACT marker.
+                    yield StreamEvent(kind="delta", text="[END_ARTIFACT]")
+                    acc["art_streamed"] = True
+            elif ev.kind == "json_done":
+                # JSON fully closed. If we were streaming, ensure END was sent
+                # (content_done should have fired first, but be defensive).
+                if acc["art_streaming"] and not acc["art_streamed"]:
+                    yield StreamEvent(kind="delta", text="[END_ARTIFACT]")
+                    acc["art_streamed"] = True
 
     async def complete(
         self,

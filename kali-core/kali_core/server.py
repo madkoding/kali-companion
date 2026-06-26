@@ -189,6 +189,7 @@ class Server:
         # Wire executor + tools into the agent.
         self.agent.set_executor(self.executor)
         self.agent.set_tools(self.tool_defs)
+        self.agent.set_session_store(self.session_store)
         self._register_routes()
 
     def _register_routes(self) -> None:

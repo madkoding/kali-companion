@@ -161,6 +161,9 @@ class AgentRuntime:
         self._tools: list | None = None
         # Optional: callback to emit tool events to the frontend.
         self._emit_event: Any | None = None
+        # Optional: session store for persisting streamed artifacts so they
+        # survive page refresh. Set by the server.
+        self._session_store: Any = None
 
     def set_executor(self, executor: Any) -> None:
         self._executor = executor
@@ -170,6 +173,10 @@ class AgentRuntime:
 
     def set_emit_callback(self, callback: Any) -> None:
         self._emit_event = callback
+
+    def set_session_store(self, store: Any) -> None:
+        """Wire the session store so streamed artifacts are persisted on close."""
+        self._session_store = store
 
     async def _emit_artifact_event(
         self, evt: ArtifactStreamEvent, session_id: str
@@ -201,6 +208,29 @@ class AgentRuntime:
             len(evt.content),
         )
         await self._emit_event(payload)
+
+        # Persist the artifact on close so it survives page refresh.
+        # Uses INSERT OR REPLACE (idempotent): if the executor already
+        # persisted via the batch tool-call path, this overwrites cleanly
+        # with the streamed content (identical). For artifacts streamed via
+        # synthetic deltas (native create_artifact re-streamed), the
+        # executor never runs, so this is the only persistence path.
+        if evt.action == "close" and self._session_store is not None:
+            try:
+                await self._session_store.add_artifact(
+                    session_id,
+                    evt.artifact_id,
+                    evt.artifact_type,
+                    evt.title,
+                    evt.content,
+                    evt.window_type,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to persist streamed artifact %s",
+                    evt.artifact_id,
+                    exc_info=True,
+                )
 
     def _get_history(self, session_id: str) -> list[dict]:
         if session_id not in self._histories:

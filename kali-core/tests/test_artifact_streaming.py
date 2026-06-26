@@ -248,3 +248,214 @@ async def test_runtime_emits_artifact_streaming_events():
     assert close_evt["phase"] == "complete"
     assert "public class Hello" in close_evt["content"]
     assert "void main" in close_evt["content"]
+
+
+# ── Native tool-call re-streaming tests ────────────────────────
+#
+# These tests verify that when an LLM uses OpenAI-style native function
+# calling (delta.tool_calls) to invoke create_artifact with a streamable
+# type, DirectLLMProvider re-streams the content as synthetic
+# [BEGIN_ARTIFACT]/[END_ARTIFACT] deltas so ArtifactStreamProcessor
+# streams the artifact live, instead of waiting for the batch tool_call.
+
+
+from types import SimpleNamespace
+
+
+def _mk_chunk(
+    *,
+    content: str | None = None,
+    tool_name: str | None = None,
+    tool_args: str | None = None,
+    tool_index: int = 0,
+    tool_id: str = "call_1",
+    reasoning: str | None = None,
+):
+    """Build a fake OpenAI streaming chunk with the attributes direct.py reads."""
+    delta = SimpleNamespace(
+        content=content,
+        tool_calls=None,
+        reasoning_content=None,
+    )
+    if reasoning is not None:
+        delta.reasoning_content = reasoning
+    if tool_name is not None or tool_args is not None:
+        func = SimpleNamespace(
+            name=tool_name or None,
+            arguments=tool_args or None,
+        )
+        tc = SimpleNamespace(
+            index=tool_index,
+            id=tool_id if tool_name else None,
+            function=func,
+        )
+        delta.tool_calls = [tc]
+    choice = SimpleNamespace(delta=delta)
+    return SimpleNamespace(choices=[choice])
+
+
+class _FakeAsyncStream:
+    """Minimal async iterator over a list of pre-built chunks."""
+
+    def __init__(self, chunks):
+        self._chunks = iter(chunks)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._chunks)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
+class _FakeCompletions:
+    async def create(self, **kwargs):
+        return _FakeAsyncStream(list(self._chunks))
+
+
+class _FakeOpenAIClient:
+    """Fake AsyncOpenAI client that returns a _FakeAsyncStream."""
+
+    def __init__(self, chunks):
+        self._chunks = chunks
+        comp = _FakeCompletions()
+        comp._chunks = chunks
+        self.chat = SimpleNamespace(completions=comp)
+
+    async def close(self):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_native_tool_call_streamed_as_artifact():
+    """A native create_artifact(html) tool call is re-streamed as live deltas."""
+    from kali_core.mind.llm.direct import DirectLLMProvider
+
+    html_content = "<!DOCTYPE html>\n<html><body>Hello</body></html>"
+    # The JSON arguments the model would emit (content escaped).
+    args_json = json.dumps(
+        {"artifact_type": "html", "title": "Test", "content": html_content}
+    )
+    # Split args into sequential chunks to simulate streaming.
+    chunk_size = max(1, len(args_json) // 8)
+    arg_chunks = [args_json[i : i + chunk_size] for i in range(0, len(args_json), chunk_size)]
+
+    chunks = []
+    for i, arg_piece in enumerate(arg_chunks):
+        chunks.append(
+            _mk_chunk(
+                tool_name="create_artifact" if i == 0 else None,
+                tool_args=arg_piece,
+            )
+        )
+    chunks.append(_mk_chunk())  # empty final chunk
+
+    provider = DirectLLMProvider.__new__(DirectLLMProvider)
+    provider._model = "fake-model"
+    provider._system_prompt = ""
+    provider._client = _FakeOpenAIClient(chunks)
+
+    events = []
+    async for ev in provider.stream([{"role": "user", "content": "make html"}]):
+        events.append(ev)
+
+    deltas = [e.text for e in events if e.kind == "delta" and e.text]
+    joined = "".join(deltas)
+
+    # Synthetic BEGIN_ARTIFACT marker should appear in deltas.
+    assert "[BEGIN_ARTIFACT: html]" in joined
+    assert "[END_ARTIFACT]" in joined
+    # The unescaped HTML content should flow through the deltas.
+    assert "<!DOCTYPE html>" in joined
+    assert "<body>Hello</body>" in joined
+
+    # No batch tool_call event should be emitted (it was streamed live).
+    tool_call_events = [e for e in events if e.kind == "tool_call"]
+    assert len(tool_call_events) == 0, "batch tool_call should be skipped"
+
+
+@pytest.mark.asyncio
+async def test_native_tool_call_non_streamable_stays_batch():
+    """A native create_artifact(table) tool call is NOT re-streamed; stays batch."""
+    from kali_core.mind.llm.direct import DirectLLMProvider
+
+    table_content = json.dumps({"rows": [{"a": 1, "b": 2}]})
+    args_json = json.dumps(
+        {"artifact_type": "table", "title": "T", "content": table_content}
+    )
+
+    chunks = [_mk_chunk(tool_name="create_artifact", tool_args=args_json)]
+    chunks.append(_mk_chunk())  # empty final chunk
+
+    provider = DirectLLMProvider.__new__(DirectLLMProvider)
+    provider._model = "fake-model"
+    provider._system_prompt = ""
+    provider._client = _FakeOpenAIClient(chunks)
+
+    events = []
+    async for ev in provider.stream([{"role": "user", "content": "make table"}]):
+        events.append(ev)
+
+    deltas = [e.text for e in events if e.kind == "delta" and e.text]
+    joined = "".join(deltas)
+
+    # No synthetic markers (non-streamable stays batch).
+    assert "[BEGIN_ARTIFACT" not in joined
+    # A batch tool_call event IS emitted.
+    tool_call_events = [e for e in events if e.kind == "tool_call"]
+    assert len(tool_call_events) == 1
+    assert tool_call_events[0].tool_name == "create_artifact"
+    assert tool_call_events[0].tool_args["artifact_type"] == "table"
+
+
+@pytest.mark.asyncio
+async def test_streamed_artifact_persists_on_close():
+    """A streamed artifact (via synthetic deltas) is persisted to session_store."""
+    from kali_core.mind.artifact_stream import ArtifactStreamProcessor
+
+    # Simulate the runtime flow: feed synthetic BEGIN/END deltas through
+    # the processor (as the runtime does) and verify close triggers persist.
+    runtime = AgentRuntime.__new__(AgentRuntime)
+    runtime.llm = None
+    runtime._histories = {}
+    runtime._executor = None
+    runtime._tools = []
+    runtime._emit_event = None
+    runtime._session_store = None
+
+    persisted: list[tuple] = []
+
+    class FakeStore:
+        async def add_artifact(self, session_id, art_id, atype, title, content, wt):
+            persisted.append((session_id, art_id, atype, title, content, wt))
+
+    runtime._session_store = FakeStore()
+
+    # Use the real _emit_artifact_event to check persistence on close.
+    from kali_core.mind.artifact_stream import ArtifactStreamEvent
+
+    close_evt = ArtifactStreamEvent(
+        artifact_id="art_test",
+        artifact_type="html",
+        window_type="html",
+        title="T",
+        content="<html></html>",
+        action="close",
+        phase="complete",
+    )
+
+    # Without emit_callback, _emit_artifact_event returns early — so set one.
+    async def emit(payload):
+        pass
+
+    runtime._emit_event = emit
+    await runtime._emit_artifact_event(close_evt, "sess_1")
+
+    assert len(persisted) == 1
+    sess, art_id, atype, title, content, wt = persisted[0]
+    assert sess == "sess_1"
+    assert art_id == "art_test"
+    assert atype == "html"
+    assert content == "<html></html>"
