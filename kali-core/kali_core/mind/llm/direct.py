@@ -260,6 +260,19 @@ class DirectLLMProvider:
                     self._model,
                 )
 
+            # Emit token usage stats if available.
+            if hasattr(stream, "usage") and stream.usage:
+                usage = stream.usage
+                reasoning_tokens = None
+                if hasattr(usage, "completion_tokens_details") and usage.completion_tokens_details:
+                    reasoning_tokens = getattr(usage.completion_tokens_details, "reasoning_tokens", None)
+                yield StreamEvent(
+                    kind="usage",
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    reasoning_tokens=reasoning_tokens,
+                )
+
             # Emit accumulated tool calls.
             for idx in sorted(tool_calls_acc):
                 tc = tool_calls_acc[idx]

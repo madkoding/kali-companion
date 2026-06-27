@@ -204,4 +204,63 @@ class UpdateArtifactTool:
         )
 
 
-__all__ = ["ListArtifactsTool", "GetArtifactTool", "UpdateArtifactTool"]
+__all__ = ["ListArtifactsTool", "GetArtifactTool", "UpdateArtifactTool", "GetArtifactConsoleTool"]
+
+
+class GetArtifactConsoleTool:
+    name = "get_artifact_console"
+    description = (
+        "Retrieve the runtime console logs of an HTML/renderer artifact "
+        "by its id. The artifact must be currently open (rendered) in the "
+        "frontend for logs to be available; if it is closed, the tool "
+        "returns a message explaining that the artifact is not rendered.\n\n"
+        "Use this when an HTML artifact looks broken or behaves unexpectedly "
+        "and you want to see JavaScript errors, warnings, or debug output "
+        "that the artifact produced at runtime. The logs are ephemeral "
+        "(not persisted) and reflect the current rendering session.\n\n"
+        "Pass the artifact id (e.g. 'art_abc123'). The artifact must "
+        "belong to the current session."
+    )
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "artifact_id": {
+                "type": "string",
+                "description": "The id of the artifact whose console logs to retrieve.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of log entries to return (default 200, max 500).",
+                "default": 200,
+            },
+        },
+        "required": ["artifact_id"],
+    }
+    risk_level = "safe"
+
+    async def run(self, params: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        artifact_id = params.get("artifact_id", "").strip()
+        if not artifact_id:
+            return ToolResult(error="Missing 'artifact_id' parameter.")
+        limit = min(int(params.get("limit", 200)), 500)
+
+        requester = ctx.console_requester
+        if requester is None:
+            return ToolResult(error="Console log requester not available.")
+
+        logs = await requester.request(ctx.emit, ctx.session_id, artifact_id, limit=limit)
+        if logs is None:
+            return ToolResult(output={
+                "logs": None,
+                "hint": (
+                    "The artifact is not currently rendered (it may be closed "
+                    "or was never opened). Console logs only exist while the "
+                    "artifact is open in the frontend. "
+                    "You can still inspect the artifact's source code using "
+                    "get_artifact."
+                ),
+            })
+        return ToolResult(output={
+            "logs": logs,
+            "count": len(logs),
+        })

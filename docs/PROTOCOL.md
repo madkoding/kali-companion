@@ -130,6 +130,46 @@ Reply to a `consent_request` from the core.
 
 `decision` ∈ `{"allow", "no_capture", "cancel"}`.
 
+### `console_request`
+
+Backend → frontend: the agent requests the runtime console logs of an
+HTML/renderer artifact. The frontend responds with `console_response`.
+
+```json
+{
+  "event": "console_request",
+  "id": "console_abc123",
+  "artifact_id": "art_xyz",
+  "limit": 200
+}
+```
+
+`id` is a unique request identifier (the frontend echoes it back in the
+response). `artifact_id` is the artifact whose console logs to retrieve.
+`limit` caps the number of most recent log entries to return (max 500).
+
+### `console_response`
+
+Frontend → backend: reply to a `console_request`. The frontend reads the
+current console logs from the open HtmlWidget (if any) and sends them back.
+If no widget is open for the given `artifact_id`, `logs` is `null`.
+
+```json
+{
+  "event": "console_response",
+  "id": "console_abc123",
+  "logs": [
+    { "level": "error", "message": "Uncaught TypeError: ...", "timestamp": 1719000000000 },
+    { "level": "log", "message": "App initialized", "timestamp": 1719000001000 }
+  ]
+}
+```
+
+`level` ∈ `{"log", "warn", "error", "info", "debug"}`. `timestamp` is
+`Date.now()` at the moment the log was captured. The backend awaits the
+response with a 5-second timeout; if the frontend does not respond in time
+or the artifact is not rendered, `logs` is `null`.
+
 ### `capture_request` (via Tauri command, not WS)
 
 Screen capture is done by asking kali-home directly via a Tauri command

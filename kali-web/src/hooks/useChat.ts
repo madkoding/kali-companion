@@ -9,6 +9,8 @@ import { WSClient } from "../lib/wsClient";
 import type {
   ArtifactEvent,
   ConnectedEvent,
+  ConsoleLogEntry,
+  ConsoleRequestEvent,
   DeltaEvent,
   MessageEvent,
   ReadyEvent,
@@ -28,6 +30,7 @@ import type {
   JobListEvent,
   ImageReadyEvent,
   SelectedArtifactRef,
+  TurnStatsEvent,
 } from "../lib/protocol";
 
 export interface ChatMessage {
@@ -82,6 +85,7 @@ export interface ChatState {
   isThinking: boolean;
   isTurnActive: boolean;
   currentStep: number;
+  turnStats: TurnStatsEvent | null;
   send: (text: string) => void;
   setSelectedArtifactsProvider: (fn: (() => SelectedArtifactRef[]) | null) => void;
   stop: () => void;
@@ -103,6 +107,12 @@ export interface ChatState {
   markArtifactClosed: (artifactId: string) => void;
   /** Store full content for an artifact (after a REST fetch on reopen). */
   setArtifactContent: (artifactId: string, event: ArtifactEvent) => void;
+  /**
+   * Register a getter for the current console logs of an open HTML artifact.
+   * The getter is called when the agent requests logs via get_artifact_console.
+   * Pass null to unregister.
+   */
+  registerConsoleProvider: (artifactId: string, getter: (() => ConsoleLogEntry[]) | null) => void;
 }
 
 let idCounter = 0;
@@ -148,11 +158,16 @@ export function useChat(): ChatState {
   const [isTurnActive, setIsTurnActive] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [stopped, setStopped] = useState(false);
+  const [turnStats, setTurnStats] = useState<TurnStatsEvent | null>(null);
 
   const clientRef = useRef<WSClient | null>(null);
   const ttsListeners = useRef<Array<(e: TtsAudioEvent) => void>>([]);
   const ttsEndedListeners = useRef<Array<() => void>>([]);
   const selectedArtifactsProviderRef = useRef<(() => SelectedArtifactRef[]) | null>(null);
+  // Registry of open HTML widgets keyed by artifact id, so the agent can
+  // request console logs on demand. Each entry is a getter that returns
+  // the current ConsoleLogEntry[] from the widget's React state.
+  const consoleProvidersRef = useRef<Map<string, () => ConsoleLogEntry[]>>(new Map());
 
   useEffect(() => {
     let client: WSClient | null = null;
@@ -225,6 +240,7 @@ export function useChat(): ChatState {
         setIsTurnActive(true);
         setCurrentStep(0);
         setStopped(false);
+        setTurnStats(null);
       });
 
       client.on("step_start", (p) => {
@@ -288,6 +304,10 @@ export function useChat(): ChatState {
         });
         setTtsPlaying(false);
         ttsEndedListeners.current.forEach((fn) => fn());
+      });
+
+      client.on("turn_stats", (p) => {
+        setTurnStats(p as TurnStatsEvent);
       });
 
       client.on("tts_audio", (p) => {
@@ -476,6 +496,21 @@ export function useChat(): ChatState {
         }
       });
 
+      // ── Console log request (agent → frontend) ──────────
+
+      client.on("console_request", (p) => {
+        const ev = p as ConsoleRequestEvent;
+        const getter = consoleProvidersRef.current.get(ev.artifact_id);
+        if (getter) {
+          const allLogs = getter();
+          const logs = allLogs.slice(-ev.limit);
+          client?.send({ event: "console_response", id: ev.id, logs });
+        } else {
+          // No widget open for this artifact id.
+          client?.send({ event: "console_response", id: ev.id, logs: null });
+        }
+      });
+
       client.connect();
     }
 
@@ -530,6 +565,7 @@ export function useChat(): ChatState {
     setTtsPlaying(false);
     setTtsSegment(0);
     setTtsTotal(0);
+    setTurnStats(null);
     clientRef.current?.send({ event: "new_session" });
   }, []);
 
@@ -601,6 +637,15 @@ export function useChat(): ChatState {
     });
   }, []);
 
+  /** Register/unregister a getter for the current console logs of an open HTML widget. */
+  const registerConsoleProvider = useCallback((artifactId: string, getter: (() => ConsoleLogEntry[]) | null) => {
+    if (getter) {
+      consoleProvidersRef.current.set(artifactId, getter);
+    } else {
+      consoleProvidersRef.current.delete(artifactId);
+    }
+  }, []);
+
   // Allow the TTS hook to subscribe to audio events.
   const subscribeTts = useCallback((fn: (e: TtsAudioEvent) => void) => {
     ttsListeners.current.push(fn);
@@ -637,6 +682,7 @@ export function useChat(): ChatState {
     isThinking,
     isTurnActive,
     currentStep,
+    turnStats,
     stopped,
     send,
     setSelectedArtifactsProvider,
@@ -656,5 +702,6 @@ export function useChat(): ChatState {
     requestImage,
     markArtifactClosed,
     setArtifactContent,
+    registerConsoleProvider,
   };
 }

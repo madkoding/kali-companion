@@ -57,6 +57,28 @@ export interface ConsentResponseEvent {
   decision: "allow" | "no_capture" | "cancel";
 }
 
+/** A single console log entry from an HTML artifact's iframe. */
+export interface ConsoleLogEntry {
+  level: "log" | "warn" | "error" | "info" | "debug";
+  message: string;
+  timestamp: number;
+}
+
+/** Backend → frontend: the agent requests console logs for an artifact. */
+export interface ConsoleRequestEvent {
+  event: "console_request";
+  id: string;
+  artifact_id: string;
+  limit: number;
+}
+
+/** Frontend → backend: the frontend responds with the artifact's console logs. */
+export interface ConsoleResponseEvent {
+  event: "console_response";
+  id: string;
+  logs: ConsoleLogEntry[] | null;
+}
+
 export interface ListJobsEvent {
   event: "list_jobs";
 }
@@ -302,6 +324,20 @@ export interface ImageReadyEvent {
   error?: string;
 }
 
+export interface TurnStatsEvent {
+  event: "turn_stats";
+  session_id: string;
+  elapsed: number;
+  first_token_latency: number | null;
+  char_count: number;
+  tool_call_count: number;
+  usage?: {
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+    reasoning_tokens: number | null;
+  };
+}
+
 export interface AttachSessionEvent {
   event: "attach_session";
   session_id: string;
@@ -326,6 +362,7 @@ export type IncomingEvent =
   | ClearAllSessionsEvent
   | SettingsEvent
   | ConsentResponseEvent
+  | ConsoleResponseEvent
   | AudioStartEvent
   | AudioEndEvent
   | TtsSpeakEvent
@@ -350,6 +387,7 @@ export type OutgoingEvent =
   | TurnStartEvent
   | ToolEvent
   | ConsentRequestEvent
+  | ConsoleRequestEvent
   | SessionListEvent
   | StatusEvent
   | ErrorEvent
@@ -359,4 +397,5 @@ export type OutgoingEvent =
   | JobDoneEvent
   | JobLogEvent
   | JobListEvent
-  | ImageReadyEvent;
+  | ImageReadyEvent
+  | TurnStatsEvent;

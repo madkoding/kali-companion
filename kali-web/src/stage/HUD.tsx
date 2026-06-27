@@ -8,10 +8,11 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings, Plus, History, Radio, Cpu, Palette, Library, MessageSquare } from "lucide-react";
+import { Settings, Plus, History, Radio, Cpu, Palette, Library, MessageSquare, X, Zap } from "lucide-react";
 import { useStage } from "./StageProvider";
 import { IconButton } from "../components/ui/IconButton";
 import { Tooltip } from "../components/ui/Tooltip";
+import type { StatusEvent, TurnStatsEvent } from "../lib/protocol";
 
 interface Props {
   onOpenSettings: () => void;
@@ -41,6 +42,7 @@ export function HUD({
   const { t } = useTranslation();
   const { chat, ptt } = useStage();
   const [now, setNow] = useState(() => new Date());
+  const [statsOpen, setStatsOpen] = useState(false);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000 * 30);
@@ -56,7 +58,6 @@ export function HUD({
   const statusDotClass =
     chat.status === "ready" ? "bg-ok" : chat.status === "error" ? "bg-err" : "bg-muted";
 
-  // Artifact readout — the beacon shows open · closed at a glance.
   const openArtifacts = artifactsOpenCount;
   const closedArtifacts = artifactsClosedCount;
   const totalArtifacts = openArtifacts + closedArtifacts;
@@ -90,10 +91,6 @@ export function HUD({
           </div>
         </div>
 
-        {/* Artifacts beacon — the one fixed beacon for everything Kali built
-            in this session. Full opacity (exempt from the HUD's dim-at-rest
-            convention): it is the thesis of the feature. Accent fill signals
-            a real action; the readout shows open · closed at a glance. */}
         <ArtifactsBeacon
           count={totalArtifacts}
           openCount={openArtifacts}
@@ -121,10 +118,26 @@ export function HUD({
           </span>
         )}
         {chat.systemStatus && (
-          <span className="hud-pill" title={chat.systemStatus.llm_model}>
-            <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
-            {t(statusKey)} · {chat.systemStatus.llm_model}
-          </span>
+          <div className="relative">
+            <button
+              onClick={() => setStatsOpen((v) => !v)}
+              className="hud-pill cursor-pointer"
+              title={chat.systemStatus.llm_model}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
+              {t(statusKey)} · {chat.systemStatus.llm_model}
+            </button>
+            {statsOpen && (
+              <ModelStatsPanel
+                systemStatus={chat.systemStatus}
+                turnStats={chat.turnStats}
+                messageCount={chat.messages.length}
+                artifactCount={chat.artifacts.size}
+                toolCallCount={chat.toolEvents.length}
+                onClose={() => setStatsOpen(false)}
+              />
+            )}
+          </div>
         )}
       </div>
 
@@ -182,5 +195,117 @@ function ArtifactsBeacon({
         )}
       </button>
     </Tooltip>
+  );
+}
+
+function ModelStatsPanel({
+  systemStatus,
+  turnStats,
+  messageCount,
+  artifactCount,
+  toolCallCount,
+  onClose,
+}: {
+  systemStatus: StatusEvent;
+  turnStats: TurnStatsEvent | null;
+  messageCount: number;
+  artifactCount: number;
+  toolCallCount: number;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const ts = turnStats;
+
+  return (
+    <div className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-border bg-bg/95 backdrop-blur-sm shadow-xl overflow-hidden z-50">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
+        <span className="text-xs font-medium text-muted uppercase tracking-wider">Model Stats</span>
+        <button
+          onClick={onClose}
+          className="w-5 h-5 rounded flex items-center justify-center hover:bg-border/50 transition-colors"
+        >
+          <X size={12} className="text-muted" />
+        </button>
+      </div>
+
+      <div className="p-3 space-y-3">
+        <StatsSection title={t("stats.model")} icon={<Cpu size={12} />}>
+          <StatsRow label={t("stats.provider")} value={systemStatus.llm_provider} />
+          <StatsRow label={t("stats.model")} value={systemStatus.llm_model} mono />
+          <StatsRow label={t("stats.api_url")} value={systemStatus.llm_api_url.replace(/^https?:\/\//, "")} mono />
+          <StatsRow label={t("stats.max_tokens")} value={String(systemStatus.llm_max_tokens ?? "-")} />
+        </StatsSection>
+
+        <StatsSection title={t("stats.session")} icon={<MessageSquare size={12} />}>
+          <StatsRow label={t("stats.messages")} value={String(messageCount)} />
+          <StatsRow label={t("stats.artifacts")} value={String(artifactCount)} />
+          <StatsRow label={t("stats.tool_calls")} value={String(toolCallCount)} />
+        </StatsSection>
+
+        <StatsSection title={t("stats.last_turn")} icon={<Zap size={12} />}>
+          {ts ? (
+            <>
+              <StatsRow label={t("stats.duration")} value={`${ts.elapsed}s`} />
+              <StatsRow
+                label={t("stats.first_token")}
+                value={ts.first_token_latency != null ? `${ts.first_token_latency}s` : "-"}
+              />
+              <StatsRow label={t("stats.chars")} value={String(ts.char_count)} />
+              <StatsRow label={t("stats.tool_calls")} value={String(ts.tool_call_count)} />
+              {ts.usage && (
+                <>
+                  <StatsRow label={t("stats.prompt_tokens")} value={String(ts.usage.prompt_tokens ?? "-")} />
+                  <StatsRow label={t("stats.completion_tokens")} value={String(ts.usage.completion_tokens ?? "-")} />
+                  {ts.usage.reasoning_tokens != null && (
+                    <StatsRow label={t("stats.reasoning_tokens")} value={String(ts.usage.reasoning_tokens)} />
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-muted italic">{t("stats.no_data")}</p>
+          )}
+        </StatsSection>
+      </div>
+    </div>
+  );
+}
+
+function StatsSection({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5 text-xs text-muted font-medium uppercase tracking-wider">
+        {icon}
+        <span>{title}</span>
+      </div>
+      <div className="pl-3 space-y-0.5">{children}</div>
+    </div>
+  );
+}
+
+function StatsRow({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-muted">{label}</span>
+      <span className={`text-foreground font-medium truncate ${mono ? "font-mono text-[10px]" : ""}`}>
+        {value}
+      </span>
+    </div>
   );
 }

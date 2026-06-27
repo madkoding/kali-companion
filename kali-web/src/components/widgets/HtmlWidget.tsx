@@ -6,6 +6,7 @@ import { CodeViewer } from "./base/CodeViewer";
 import { parseContent } from "./base/DataWidget";
 import { injectHashGuard } from "../artifacts/htmlUtils";
 import { useHeaderActions, type HeaderAction } from "./hooks/useHeaderActions";
+import { useStage } from "../../stage/StageProvider";
 import type { ArtifactEvent } from "../../lib/protocol";
 
 interface Props {
@@ -39,7 +40,9 @@ const LEVEL_BADGES: Record<string, string> = {
 
 export function HtmlWidget({ content }: Props) {
   const { t } = useTranslation();
+  const { chat } = useStage();
   const event = content as ArtifactEvent | undefined;
+  const artifactId = event?.id;
   const phase = event?.phase;
   const isStreaming = phase === "streaming";
   const isComplete = phase === "complete" || !phase;
@@ -63,6 +66,20 @@ export function HtmlWidget({ content }: Props) {
   const [consoleLogs, setConsoleLogs] = useState<ConsoleEntry[]>([]);
   const [renderKey, setRenderKey] = useState(0);
   const [errorCount, setErrorCount] = useState(0);
+
+  // Keep a ref in sync with consoleLogs so the agent's log request handler
+  // (which runs outside React's render cycle) always reads the latest logs.
+  const consoleLogsRef = useRef<ConsoleEntry[]>([]);
+  useEffect(() => { consoleLogsRef.current = consoleLogs; }, [consoleLogs]);
+
+  // Register this widget as the console-log provider for its artifact id.
+  // The agent calls get_artifact_console → backend emits console_request →
+  // useChat reads this getter and sends the logs back.
+  useEffect(() => {
+    if (!artifactId) return;
+    chat.registerConsoleProvider(artifactId, () => consoleLogsRef.current);
+    return () => chat.registerConsoleProvider(artifactId, null);
+  }, [artifactId, chat]);
 
   const handleRefresh = useCallback(() => {
     setRenderKey((k) => k + 1);

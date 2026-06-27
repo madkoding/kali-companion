@@ -52,6 +52,7 @@ from kali_core.claws.git import GitDiffTool, GitWorktreeTool
 from kali_core.claws.launcher import LaunchAppTool
 from kali_core.claws.list_monitors import ListMonitorsTool
 from kali_core.claws.manage_artifacts import (
+    GetArtifactConsoleTool,
     GetArtifactTool,
     ListArtifactsTool,
     UpdateArtifactTool,
@@ -72,6 +73,7 @@ from kali_core.mind.ai_config import load as load_ai_config
 from kali_core.mind.ai_config import save as save_ai_config
 from kali_core.mind.executor import Executor
 from kali_core.mind.jobs import JobManager
+from kali_core.mind.console_requester import ConsoleRequester
 from kali_core.mind.llm.direct import DirectLLMProvider
 from kali_core.mind.llm.nanobot import NanobotLLMProvider
 from kali_core.mind.llm.provider import LLMProvider, ToolDef
@@ -136,6 +138,7 @@ def _register_tools() -> None:
     register(ListArtifactsTool())
     register(GetArtifactTool())
     register(UpdateArtifactTool())
+    register(GetArtifactConsoleTool())
     # Phase 5 — Dota 2 live match state via GSI.
     register(DotaLiveStateTool())
     # STT post-processing (applied automatically, not user-visible).
@@ -186,6 +189,8 @@ class Server:
         _register_tools()
         self.tool_defs = _build_tool_defs()
         self.gaze_client = GazeClient()
+        # Console log requester — agent→frontend request/response for runtime logs.
+        self.console_requester = ConsoleRequester()
         # Session store (SQLite, kali-nest) — needed by executor for artifact persistence.
         self.session_store = SessionStore(settings.db_path)
         # Job system (background tasks with progress, logs, cancellation).
@@ -201,6 +206,7 @@ class Server:
             llm_provider=self.llm_provider,
             session_store=self.session_store,
             job_mgr=self.job_mgr,
+            console_requester=self.console_requester,
         )
         # Wire executor + tools into the agent.
         self.agent.set_executor(self.executor)
@@ -541,6 +547,12 @@ class Connection:
             decision = event.get("decision", "cancel")
             self.server.consent.respond(request_id, decision)
 
+        elif kind == "console_response":
+            # Resolve a pending console-log request from the agent.
+            request_id = event.get("id", "")
+            logs = event.get("logs")
+            self.server.console_requester.respond(request_id, logs)
+
         elif kind == "list_jobs":
             jobs = await self.server.job_mgr.list_jobs()
             await self.send({"event": "job_list", "jobs": jobs})
@@ -756,8 +768,13 @@ class Connection:
         try:
             # Set the emit callback for tool events.
             self.server.agent.set_emit_callback(self.send)
+            first_token_ts: float | None = None
+            tool_call_count = 0
+            usage_stats: dict | None = None
             async for event in self.server.agent.respond(agent_message, session_id, language=self._stt_language):
                 if event.kind == "delta" and event.text:
+                    if first_token_ts is None:
+                        first_token_ts = time.monotonic()
                     accumulated += event.text
                     await self.send(
                         {"event": "delta", "session_id": session_id, "text": event.text}
@@ -771,9 +788,13 @@ class Connection:
                         {"event": "step_start", "session_id": session_id, "step": event.step or 1}
                     )
                 elif event.kind == "tool_call":
-                    # tool_call events don't carry text; the tool result
-                    # will produce its own delta when the LLM resumes.
-                    pass
+                    tool_call_count += 1
+                elif event.kind == "usage":
+                    usage_stats = {
+                        "prompt_tokens": event.prompt_tokens,
+                        "completion_tokens": event.completion_tokens,
+                        "reasoning_tokens": event.reasoning_tokens,
+                    }
                 elif event.kind == "done":
                     break
         except asyncio.CancelledError:
@@ -787,7 +808,19 @@ class Connection:
             return
 
         elapsed = time.monotonic() - turn_start_ts
+        first_token_latency = (first_token_ts - turn_start_ts) if first_token_ts else None
         logger.info("[turn] end (%s) after %.1fs (chars=%d)", session_id[:8], elapsed, len(accumulated))
+
+        # Send turn_stats event with performance metrics.
+        await self.send({
+            "event": "turn_stats",
+            "session_id": session_id,
+            "elapsed": round(elapsed, 2),
+            "first_token_latency": round(first_token_latency, 2) if first_token_latency else None,
+            "char_count": len(accumulated),
+            "tool_call_count": tool_call_count,
+            "usage": usage_stats,
+        })
 
         # Synthesize TTS from the accumulated response.
         if accumulated and self.server.tts_pipeline.auto_tts:

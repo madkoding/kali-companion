@@ -365,5 +365,22 @@
   "widget.html.toggle_console": "Consola",
   "widget.quiz.score": "Puntuación: {{score}}/{{total}}",
   "widget.resource.coins": "monedas",
-  "widget.entity.cooldown": "CD: {{n}}s"
+  "widget.entity.cooldown": "CD: {{n}}s",
+  "stats.model": "Modelo",
+  "stats.session": "Sesión",
+  "stats.last_turn": "Último turno",
+  "stats.provider": "Proveedor",
+  "stats.model": "Modelo",
+  "stats.api_url": "API URL",
+  "stats.max_tokens": "Max tokens",
+  "stats.messages": "Mensajes",
+  "stats.artifacts": "Artefactos",
+  "stats.tool_calls": "Tool calls",
+  "stats.duration": "Duración",
+  "stats.first_token": "1er token",
+  "stats.chars": "Caracteres",
+  "stats.prompt_tokens": "Tokens entrada",
+  "stats.completion_tokens": "Tokens salida",
+  "stats.reasoning_tokens": "Tokens razonam.",
+  "stats.no_data": "Sin datos aún"
 }
