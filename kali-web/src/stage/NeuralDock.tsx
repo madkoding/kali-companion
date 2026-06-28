@@ -87,7 +87,12 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
         {/* ── Workspace ops ───────────────────────────────── */}
         <button
           onClick={api.toggleGrid}
-          className="tooltip h-9 w-9 rounded-xl hover:bg-white/8 text-muted hover:text-fg transition flex items-center justify-center badge"
+          disabled={isChatActive}
+          className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
+            isChatActive
+              ? "opacity-30 cursor-not-allowed"
+              : "hover:bg-white/8 text-muted hover:text-fg"
+          }`}
           title={t("dock.grid")}
           aria-label={t("dock.grid")}
         >
@@ -101,7 +106,12 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
 
         <button
           onClick={api.focusLast}
-          className="tooltip h-9 w-9 rounded-xl hover:bg-white/8 text-muted hover:text-fg transition flex items-center justify-center badge"
+          disabled={isChatActive}
+          className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
+            isChatActive
+              ? "opacity-30 cursor-not-allowed"
+              : "hover:bg-white/8 text-muted hover:text-fg"
+          }`}
           title={t("dock.focus")}
           aria-label={t("dock.focus")}
         >
@@ -114,7 +124,12 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
 
         <button
           onClick={api.arrangeOrbit}
-          className="tooltip h-9 w-9 rounded-xl hover:bg-accent2/20 text-muted hover:text-accent2 transition flex items-center justify-center badge"
+          disabled={isChatActive}
+          className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
+            isChatActive
+              ? "opacity-30 cursor-not-allowed"
+              : "hover:bg-accent/20 text-muted hover:text-accent"
+          }`}
           title={t("dock.orbit")}
           aria-label={t("dock.orbit")}
         >
@@ -127,7 +142,12 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
 
         <button
           onClick={api.networkPulse}
-          className="tooltip h-9 w-9 rounded-xl hover:bg-accent/20 text-muted hover:text-accent transition flex items-center justify-center badge"
+          disabled={isChatActive}
+          className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
+            isChatActive
+              ? "opacity-30 cursor-not-allowed"
+              : "hover:bg-accent/20 text-muted hover:text-accent"
+          }`}
           title={t("dock.pulse")}
           aria-label={t("dock.pulse")}
         >

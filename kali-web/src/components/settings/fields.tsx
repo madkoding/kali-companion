@@ -1,14 +1,21 @@
-// Shared form field primitives for settings sections.
-
 import { type ReactNode } from "react";
+
+interface FieldBase {
+  label: string;
+  error?: string;
+  disabled?: boolean;
+  helperText?: string;
+}
 
 export function SelectField({
   label,
   value,
   onChange,
   children,
-}: {
-  label: string;
+  error,
+  disabled,
+  helperText,
+}: FieldBase & {
   value: string;
   onChange: (v: string) => void;
   children: ReactNode;
@@ -17,12 +24,23 @@ export function SelectField({
     <div className="flex flex-col gap-1.5">
       <label className="text-xs text-muted">{label}</label>
       <select
-        className="bg-surface text-foreground border border-border rounded-md px-2.5 py-2 text-sm outline-none focus:border-accent-dim transition-colors"
+        className={`bg-surface text-foreground border rounded-md px-2.5 py-2 text-sm outline-none transition-colors ${
+          error
+            ? "border-err focus:border-err"
+            : "border-border focus:border-accent-dim"
+        } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
       >
         {children}
       </select>
+      {error && (
+        <p className="text-[11px] text-err" role="alert">{error}</p>
+      )}
+      {helperText && !error && (
+        <p className="text-[11px] text-muted/60">{helperText}</p>
+      )}
     </div>
   );
 }
@@ -31,30 +49,37 @@ export function ToggleField({
   label,
   checked,
   onChange,
-}: {
-  label: string;
+  disabled,
+  helperText,
+}: FieldBase & {
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2.5 text-xs text-muted cursor-pointer select-none">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-          checked ? "bg-accent" : "bg-white/10"
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-            checked ? "translate-x-4" : ""
-          }`}
-        />
-      </button>
-      {label}
-    </label>
+    <div className="flex flex-col gap-1">
+      <label className={`flex items-center gap-2.5 text-xs text-muted select-none ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          onClick={() => !disabled && onChange(!checked)}
+          disabled={disabled}
+          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
+            checked ? "bg-accent" : "bg-white/10"
+          } ${disabled ? "cursor-not-allowed" : ""}`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+              checked ? "translate-x-4" : ""
+            }`}
+          />
+        </button>
+        {label}
+      </label>
+      {helperText && (
+        <p className="text-[11px] text-muted/60 ml-[3.25rem]">{helperText}</p>
+      )}
+    </div>
   );
 }
 
@@ -63,22 +88,37 @@ export function TextField({
   value,
   onChange,
   placeholder,
-}: {
-  label: string;
+  error,
+  disabled,
+  helperText,
+  type = "text",
+}: FieldBase & {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  type?: string;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs text-muted">{label}</label>
       <input
-        type="text"
-        className="bg-surface text-foreground border border-border rounded-md px-2.5 py-2 text-sm outline-none focus:border-accent-dim transition-colors"
+        type={type}
+        className={`bg-surface text-foreground border rounded-md px-2.5 py-2 text-sm outline-none transition-colors ${
+          error
+            ? "border-err focus:border-err"
+            : "border-border focus:border-accent-dim"
+        } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        disabled={disabled}
       />
+      {error && (
+        <p className="text-[11px] text-err" role="alert">{error}</p>
+      )}
+      {helperText && !error && (
+        <p className="text-[11px] text-muted/60">{helperText}</p>
+      )}
     </div>
   );
 }
@@ -91,8 +131,9 @@ export function SliderField({
   step,
   onChange,
   displayValue,
-}: {
-  label: string;
+  disabled,
+  helperText,
+}: FieldBase & {
   value: number;
   min: number;
   max: number;
@@ -113,8 +154,12 @@ export function SliderField({
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full accent-accent"
+        className={`w-full accent-accent ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+        disabled={disabled}
       />
+      {helperText && (
+        <p className="text-[11px] text-muted/60">{helperText}</p>
+      )}
     </div>
   );
 }

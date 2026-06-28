@@ -1,16 +1,5 @@
-/**
- * stage/CustomizerDrawer.tsx — Avatar customization drawer.
- *
- * Right-side drawer with 6 sections: Species, Breed/Pattern, Colors,
- * Eyes, Neck accessories, Hats/Glasses. Changes apply live to the avatar
- * via the config prop. Save persists to localStorage.
- *
- * Transcribed from the POC v7/customizer.js to React + TypeScript.
- */
-
 import { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { AnimatePresence, motion } from "framer-motion";
 import {
   type AvatarConfig,
   type AvatarSpecies,
@@ -19,6 +8,7 @@ import {
 } from "../avatar/avatarConfig";
 import { animalDatabase, type Breed, type Variation } from "../avatar/avatarPresets";
 import { ColorSwatchPicker } from "./ColorSwatchPicker";
+import { Overlay } from "../components/ui/Overlay";
 
 interface Props {
   open: boolean;
@@ -43,11 +33,9 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
   const [selectedVariation, setSelectedVariation] = useState<number>(0);
   const [species, setSpecies] = useState<AvatarSpecies>(config.species);
 
-  // Initialize breed from config when opening.
   useEffect(() => {
     if (open) {
       setSpecies(config.species);
-      // Find the breed that matches the current pattern.
       let foundBreed = "custom";
       for (const [bKey, breed] of Object.entries(animalDatabase[config.species].breeds)) {
         if (breed.variations.some((v) => v.id === config.pattern)) {
@@ -145,218 +133,183 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
   const currentVariation: Variation | undefined = currentBreed?.variations[selectedVariation];
 
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            className="fixed inset-0 bg-black/50 z-40"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            aria-hidden="true"
-          />
+    <Overlay
+      open={open}
+      onClose={onClose}
+      variant="sheet-right"
+      title={t("customizer.title")}
+    >
+      <div className="cust-body -mx-5 -mb-5 px-5 pb-5">
+        <div className="badge text-muted mb-0.5">{t("customizer.badge")}</div>
 
-          {/* Drawer */}
-          <motion.aside
-            className="fixed inset-y-0 right-0 w-[360px] max-w-[90vw] bg-elevated border-l border-border z-50 flex flex-col"
-            initial={{ x: 360 }}
-            animate={{ x: 0 }}
-            exit={{ x: 360 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("customizer.aria_label")}
-          >
-            {/* Header */}
-            <div className="cust-header">
-              <div>
-                <div className="badge text-muted mb-0.5">{t("customizer.badge")}</div>
-                <div className="text-sm font-semibold text-fg">{t("customizer.title")}</div>
-              </div>
+        {/* 1. Species */}
+        <div className="customizer-section">
+          <h3>{t("customizer.section.species")}</h3>
+          <div className="cust-btn-grid cols-3">
+            {(Object.keys(animalDatabase) as AvatarSpecies[]).map((sp) => (
               <button
-                onClick={onClose}
-                className="w-8 h-8 rounded-lg hover:bg-white/8 text-muted hover:text-fg transition flex items-center justify-center"
-                aria-label={t("customizer.close")}
+                key={sp}
+                className={`cust-btn ${species === sp ? "active" : ""}`}
+                onClick={() => selectSpecies(sp)}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                <span className="emoji">{sp === "gato" ? "\u{1F431}" : sp === "perro" ? "\u{1F436}" : "\u{1F994}"}</span>
+                {sp === "gato" ? t("customizer.species.cat") : sp === "perro" ? t("customizer.species.dog") : t("customizer.species.hedgehog")}
               </button>
-            </div>
+            ))}
+          </div>
+        </div>
 
-            {/* Body */}
-            <div className="cust-body">
-              {/* 1. Species */}
-              <div className="customizer-section">
-                <h3>{t("customizer.section.species")}</h3>
-                <div className="cust-btn-grid cols-3">
-                  {(Object.keys(animalDatabase) as AvatarSpecies[]).map((sp) => (
-                    <button
-                      key={sp}
-                      className={`cust-btn ${species === sp ? "active" : ""}`}
-                      onClick={() => selectSpecies(sp)}
-                    >
-                      <span className="emoji">{sp === "gato" ? "\u{1F431}" : sp === "perro" ? "\u{1F436}" : "\u{1F994}"}</span>
-                      {sp === "gato" ? t("customizer.species.cat") : sp === "perro" ? t("customizer.species.dog") : t("customizer.species.hedgehog")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 2. Breed + Variation */}
-              <div className="customizer-section">
-                <h3>{t("customizer.section.breed")}</h3>
-                <div className="cust-btn-grid cols-3">
-                  {Object.entries(animalDatabase[species].breeds).map(([bKey, breed]) => (
-                    <button
-                      key={bKey}
-                      className={`cust-btn ${selectedBreed === bKey ? "active" : ""}`}
-                      onClick={() => selectBreed(bKey)}
-                    >
-                      {breed.name}
-                    </button>
-                  ))}
-                </div>
-                {currentBreed && !currentBreed.isCustom && (
-                  <>
-                    <hr className="cust-section-divider" />
-                    <div className="badge text-muted" style={{ marginBottom: 6 }}>{t("customizer.variants")}</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {currentBreed.variations.map((vari, idx) => (
-                        <button
-                          key={idx}
-                          className={`cust-btn ${selectedVariation === idx ? "active" : ""}`}
-                          onClick={() => applyVariation(currentBreed, idx)}
-                        >
-                          {vari.name}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* 3. Colors */}
-              <div className="customizer-section">
-                <h3>{t("customizer.section.painter")} <span style={{ fontSize: "calc(7px * var(--mul-text))", color: "var(--muted)", marginLeft: 3 }}>{t("customizer.auto")}</span></h3>
-                <div className="cust-color-pickers">
-                  {currentVariation?.activePickers.includes("base") && (
-                    <ColorSwatchPicker label={currentVariation.labels.base || t("customizer.color.base")} value={config.colors.base} onChange={(v) => handleColorChange("base", v)} />
-                  )}
-                  {currentVariation?.activePickers.includes("spot1") && (
-                    <ColorSwatchPicker label={currentVariation.labels.spot1 || t("customizer.color.spot1")} value={config.colors.spot1} onChange={(v) => handleColorChange("spot1", v)} />
-                  )}
-                  {currentVariation?.activePickers.includes("spot2") && (
-                    <ColorSwatchPicker label={currentVariation.labels.spot2 || t("customizer.color.spot2")} value={config.colors.spot2} onChange={(v) => handleColorChange("spot2", v)} />
-                  )}
-                  {currentVariation?.activePickers.includes("ears") && (
-                    <ColorSwatchPicker label={currentVariation.labels.ears || t("customizer.color.ears")} value={config.colors.ears} onChange={(v) => handleColorChange("ears", v)} />
-                  )}
-                </div>
-              </div>
-
-              {/* 4. Eyes */}
-              <div className="customizer-section">
-                <h3>{t("customizer.section.eyes")}</h3>
-                <div className="cust-eye-presets">
-                  {EYE_PRESETS.map((preset, i) => (
-                    <button
-                      key={i}
-                      className="cust-preset-color"
-                      style={{ background: `radial-gradient(circle, ${preset.light}, ${preset.main})` }}
-                      onClick={() => setEyeColor(preset.light, preset.main, preset.dark, preset.pupil)}
-                      aria-label={t("customizer.eye_preset", { n: i + 1 })}
-                    />
-                  ))}
-                </div>
-                <div className="cust-eye-custom">
-                  <ColorSwatchPicker label={t("customizer.eye.iris")} value={config.eyes.main} onChange={(v) => setEyeColor(config.eyes.light, v, config.eyes.dark, config.eyes.pupil)} />
-                  <ColorSwatchPicker label={t("customizer.eye.border")} value={config.eyes.dark} onChange={(v) => setEyeColor(config.eyes.light, config.eyes.main, v, config.eyes.pupil)} />
-                  <ColorSwatchPicker label={t("customizer.eye.pupil")} value={config.eyes.pupil} onChange={(v) => setEyeColor(config.eyes.light, config.eyes.main, config.eyes.dark, v)} />
-                </div>
-              </div>
-
-              {/* 5. Neck */}
-              <div className="customizer-section">
-                <h3>{t("customizer.section.neck")}</h3>
-                <div className="cust-row">
-                  <span className="cust-row-label">{t("customizer.neck.accessory")}</span>
-                  <select
-                    value={config.accessory}
-                    onChange={(e) => setAccessory(e.target.value as AvatarConfig["accessory"])}
-                    className="cust-select"
+        {/* 2. Breed + Variation */}
+        <div className="customizer-section">
+          <h3>{t("customizer.section.breed")}</h3>
+          <div className="cust-btn-grid cols-3">
+            {Object.entries(animalDatabase[species].breeds).map(([bKey, breed]) => (
+              <button
+                key={bKey}
+                className={`cust-btn ${selectedBreed === bKey ? "active" : ""}`}
+                onClick={() => selectBreed(bKey)}
+              >
+                {breed.name}
+              </button>
+            ))}
+          </div>
+          {currentBreed && !currentBreed.isCustom && (
+            <>
+              <hr className="cust-section-divider" />
+              <div className="badge text-muted" style={{ marginBottom: 6 }}>{t("customizer.variants")}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {currentBreed.variations.map((vari, idx) => (
+                  <button
+                    key={idx}
+                    className={`cust-btn ${selectedVariation === idx ? "active" : ""}`}
+                    onClick={() => applyVariation(currentBreed, idx)}
                   >
-                    <option value="cascabel">{t("customizer.neck.bell")}</option>
-                    <option value="placa">{t("customizer.neck.plate")}</option>
-                    <option value="corazon">{t("customizer.neck.heart")}</option>
-                    <option value="corbatin">{t("customizer.neck.tie")}</option>
-                    <option value="flor">{t("customizer.neck.flower")}</option>
-                    <option value="estrella">{t("customizer.neck.star")}</option>
-                    <option value="bufanda">{t("customizer.neck.scarf")}</option>
-                    <option value="ninguno">{t("customizer.neck.none")}</option>
-                  </select>
-                </div>
-                <div className="cust-row">
-                  <span className="cust-row-label">{t("customizer.neck.color")}</span>
-                  <div className="cust-row-controls">
-                    {COLLAR_PRESETS.map((c) => (
-                      <button key={c} className="cust-preset-color" style={{ background: c }} onClick={() => setCollarColor(c)} aria-label={t("customizer.color_preset", { color: c })} />
-                    ))}
-                    <ColorSwatchPicker label={t("customizer.custom_color")} value={config.collar} onChange={setCollarColor} />
-                  </div>
-                </div>
+                    {vari.name}
+                  </button>
+                ))}
               </div>
+            </>
+          )}
+        </div>
 
-              {/* 6. Hats + Glasses */}
-              <div className="customizer-section">
-                <h3>{t("customizer.section.hats")}</h3>
-                <div className="cust-row">
-                  <span className="cust-row-label">{t("customizer.hats.glasses")}</span>
-                  <div className="cust-row-controls">
-                    <select
-                      value={config.glasses}
-                      onChange={(e) => setGlasses(e.target.value as AvatarConfig["glasses"])}
-                      className="cust-select"
-                    >
-                      <option value="none">{t("customizer.hats.no_glasses")}</option>
-                      <option value="round">{t("customizer.hats.round")}</option>
-                      <option value="square">{t("customizer.hats.square")}</option>
-                    </select>
-                    <ColorSwatchPicker label={t("customizer.glasses_color")} value={config.glassesColor} onChange={(v) => onChange({ ...config, glassesColor: v })} />
-                  </div>
-                </div>
-                <hr className="cust-section-divider" />
-                <div className="cust-row">
-                  <span className="cust-row-label">{t("customizer.hats.hat")}</span>
-                  <div className="cust-row-controls">
-                    <select
-                      value={config.hat}
-                      onChange={(e) => setHat(e.target.value as AvatarConfig["hat"])}
-                      className="cust-select"
-                    >
-                      <option value="none">{t("customizer.hats.no_hat")}</option>
-                      <option value="gorro">{t("customizer.hats.beanie")}</option>
-                      <option value="copa">{t("customizer.hats.top_hat")}</option>
-                      <option value="fiesta">{t("customizer.hats.party")}</option>
-                    </select>
-                    <ColorSwatchPicker label={t("customizer.hat_color")} value={config.hatColor} onChange={(v) => onChange({ ...config, hatColor: v })} />
-                  </div>
-                </div>
-              </div>
+        {/* 3. Colors */}
+        <div className="customizer-section">
+          <h3>{t("customizer.section.painter")} <span style={{ fontSize: "calc(7px * var(--mul-text))", color: "var(--muted)", marginLeft: 3 }}>{t("customizer.auto")}</span></h3>
+          <div className="cust-color-pickers">
+            {currentVariation?.activePickers.includes("base") && (
+              <ColorSwatchPicker label={currentVariation.labels.base || t("customizer.color.base")} value={config.colors.base} onChange={(v) => handleColorChange("base", v)} />
+            )}
+            {currentVariation?.activePickers.includes("spot1") && (
+              <ColorSwatchPicker label={currentVariation.labels.spot1 || t("customizer.color.spot1")} value={config.colors.spot1} onChange={(v) => handleColorChange("spot1", v)} />
+            )}
+            {currentVariation?.activePickers.includes("spot2") && (
+              <ColorSwatchPicker label={currentVariation.labels.spot2 || t("customizer.color.spot2")} value={config.colors.spot2} onChange={(v) => handleColorChange("spot2", v)} />
+            )}
+            {currentVariation?.activePickers.includes("ears") && (
+              <ColorSwatchPicker label={currentVariation.labels.ears || t("customizer.color.ears")} value={config.colors.ears} onChange={(v) => handleColorChange("ears", v)} />
+            )}
+          </div>
+        </div>
 
-              {/* Save / Reset */}
-              <div className="flex gap-2" style={{ marginTop: "calc(18px * var(--mul-density))", marginBottom: "calc(4px * var(--mul-density))" }}>
-                <button onClick={handleSave} className="flex-1 py-2 rounded-xl bg-accent text-white text-xs font-bold hover:brightness-110 transition btn-glow">
-                  {t("customizer.save")}
-                </button>
-                <button onClick={handleReset} className="flex-1 py-2 rounded-xl bg-white/5 text-fg text-xs font-bold hover:bg-white/10 transition border border-white/10">
-                  {t("customizer.reset")}
-                </button>
-              </div>
+        {/* 4. Eyes */}
+        <div className="customizer-section">
+          <h3>{t("customizer.section.eyes")}</h3>
+          <div className="cust-eye-presets">
+            {EYE_PRESETS.map((preset, i) => (
+              <button
+                key={i}
+                className="cust-preset-color"
+                style={{ background: `radial-gradient(circle, ${preset.light}, ${preset.main})` }}
+                onClick={() => setEyeColor(preset.light, preset.main, preset.dark, preset.pupil)}
+                aria-label={t("customizer.eye_preset", { n: i + 1 })}
+              />
+            ))}
+          </div>
+          <div className="cust-eye-custom">
+            <ColorSwatchPicker label={t("customizer.eye.iris")} value={config.eyes.main} onChange={(v) => setEyeColor(config.eyes.light, v, config.eyes.dark, config.eyes.pupil)} />
+            <ColorSwatchPicker label={t("customizer.eye.border")} value={config.eyes.dark} onChange={(v) => setEyeColor(config.eyes.light, config.eyes.main, v, config.eyes.pupil)} />
+            <ColorSwatchPicker label={t("customizer.eye.pupil")} value={config.eyes.pupil} onChange={(v) => setEyeColor(config.eyes.light, config.eyes.main, config.eyes.dark, v)} />
+          </div>
+        </div>
+
+        {/* 5. Neck */}
+        <div className="customizer-section">
+          <h3>{t("customizer.section.neck")}</h3>
+          <div className="cust-row">
+            <span className="cust-row-label">{t("customizer.neck.accessory")}</span>
+            <select
+              value={config.accessory}
+              onChange={(e) => setAccessory(e.target.value as AvatarConfig["accessory"])}
+              className="cust-select"
+            >
+              <option value="cascabel">{t("customizer.neck.bell")}</option>
+              <option value="placa">{t("customizer.neck.plate")}</option>
+              <option value="corazon">{t("customizer.neck.heart")}</option>
+              <option value="corbatin">{t("customizer.neck.tie")}</option>
+              <option value="flor">{t("customizer.neck.flower")}</option>
+              <option value="estrella">{t("customizer.neck.star")}</option>
+              <option value="bufanda">{t("customizer.neck.scarf")}</option>
+              <option value="ninguno">{t("customizer.neck.none")}</option>
+            </select>
+          </div>
+          <div className="cust-row">
+            <span className="cust-row-label">{t("customizer.neck.color")}</span>
+            <div className="cust-row-controls">
+              {COLLAR_PRESETS.map((c) => (
+                <button key={c} className="cust-preset-color" style={{ background: c }} onClick={() => setCollarColor(c)} aria-label={t("customizer.color_preset", { color: c })} />
+              ))}
+              <ColorSwatchPicker label={t("customizer.custom_color")} value={config.collar} onChange={setCollarColor} />
             </div>
-          </motion.aside>
-        </>
-      )}
-    </AnimatePresence>
+          </div>
+        </div>
+
+        {/* 6. Hats + Glasses */}
+        <div className="customizer-section">
+          <h3>{t("customizer.section.hats")}</h3>
+          <div className="cust-row">
+            <span className="cust-row-label">{t("customizer.hats.glasses")}</span>
+            <div className="cust-row-controls">
+              <select
+                value={config.glasses}
+                onChange={(e) => setGlasses(e.target.value as AvatarConfig["glasses"])}
+                className="cust-select"
+              >
+                <option value="none">{t("customizer.hats.no_glasses")}</option>
+                <option value="round">{t("customizer.hats.round")}</option>
+                <option value="square">{t("customizer.hats.square")}</option>
+              </select>
+              <ColorSwatchPicker label={t("customizer.glasses_color")} value={config.glassesColor} onChange={(v) => onChange({ ...config, glassesColor: v })} />
+            </div>
+          </div>
+          <hr className="cust-section-divider" />
+          <div className="cust-row">
+            <span className="cust-row-label">{t("customizer.hats.hat")}</span>
+            <div className="cust-row-controls">
+              <select
+                value={config.hat}
+                onChange={(e) => setHat(e.target.value as AvatarConfig["hat"])}
+                className="cust-select"
+              >
+                <option value="none">{t("customizer.hats.no_hat")}</option>
+                <option value="gorro">{t("customizer.hats.beanie")}</option>
+                <option value="copa">{t("customizer.hats.top_hat")}</option>
+                <option value="fiesta">{t("customizer.hats.party")}</option>
+              </select>
+              <ColorSwatchPicker label={t("customizer.hat_color")} value={config.hatColor} onChange={(v) => onChange({ ...config, hatColor: v })} />
+            </div>
+          </div>
+        </div>
+
+        {/* Save / Reset */}
+        <div className="flex gap-2" style={{ marginTop: "calc(18px * var(--mul-density))", marginBottom: "calc(4px * var(--mul-density))" }}>
+          <button onClick={handleSave} className="flex-1 py-2 rounded-xl bg-accent text-white text-xs font-bold hover:brightness-110 transition btn-glow">
+            {t("customizer.save")}
+          </button>
+          <button onClick={handleReset} className="flex-1 py-2 rounded-xl bg-white/5 text-fg text-xs font-bold hover:bg-white/10 transition border border-white/10">
+            {t("customizer.reset")}
+          </button>
+        </div>
+      </div>
+    </Overlay>
   );
 }
