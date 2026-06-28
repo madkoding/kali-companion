@@ -49,9 +49,9 @@ siempre presente mientras programas, juegas o trabajas.
 
 | Capa | Directorio | Lenguaje | Responsabilidad |
 |---|---|---|---|
-| Shell | `kali-home/` | Rust (Tauri 2) | Ventana nativa, captura de pantalla, lanzar apps, supervisar sidecar |
-| Frontend | `kali-web/` | TypeScript (React + Vite) | UI: chat, canvas, consent, settings, voice input |
-| Core | `kali-core/` | Python 3.12 (asyncio) | Agent runtime, tools, TTS, STT, permisos, sesiones |
+| Shell | `kali-shell/` | TypeScript (Electron) | Ventana nativa, bandeja del sistema, cargar frontend, supervisar sidecar |
+| Frontend | `kali-web/` | TypeScript (React + Vite) | UI: stage, workspace, widgets, consent, settings, voice input |
+| Core | `kali-core/` | Python 3.12 (asyncio) | Agent runtime, tools, TTS (Piper/Qwen/HTTP), STT, permisos, sesiones |
 
 ### Flujo de datos
 
@@ -80,14 +80,14 @@ kali-web ── WS event "input" ──► kali-core
 
 | Capa | Tech | Razón |
 |---|---|---|
-| Shell | Tauri 2 + Rust | Ligero, modular, multiplataforma |
-| Frontend | React + Vite + TypeScript | Ecosistema canvas, i18n |
+| Shell | Electron + TypeScript | Multiplataforma, maduro, tray nativo |
+| Frontend | React + Vite + TypeScript + Tailwind | Ecosistema canvas, i18n |
 | Core | Python 3.12 + asyncio | Legible para aprender AI |
 | Protocolo | WebSocket local (JSON) | Mismo patrón que el prototipo legacy |
 | STT | Vosk (offline) | Ya funcionaba en el prototipo |
-| TTS | Piper in-process + numpy effects | Local, sin ffmpeg |
+| TTS | Piper in-process + Qwen3-TTS + HTTP | Local, Qwen C++ server opcional |
 | LLM | OpenAI-compatible + nanobot | Flexible |
-| Captura | xdg-desktop-portal (Wayland) | Estándar, sin root |
+| Captura | mss (Python) | Multiplataforma automático (Wayland/X11/Windows) |
 | Permisos | JSON profiles + consent | Declarativo |
 | i18n | react-i18next | Estándar, browser-friendly |
 
@@ -112,19 +112,19 @@ kali-web ── WS event "input" ──► kali-core
 
 | Feature | Estado | Archivo(s) |
 |---|---|---|
-| Tauri 2 shell con webview | ✅ | `kali-home/src/main.rs` |
-| Sidecar supervisor (spawn + restart) | ✅ | `kali-home/src/sidecar.rs` |
-| Tauri commands (port, capture, launch) | ✅ | `kali-home/src/commands.rs` |
+| Electron shell con webview | ✅ | `kali-shell/src/main.ts` |
+| Sidecar supervisor (spawn + restart) | ✅ | `kali-shell/src/sidecar.ts` |
+| Electron preload IPC | ✅ | `kali-shell/src/preload.ts` |
 | WebSocket server (FastAPI + uvicorn) | ✅ | `kali-core/kali_core/server.py` |
 | Config typed (`config.toml` + env vars) | ✅ | `kali-core/kali_core/config.py` |
 | DirectLLMProvider (OpenAI-compatible) | ✅ | `kali-core/kali_core/mind/llm/direct.py` |
-| TTS Piper in-process + numpy effects | ✅ | `kali-core/kali_core/voice/` |
-| STT Vosk offline | ✅ | `kali-core/kali_core/ear/` |
-| Frontend React + Vite + TS | ✅ | `kali-web/src/` |
+| TTS Piper in-process + Qwen + HTTP | ✅ | `kali-core/kali_core/voice/` |
+| STT Vosk offline + lang normalization | ✅ | `kali-core/kali_core/ear/`, `lang_map.py` |
+| Frontend React + Vite + TS + Tailwind | ✅ | `kali-web/src/` |
 | i18n (en/es) con react-i18next | ✅ | `kali-web/src/locale/`, `kali-web/src/lib/i18n.ts` |
 | WS client tipado con reconnect | ✅ | `kali-web/src/lib/wsClient.ts` |
 | Protocolo WS documentado | ✅ | `docs/PROTOCOL.md`, `kali_core/yarn/protocol.py` |
-| Themes (synthwave/midnight/sunset/forest) | ✅ | `kali-web/src/styles.css` |
+| Themes (synthwave/midnight/sunset/forest/aether) | ✅ | `kali-web/src/styles.css` |
 
 ### Fase 1 — Agente + tools básicas ✅ Completo
 
@@ -189,28 +189,34 @@ kali-web ── WS event "input" ──► kali-core
 
 | Feature | Estado | Archivo(s) |
 |---|---|---|
-| Wayland ScreenCapture (xdg-desktop-portal) | ✅ | `kali-home/src/capture/wayland.rs` |
-| ScreenCapture trait (Rust) | ✅ | `kali-home/src/capture/mod.rs` |
-| `capture_full` Tauri command | ✅ | `kali-home/src/commands.rs` |
-| `ipc.rs` WS bridge (Python ↔ Rust) | ✅ | `kali-home/src/ipc.rs` |
-| GazeClient (Python WS client) | ✅ | `kali-core/kali_core/gaze/__init__.py` |
+| Screen capture (mss Python) | ✅ | `kali-core/kali_core/gaze/local.py` |
+| GazeClient (Python) | ✅ | `kali-core/kali_core/gaze/__init__.py` |
 | `screenshot` tool | ✅ | `kali-core/kali_core/claws/screenshot.py` |
 | `organize_folder` tool | ✅ | `kali-core/kali_core/claws/organize.py` |
-| Vision processor (OCR + LLM multimodal) | ✅ | `kali-core/kali_core/mind/vision.py` |
-| Canvas HTML/Markdown/Diff/Widget UI | ✅ | `kali-web/src/components/artifacts/` |
-| Mermaid diagram rendering | ✅ | `kali-web/src/components/artifacts/MarkdownArtifact.tsx` |
+| `create_artifact` tool | ✅ | `kali-core/kali_core/claws/create_artifact.py` |
+| `manage_artifacts` tool | ✅ | `kali-core/kali_core/claws/manage_artifacts.py` |
+| `get_artifact_console` tool | ✅ | `kali-core/kali_core/claws/manage_artifacts.py` |
+| Artifact streaming live | ✅ | `kali-core/kali_core/mind/artifact_stream.py` |
+| Console retrieval (console_request/response) | ✅ | `kali-core/kali_core/mind/console_requester.py` |
+| Vision processor (LLM multimodal) | ✅ | `kali-core/kali_core/mind/vision.py` |
+| Canvas HTML/Markdown/Diff/Widget UI | ✅ | `kali-web/src/components/artifacts/`, `kali-web/src/stage/NeuralCanvas.tsx` |
+| Mermaid diagram rendering | ✅ | `kali-web/src/components/widgets/MermaidWidget.tsx` |
 | WidgetGrid activity cards | ✅ | `kali-web/src/components/artifacts/WidgetGrid.tsx` |
+| Language normalization (lang_map.py) | ✅ | `kali-core/kali_core/lang_map.py` |
 
-### Fase 4 — Gaming ⬜ En progreso
+### Fase 4 — Gaming ✅ Completado
 
 | Feature | Estado | Archivo(s) |
 |---|---|---|
 | `DotaBuildsTool` (OpenDota + scraping fallback) | ✅ | `kali-core/kali_core/claws/game/dota.py` |
+| `DotaLiveTool` (live match data) | ✅ | `kali-core/kali_core/claws/game/dota_live.py` |
 | `GameInfoTool` (anti-spoiler) | ✅ | `kali-core/kali_core/claws/game/generic.py` + `spoiler_filter.py` |
+| Image caching for game resources | ✅ | `kali-core/kali_core/claws/game/image_cache.py` |
+| Generic game data adapter | ✅ | `kali-core/kali_core/claws/game/adapter.py` |
 | Visión LLM multimodal | ✅ | `kali-core/kali_core/mind/vision.py` (`_via_llm`) |
 | Registro de game tools en server.py | ✅ | `kali-core/kali_core/server.py` |
 | Gaming profile refinado (con screenshot) | ✅ | `kali-core/kali_core/collar/profiles/gaming.json` |
-| DotaHeroCard widget | ✅ | `kali-web/src/components/artifacts/DotaHeroCard.tsx` |
+| Game widgets (HeroCard, ResourceCard, Image) | ✅ | `kali-web/src/components/artifacts/Game*.tsx` |
 | i18n keys para game tools | ✅ | `kali-web/src/locale/*/common.json` |
 
 ### Fase 5 — Voz avanzada + portabilidad ⬜ Pendiente
@@ -246,13 +252,20 @@ kali-web ── WS event "input" ──► kali-core
 | `web_fetch` | safe | 2 | ✅ | `claws/web.py` | ⚠️ registro only |
 | `screenshot` | sensitive | 3 | ✅ | `claws/screenshot.py` | ✅ |
 | `organize_folder` | sensitive | 3 | ✅ | `claws/organize.py` | ✅ |
+| `create_artifact` | safe | 3 | ✅ | `claws/create_artifact.py` | ✅ |
+| `manage_artifacts` | safe | 3 | ✅ | `claws/manage_artifacts.py` | ✅ |
+| `get_artifact_console` | safe | 3 | ✅ | `claws/manage_artifacts.py` | ✅ |
+| `list_monitors` | safe | 5 | ✅ | `claws/list_monitors.py` | — |
+| `stt_corrector` | safe | 1 | ✅ | `claws/stt_corrector.py` | — |
 | `game_info` | safe | 4 | ✅ | `claws/game/generic.py` | ✅ |
 | `game_dota_builds` | safe | 4 | ✅ | `claws/game/dota.py` | ✅ |
+| `game_dota_live` | safe | 4 | ✅ | `claws/game/dota_live.py` | ✅ |
 
-**Tools registrados en `server.py._register_tools()`:** 13 de 14
-(`fs_read`, `fs_list`, `run_command`, `web_search`, `web_fetch`, `run_tests`,
-`git_worktree`, `git_diff`, `launch_app`, `screenshot`, `organize_folder`,
-`game_info`, `game_dota_builds`)
+**Tools registrados en `server.py._register_tools()`:** 18+
+(`fs_read`, `fs_list`, `fs_write`, `run_command`, `web_search`, `web_fetch`,
+`run_tests`, `git_worktree`, `git_diff`, `launch_app`, `screenshot`,
+`organize_folder`, `create_artifact`, `manage_artifacts`, `get_artifact_console`,
+`game_info`, `game_dota_builds`, `game_dota_live`, `list_monitors`)
 
 ### 5.2 LLM Providers (kali-mind)
 
@@ -280,10 +293,14 @@ kali-web ── WS event "input" ──► kali-core
 | `VoiceConfigManager` | ✅ | `voice/voice_config.py` | Carga/valida configs JSON por voz. |
 | Audio effects (numpy) | ✅ | `voice/effects/__init__.py` | normal, whisper, robotic, radio, deep, processed. |
 | `InProcTTSProvider` | ✅ | `voice/providers/inproc.py` | Piper + numpy effects. |
+| `QwenTTSProvider` | ✅ | `voice/providers/qwen.py` | Qwen3-TTS C++ server. |
 | `HTTPTTSProvider` | ✅ | `voice/providers/http.py` | Forward a TTS HTTP externo. |
+| Qwen3-TTS C++ server | ✅ | `voice/qwen_cpp/` | Servidor C++ para TTS neuronal. |
 | `StreamingSTT` | ✅ | `ear/vosk_engine.py` | Vosk streaming recognizer. |
 | `STTManager` | ✅ | `ear/manager.py` | Session lifecycle + language hot-swap. |
 | `WakeWordDetector` | ✅ | `ear/manager.py` | Keyword spotting con Vosk full-vocab. |
+| `lang_map.py` | ✅ | `ear/lang_map.py` | Normalización de códigos de idioma. |
+| `stt_corrector` | ✅ | `claws/stt_corrector.py` | Correcciones post-STT. |
 
 ### 5.5 Permisos (kali-collar)
 
@@ -336,19 +353,15 @@ kali-web ── WS event "input" ──► kali-core
 | `WidgetGrid.tsx` | ✅ | `src/components/artifacts/WidgetGrid.tsx` | Activity cards con soporte widgetType. |
 | `DotaHeroCard.tsx` | ✅ | `src/components/artifacts/DotaHeroCard.tsx` | Tarjeta de hero de Dota 2. |
 
-### 5.8 Shell (kali-home)
+### 5.8 Shell (kali-shell)
 
 | Componente | Estado | Archivo | Descripción |
 |---|---|---|---|
-| `main.rs` | ✅ | `kali-home/src/main.rs` | Tauri app entrypoint, plugins, commands. |
-| `sidecar.rs` | ✅ | `kali-home/src/sidecar.rs` | Spawn + supervise python -m kali_core. |
-| `commands.rs` | ✅ | `kali-home/src/commands.rs` | get_sidecar_port, capture_backend, capture_full, launch_app. |
-| `build.rs` | ✅ | `kali-home/build.rs` | Tauri build script. |
-| `tauri.conf.json` | ✅ | `kali-home/tauri.conf.json` | Window config, CSP, sidecar scope. |
-| `ipc.rs` | ✅ | `kali-home/src/ipc.rs` | WS bridge Python ↔ Rust para captura de pantalla. |
-| `capture/mod.rs` | ✅ | `kali-home/src/capture/mod.rs` | ScreenCapture trait + select_backend. |
-| `capture/wayland.rs` | ✅ | `kali-home/src/capture/wayland.rs` | Wayland backend via xdg-desktop-portal. |
-| `capture/x11.rs` | ⬜ | — | X11 backend (no existe, Fase 5). |
+| `main.ts` | ✅ | `kali-shell/src/main.ts` | Electron app entrypoint, crea ventana, IPC. |
+| `sidecar.ts` | ✅ | `kali-shell/src/sidecar.ts` | Spawn + supervise python -m kali_core. |
+| `preload.ts` | ✅ | `kali-shell/src/preload.ts` | IPC bridge seguro para renderer. |
+| `package.json` | ✅ | `kali-shell/package.json` | Electron 33.x + TypeScript. |
+| `electron-builder.yml` | ✅ | `kali-shell/electron-builder.yml` | Config para AppImage/.deb. |
 
 ---
 
@@ -367,19 +380,16 @@ ai-voice-companion/
 │   ├── COMPONENTS.md                ← Spec de cada módulo
 │   ├── GLOSSARY.md                  ← Nombres cat-themed
 │   ├── PROTOCOL.md                  ← Catálogo de eventos WS
-│   └── I18N.md                      ← Estrategia i18n
-├── kali-home/                       ← Shell (Rust/Tauri)
-│   ├── Cargo.toml
-│   ├── Cargo.lock
-│   ├── tauri.conf.json
-│   ├── build.rs
-│   ├── icons/
-│   ├── gen/schemas/
+│   ├── I18N.md                      ← Estrategia i18n
+│   └── ARTIFACT_GENERATION.md       ← Artifact streaming docs
+├── kali-shell/                      ← Shell (Electron/TypeScript)
+│   ├── package.json
+│   ├── electron-builder.yml
+│   ├── tsconfig.json
 │   └── src/
-│       ├── main.rs                  ← Entrypoint Tauri
-│       ├── sidecar.rs                ← Supervisor del sidecar Python
-│       ├── commands.rs               ← Tauri commands (port, capture, launch)
-│       └── build.rs                  ← Build script
+│       ├── main.ts                  ← Electron entrypoint
+│       ├── sidecar.ts               ← Supervisor del sidecar Python
+│       └── preload.ts               ← IPC bridge seguro
 ├── kali-web/                        ← Frontend (React/Vite/TS)
 │   ├── package.json
 │   ├── package-lock.json
@@ -392,46 +402,80 @@ ai-voice-companion/
 │       ├── main.tsx
 │       ├── App.tsx
 │       ├── styles.css
-│       ├── components/              ← 14 componentes .tsx
-│       │   ├── Header.tsx
-│       │   ├── Sidebar.tsx
-│       │   ├── ChatPanel.tsx
-│       │   ├── Message.tsx
-│       │   ├── InputBar.tsx
-│       │   ├── PTTButton.tsx
-│       │   ├── AudioVisualizer.tsx
-│       │   ├── Canvas.tsx
+│       ├── stage/                   ← 18 componentes de stage
+│       │   ├── StageProvider.tsx
+│       │   ├── NeuralCanvas.tsx
+│       │   ├── NeuralDock.tsx
+│       │   ├── MinimizeDock.tsx
+│       │   ├── SpotlightInput.tsx
+│       │   ├── VoiceBar.tsx
+│       │   ├── HUD.tsx
+│       │   ├── PresenceLayer.tsx
+│       │   ├── SessionDrawer.tsx
+│       │   └── ...
+│       ├── workspace/               ← Window management
+│       │   ├── useWorkspace.ts
+│       │   ├── useDragResize.ts
+│       │   ├── windowManager.ts
+│       │   └── ...
+│       ├── components/              ← UI components
+│       │   ├── settings/            ← 8 secciones de settings
+│       │   │   ├── ProviderSection.tsx
+│       │   │   ├── AppearanceSection.tsx
+│       │   │   ├── BehaviorSection.tsx
+│       │   │   ├── VoiceSection.tsx
+│       │   │   ├── GenerationSection.tsx
+│       │   │   ├── VoiceDesignControls.tsx
+│       │   │   └── VoicePreviewButton.tsx
+│       │   ├── ui/                  ← 7 primitivas UI
+│       │   │   ├── Button.tsx
+│       │   │   ├── IconButton.tsx
+│       │   │   ├── Overlay.tsx
+│       │   │   ├── Modal.tsx
+│       │   │   ├── Sheet.tsx
+│       │   │   ├── Spinner.tsx
+│       │   │   └── Tooltip.tsx
+│       │   ├── artifacts/
+│       │   │   ├── HtmlArtifact.tsx
+│       │   │   ├── MarkdownArtifact.tsx
+│       │   │   ├── DiffArtifact.tsx
+│       │   │   ├── GameImage.tsx
+│       │   │   ├── GameResourceCard.tsx
+│       │   │   └── WidgetGrid.tsx
 │       │   ├── ConsentModal.tsx
 │       │   ├── SettingsModal.tsx
-│       │   ├── ui/
-│       │   │   ├── Modal.tsx
-│       │   │   └── Sheet.tsx
-│       │   └── artifacts/
-│       │       ├── HtmlArtifact.tsx
-│       │       ├── MarkdownArtifact.tsx
-│       │       └── DiffArtifact.tsx
-│       ├── hooks/                   ← 7 hooks
+│       │   └── ...
+│       ├── components/widgets/      ← 25+ widgets
+│       │   ├── HtmlWidget.tsx
+│       │   ├── CodeWidget.tsx
+│       │   ├── DiffWidget.tsx
+│       │   ├── TableWidget.tsx
+│       │   ├── ChartWidget.tsx
+│       │   ├── MermaidWidget.tsx
+│       │   └── ...
+│       ├── hooks/                   ← 9 hooks
 │       │   ├── useChat.ts
 │       │   ├── useTTS.ts
 │       │   ├── usePTT.ts
-│       │   ├── useBreakpoint.ts
-│       │   ├── useMediaQuery.ts
-│       │   ├── useBodyScrollLock.ts
-│       │   └── useFocusTrap.ts
+│       │   ├── useUIScale.ts
+│       │   ├── useDebug.ts
+│       │   └── ...
 │       ├── lib/
 │       │   ├── wsClient.ts
 │       │   ├── protocol.ts
-│       │   └── i18n.ts
+│       │   ├── i18n.ts
+│       │   └── artifacts.ts
 │       └── locale/
-│           ├── en/common.json       ← 70 keys
-│           └── es/common.json       ← 70 keys
+│           ├── en/common.json       ← 100+ keys
+│           └── es/common.json       ← 100+ keys
 ├── kali-core/                       ← Sidecar (Python 3.12)
 │   ├── pyproject.toml
 │   └── kali_core/
 │       ├── __init__.py
 │       ├── __main__.py              ← CLI entrypoint
-│       ├── server.py                ← FastAPI WS server (484 líneas)
+│       ├── server.py                ← FastAPI WS server
 │       ├── config.py                ← Settings typed
+│       ├── lang_map.py              ← Language code normalization
 │       ├── voice/                   ← kali-voice (TTS)
 │       │   ├── __init__.py
 │       │   ├── engine.py            ← PiperEngine
@@ -439,13 +483,13 @@ ai-voice-companion/
 │       │   ├── filter.py            ← filter_for_tts + segment_for_tts
 │       │   ├── audio_utils.py       ← WAV↔numpy
 │       │   ├── voice_config.py      ← VoiceConfigManager
-│       │   ├── effects/
-│       │   │   └── __init__.py       ← 6 efectos numpy
+│       │   ├── qwen_cpp/            ← Qwen3-TTS C++ server
+│       │   ├── effects/             ← 6 efectos numpy
 │       │   ├── providers/
-│       │   │   ├── __init__.py
 │       │   │   ├── base.py          ← TTSProvider Protocol
-│       │   │   ├── inproc.py         ← InProcTTSProvider
-│       │   │   └── http.py           ← HTTPTTSProvider
+│       │   │   ├── inproc.py        ← InProcTTSProvider (Piper)
+│       │   │   ├── qwen.py          ← QwenTTSProvider
+│       │   │   └── http.py          ← HTTPTTSProvider
 │       │   ├── voice_configs/       ← JSON configs por voz
 │       │   └── voices/              ← Modelos .onnx (gitignored)
 │       ├── ear/                     ← kali-ear (STT)
@@ -458,11 +502,18 @@ ai-voice-companion/
 │       │   ├── runtime.py           ← AgentRuntime
 │       │   ├── planner.py           ← Planner
 │       │   ├── executor.py          ← Executor
+│       │   ├── artifact_stream.py   ← ArtifactStreamProcessor
+│       │   ├── json_stream_extractor.py ← StreamingArtifactArgParser
+│       │   ├── marker_suppressor.py ← MarkerSuppressor
+│       │   ├── console_requester.py  ← Console retrieval
+│       │   ├── vision.py            ← Vision processor
+│       │   ├── ai_config.py         ← AI config loader
+│       │   ├── jobs.py              ← Background jobs
 │       │   └── llm/
-│       │       ├── __init__.py
-│       │       ├── provider.py      ← LLMProvider Protocol + StreamEvent
-│       │       ├── direct.py        ← DirectLLMProvider
-│       │       └── nanobot.py       ← NanobotLLMProvider
+│       │       ├── provider.py       ← LLMProvider Protocol + StreamEvent
+│       │       ├── direct.py         ← DirectLLMProvider
+│       │       ├── nanobot.py        ← NanobotLLMProvider
+│       │       └── scanner.py        ← Model scanner
 │       ├── claws/                   ← kali-claws (tools)
 │       │   ├── __init__.py
 │       │   ├── base.py              ← Tool Protocol + registry
@@ -472,15 +523,27 @@ ai-voice-companion/
 │       │   ├── git.py               ← git_worktree, git_diff
 │       │   ├── web.py               ← web_search, web_fetch
 │       │   ├── launcher.py          ← launch_app
-│       │   ├── screenshot.py        ← Stub (Phase 3)
+│       │   ├── screenshot.py        ← screenshot
+│       │   ├── organize.py          ← organize_folder
+│       │   ├── create_artifact.py   ← create_artifact
+│       │   ├── manage_artifacts.py  ← manage_artifacts + get_artifact_console
+│       │   ├── list_monitors.py     ← list_monitors
+│       │   ├── stt_corrector.py      ← stt_corrector
 │       │   └── game/
 │       │       ├── __init__.py
-│       │       ├── dota.py          ← Stub (Phase 4)
-│       │       └── generic.py       ← Stub (Phase 4)
+│       │       ├── dota.py           ← Dota builds
+│       │       ├── dota_live.py      ← Live match data
+│       │       ├── generic.py        ← Game info
+│       │       ├── spoiler_filter.py ← Anti-spoiler
+│       │       ├── image_cache.py   ← Image caching
+│       │       └── adapter.py       ← Generic adapter
 │       ├── gaze/                    ← kali-gaze (capture client)
-│       │   └── __init__.py          ← GazeClient stub (Phase 3)
+│       │   ├── __init__.py
+│       │   └── local.py             ← mss-based capture
 │       ├── canvas/                  ← kali-canvas (artifact helpers)
-│       │   └── __init__.py          ← html/markdown/diff/widget_artifact
+│       │   ├── __init__.py
+│       │   ├── registry.py          ← type → windowType resolver
+│       │   └── streamer.py          ← Streaming utilities
 │       ├── collar/                  ← kali-collar (permissions)
 │       │   ├── __init__.py
 │       │   ├── gateway.py           ← PermissionGateway
@@ -492,8 +555,9 @@ ai-voice-companion/
 │       │       └── files.json
 │       ├── nest/                    ← kali-nest (sessions + memory)
 │       │   ├── __init__.py
-│       │   ├── store.py            ← SessionStore (SQLite)
-│       │   └── memory.py           ← Memory (sliding window + summaries)
+│       │   ├── store.py             ← SessionStore (SQLite)
+│       │   ├── memory.py            ← Memory (sliding window + summaries)
+│       │   └── job_store.py         ← Job store
 │       └── yarn/                    ← kali-yarn (WS protocol)
 │           ├── __init__.py
 │           └── protocol.py        ← EventType + EventTypeOut
@@ -508,23 +572,29 @@ ai-voice-companion/
 
 ```
 kali-core/tests/
-├── test_tools.py            ← 15 tests (fs, command, gateway, executor)
-├── test_stt.py              ← 11 tests (STT manager, wake word)
-├── test_planner_memory.py   ← 10 tests (Planner + Memory)
-├── test_tts.py              ← 10 tests (filter, segment, effects, pipeline)
-├── test_phase2_tools.py     ←  8 tests (run_tests, git, launch_app)
-├── test_nest.py             ←  8 tests (SessionStore CRUD)
-├── test_server.py           ←  5 tests (WS flow, attach, reasoning)
-└── test_runtime.py          ←  1 test  (multi-step tool call loop)
+├── test_tools.py               ← 15+ tests (fs, command, gateway, executor)
+├── test_stt.py                 ← 11 tests (STT manager, wake word)
+├── test_planner_memory.py      ← 10 tests (Planner + Memory)
+├── test_tts.py                ← 10 tests (filter, segment, effects, pipeline)
+├── test_phase2_tools.py       ←  8 tests (run_tests, git, launch_app)
+├── test_phase3.py             ← Tests (artifact streaming, capture)
+├── test_phase4_game.py        ← Tests (game tools)
+├── test_nest.py               ←  8 tests (SessionStore CRUD)
+├── test_server.py             ←  5 tests (WS flow, attach, reasoning)
+├── test_runtime.py            ←  1 test  (multi-step tool call loop)
+├── test_artifact_streaming.py ← Tests (artifact processor)
+├── test_json_stream_extractor.py ← Tests (JSON parser)
+├── test_manage_artifacts.py   ← Tests (artifact management)
+└── test_profiles.py           ← Tests (permission profiles)
 
-Total: 68 test functions, todas pasando.
+Total: 109+ test functions, todas pasando.
 ```
 
 ---
 
 ## 7. Protocolo WebSocket (kali-yarn)
 
-### Eventos: web → core (10 tipos)
+### Eventos: web → core (17 tipos)
 
 | Evento | Descripción | Fase |
 |---|---|---|
@@ -534,10 +604,17 @@ Total: 68 test functions, todas pasando.
 | `new_session` | Crear nueva conversación | 2 |
 | `attach_session` | Adjuntar a sesión existente | 2 |
 | `list_sessions` | Solicitar lista de sesiones | 2 |
+| `delete_session` | Eliminar una sesión | 3 |
+| `delete_all_sessions` | Eliminar todas las sesiones | 3 |
 | `audio_start` | Iniciar grabación PTT | 0 |
 | `audio_end` | Finalizar grabación PTT | 0 |
 | `settings` | Actualizar configuración | 0 |
 | `consent_response` | Responder a consent_request | 1 |
+| `console_response` | Responder a console_request | 3 |
+| `get_artifact_content` | Obtener contenido de artefacto | 3 |
+| `get_artifact_console` | Obtener logs de consola | 3 |
+| `close_artifact` | Cerrar ventana de artefacto | 3 |
+| `system_command` | Request a kali-shell | 0 |
 
 ### Eventos: core → web (16 tipos)
 
@@ -555,11 +632,22 @@ Total: 68 test functions, todas pasando.
 | `tts_audio` | Segmento de audio TTS (base64) | 0 |
 | `tts_filtered` | Info de filtrado TTS | 0 |
 | `artifact` | Canvas artifact (create/update/close) | 2 |
+| `artifact_content` | Contenido de artefacto (metadata replay) | 3 |
+| `artifact_console` | Logs de consola de artefacto | 3 |
 | `tool_event` | Tool started/progress/finished | 1 |
 | `consent_request` | Pedir aprobación | 1 |
 | `session_list` | Lista de sesiones | 2 |
+| `session_deleted` | Confirmación de eliminación | 3 |
+| `step_start` | Inicio de step en ejecución multi-turno | 3 |
+| `model_stats` | Estadísticas de tokens del modelo | 3 |
+| `voice_config` | Config de voz cargada | 3 |
+| `stt_language` | Idioma STT cambiado | 3 |
+| `voice_loaded` | Voz cargada y lista | 3 |
+| `jobs` | Lista de jobs en background | 3 |
+| `job_update` | Actualización de progreso de job | 3 |
 | `error` | Error asíncrono | 0 |
 | `status` | Status periódico | 0 |
+| `system_result` | Resultado de system_command | 0 |
 
 ### Endpoints HTTP
 
@@ -568,6 +656,13 @@ Total: 68 test functions, todas pasando.
 | `GET /health` | Health check |
 | `GET /voices` | Lista de voces TTS + modos |
 | `GET /profiles` | Lista de profiles disponibles |
+| `GET /sessions` | Lista de sesiones |
+| `GET /sessions/{session_id}` | Obtener sesión |
+| `GET /sessions/{session_id}/messages` | Mensajes de sesión |
+| `GET /sessions/{session_id}/artifacts` | Artefactos de sesión |
+| `GET /sessions/{session_id}/artifacts/{artifact_id}` | Contenido de artefacto |
+| `DELETE /sessions/{session_id}` | Eliminar sesión |
+| `DELETE /sessions` | Eliminar todas las sesiones |
 
 ---
 
@@ -616,32 +711,35 @@ Total: 68 test functions, todas pasando.
 
 | Métrica | Valor |
 |---|---|
-| Archivos Python (kali_core) | ~38 |
-| Archivos TypeScript/TSX (kali-web) | ~25 |
-| Archivos Rust (kali-home) | 6 (+ build.rs) |
-| Archivos de test | 10 |
-| Funciones de test | 109 |
-| Componentes React | 15 |
-| Hooks React | 7 |
-| Tools implementadas | 13 (de 14 planeadas) |
-| Tools registradas en server | 13 |
+| Archivos Python (kali_core) | ~50+ |
+| Archivos TypeScript/TSX (kali-web) | ~60+ |
+| Archivos TypeScript (kali-shell) | 3 |
+| Archivos de test | 15 |
+| Funciones de test | 109+ |
+| Componentes React (stage) | 18 |
+| Componentes React (widgets) | 25+ |
+| Hooks React | 9 |
+| Tools implementadas | 18+ |
+| Tools registradas en server | 18+ |
 | Profiles | 4 |
-| Eventos WS (in/out) | 11 + 17 = 28 |
-| Locales i18n | 2 (en, es) con 77 keys cada uno |
-| Themes | 4 (synthwave, midnight, sunset, forest) |
-| Voces TTS | 1 default (robot-es) + configurables |
+| Eventos WS (in/out) | 17 + 28 = 45 |
+| Locales i18n | 2 (en, es) con 100+ keys |
+| Themes | 5 (synthwave, midnight, sunset, forest, aether) |
+| Voces TTS | 2+ (robot-es, glados-es) + Qwen |
 | Modelos STT | 2 (es-0.42, en-us-0.15) |
 | LLM providers | 2 (Direct, Nanobot) |
+| TTS providers | 3 (Piper, Qwen, HTTP) |
 | Efectos de audio | 6 (normal, whisper, robotic, radio, deep, processed) |
+| Widget types | 25+ |
 
 ### Verificación
 
 | Check | Estado |
 |---|---|
-| `pytest tests/` | ✅ 109/112 passed (3 pre-existentes websockets) |
+| `pytest tests/` | ✅ 109+ passing |
 | `tsc --noEmit` | ✅ 0 errors |
 | `node scripts/check-i18n.mjs` | ✅ i18n check passed |
-| `cargo check` | ✅ (kali-home compila) |
+| `npm run typecheck` (kali-shell) | ✅ 0 errors |
 
 ### Resumen de completitud por fase
 
@@ -650,6 +748,6 @@ Fase 0: ████████████████████ 100% ✅
 Fase 1: ████████████████████ 100% ✅
 Fase 2: ████████████████████ 100% ✅
 Fase 3: ████████████████████ 100% ✅
-Fase 4: ████████████████░░░░  80% ⬜ (game tools implementados, falta instalación OCR y polish)
+Fase 4: ████████████████████ 100% ✅ (game tools, live data, artifact streaming, console retrieval)
 Fase 5: ██████░░░░░░░░░░░░░░  30% ⬜ (wake word hecho, resto pendiente)
 ```

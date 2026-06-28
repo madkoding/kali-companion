@@ -7,26 +7,26 @@ between its layers, and the key technical decisions.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  kali-home  (Tauri / Rust)                    │
+│                  kali-shell  (Electron / TypeScript)          │
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │  kali-web  (Frontend: React + Vite + TypeScript)       │  │
 │  │  Dashboard · Chat · Widgets · Canvas · Consent modal   │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
-│  Tauri commands (IPC) → system capabilities:                 │
-│    - Screen capture  (Wayland portal / X11 / Win / macOS)    │
-│    - Launch apps, file dialogs, notifications, tray          │
+│  Electron IPC → system capabilities:                         │
+│    - Window management, system tray                          │
+│    - Spawns and supervises the Python sidecar                │
 │                                                              │
 │  Sidecar launcher: spawns + supervises the Python process    │
 └───────────────────────┬─────────────────────────────────────┘
-                        │  Local WebSocket (JSON) + stdio
+                         │  Local WebSocket (JSON) + stdio
 ┌───────────────────────▼─────────────────────────────────────┐
 │                 kali-core  (Python sidecar)                    │
 │                                                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐   │
 │  │ kali-mind    │  │ kali-claws  │  │ kali-voice / kali-ear │  │
-│  │ Agent runtime│  │ Tools with  │  │ TTS (Piper + numpy)  │   │
+│  │ Agent runtime│  │ Tools with  │  │ TTS (Piper/Qwen/numpy)│  │
 │  │ + LLM        │  │ permissions │  │ STT (Vosk offline)   │   │
 │  │ providers    │  │             │  │                      │   │
 │  └─────────────┘  └─────────────┘  └──────────────────────┘   │
@@ -44,7 +44,7 @@ Kali is split into three layers, each in its own top-level directory:
 
 | Layer | Directory | Language | Responsibility |
 |---|---|---|---|
-| Shell | `kali-home/` | Rust (Tauri 2) | Native window, system access, spawns the Python sidecar |
+| Shell | `kali-shell/` | TypeScript (Electron) | Native window, system tray, spawns the Python sidecar |
 | Frontend | `kali-web/` | TypeScript (React + Vite) | UI rendered in the webview: dashboard, chat, widgets, canvas |
 | Core | `kali-core/` | Python 3.12 (asyncio) | Agent runtime, tools, voice, permissions, sessions |
 
@@ -52,11 +52,10 @@ Kali is split into three layers, each in its own top-level directory:
 
 - **Python carries the brain.** The user is learning AI and wants to iterate on
   agent logic, tools, and prompts. Python is the most readable surface for
-  that work; Rust would slow that loop down.
-- **Rust is minimal and commented.** The shell only does what Python cannot:
-  open a native window, talk to Wayland/X11 for screen capture, launch apps
-  via desktop entries, and supervise the sidecar process. Every Rust file is
-  small and commented so it can be read without prior Rust experience.
+  that work.
+- **Electron is minimal.** The shell only does what Python cannot:
+  open a native window, manage system tray, spawn and supervise the sidecar
+  process. The Electron shell is lightweight and cross-platform.
 - **The frontend is framework-agnostic to the core.** It talks to the core
   over a local WebSocket using a documented event protocol
   ([PROTOCOL.md](./PROTOCOL.md)). It does not import `kali_core` directly,
@@ -143,6 +142,23 @@ kali-claws (Tool.run) ──► kali-collar (PermissionGateway.check)
 ### A screen capture
 
 ```
+kali-mind decides to call a "screenshot" tool
+    │
+    ▼
+kali-claws/screenshot ──► kali-collar (consent: "Kali wants to see your screen…")
+    │ allowed
+    ▼
+kali-core/gaze/local.py ──► mss library captures screen
+                                     │  selects backend at runtime:
+                                     │    Wayland → mss (via xdg-desktop-portal)
+                                     │    X11    → mss (via Xlib)
+                                     │    Windows → mss (GDI)
+                                     ▼
+                               PNG bytes returned
+                                     │
+                                     ▼
+                          kali-mind sends PNG to vision-capable LLM
+```
 kali-mind calls the "screenshot" tool
    │
    ▼
@@ -166,15 +182,17 @@ kali-core/gaze/client ──► Tauri command "kali_capture_screen"
 
 ## Key technical decisions
 
-### 1. Hybrid TTS (in-process by default, HTTP optional)
+### 1. Hybrid TTS (in-process, HTTP, or Qwen3-TTS C++ server)
 
 - **Default:** `kali-voice` runs in-process inside `kali-core` using Piper
   directly. No HTTP hop, lowest latency, no extra service to manage.
-- **Optional:** a config flag can point Kali at an external TTS HTTP service
+- **Qwen3-TTS (optional):** A C++ server (`qwen_cpp/`) that provides high-quality
+  neural TTS. Requires building the C++ server and downloading Qwen models.
+- **HTTP (optional):** a config flag can point Kali at an external TTS HTTP service
   (e.g. lapis-tts or anything else exposing a compatible endpoint). Useful for
   people who already run a TTS server.
 
-Both paths implement the same `TTSProvider` interface, so the rest of Kali is
+All three paths implement the same `TTSProvider` interface, so the rest of Kali is
 agnostic to which one is active.
 
 ### 2. Hybrid LLM (Direct or Nanobot)
@@ -207,21 +225,18 @@ and always asks for consent on dangerous tools — regardless of profile. The
 user can override per action via the ConsentModal (`allow`, `no_capture`,
 `cancel`).
 
-### 5. Screen capture as a Rust trait
+### 5. Screen capture as a Python module
 
-```rust
-trait ScreenCapture {
-    fn available() -> bool;
-    async fn capture_full() -> Result<Vec<u8>>;
-    async fn capture_window(id: WindowId) -> Result<Vec<u8>>;
-    async fn capture_region(rect: Rect) -> Result<Vec<u8>>;
-    async fn list_windows() -> Vec<WindowInfo>;
-}
+```python
+class GazeClient:
+    async def capture_full() -> bytes: ...
+    async def capture_region(rect: Rect) -> bytes: ...
 ```
 
 Implementation selection happens at runtime based on environment detection
-(`$WAYLAND_DISPLAY`, `$DISPLAY`, OS). Phase 3 ships Wayland; X11/Windows/macOS
-are Phase 5.
+(`$WAYLAND_DISPLAY`, `$DISPLAY`, OS). Uses the `mss` Python library which
+automatically selects the best backend (Wayland/X11/Windows). Screen capture
+requires consent per-task.
 
 ### 6. Single repo, thematic module folders
 
@@ -238,36 +253,50 @@ folder name is already the project name — zero rename cost.
   i18n keys, not pre-translated strings. The frontend translates.
 - Consent prompts: the *reason* text is an i18n key, so the user always sees
   them in their UI language regardless of which tool generated the request.
+- Language normalization: `lang_map.py` maps regional language codes (e.g.
+  `es-ES` → `es`) to internal codes for STT model selection.
 
 See [I18N.md](./I18N.md) for the full strategy.
+
+### 8. Artifact streaming with console retrieval
+
+Artifacts (HTML, code, diffs, etc.) stream live to the frontend:
+
+- **Text markers path:** LLM emits `[BEGIN_ARTIFACT:type] {json}` as text;
+  backend parses and streams content live.
+- **Tool call path:** Native OpenAI function calls are re-streamed as
+  synthetic deltas for live preview.
+- **Console retrieval:** Agents can request console logs from rendered HTML
+  artifacts via `console_request`/`console_response` events.
+
+See [ARTIFACT_GENERATION.md](./ARTIFACT_GENERATION.md) for details.
 
 ## Process lifecycle
 
 ```
-user starts kali-home (Tauri app)
-   │
-   ▼
-kali-home/main.rs:
-   1. build Tauri app, register commands
-   2. spawn sidecar: python -m kali_core  (env: KALI_WS_PORT=…)
-   3. wait for sidecar WS to be listening
-   4. load kali-web index.html in the webview
-   │
-   ▼
+user starts kali-shell (Electron app)
+    │
+    ▼
+kali-shell/main.ts:
+    1. build Electron app
+    2. spawn sidecar: python -m kali_core  (env: KALI_WS_PORT=…)
+    3. wait for sidecar WS to be listening
+    4. load kali-web index.html in the webview
+    │
+    ▼
 kali-web boots in webview:
-   - connects to ws://127.0.0.1:<port>
-   - subscribes to events
-   - sends "hello" → core replies "ready"
-   │
-   ▼
+    - connects to ws://127.0.0.1:<port>
+    - subscribes to events
+    - sends "hello" → core replies "ready"
+    │
+    ▼
 steady state:
-   - user interactions flow over WS to kali-core
-   - kali-core streams back deltas, TTS, artifacts, consent prompts
-   - kali-home only intervenes when kali-core asks for system access
-     (capture, launch app, file dialog) via Tauri commands
+    - user interactions flow over WS to kali-core
+    - kali-core streams back deltas, TTS, artifacts, consent prompts
+    - kali-shell supervises the sidecar process, restarts on crash
 ```
 
-If the sidecar crashes, `kali-home` detects the WS drop and restarts it,
+If the sidecar crashes, `kali-shell` detects the WS drop and restarts it,
 preserving the frontend session.
 
 ## Repository layout
@@ -276,42 +305,56 @@ preserving the frontend session.
 kali/
 ├── README.md
 ├── docs/                  ← you are here
-├── kali-home/             ← Rust/Tauri shell
-│   ├── Cargo.toml
-│   ├── tauri.conf.json
+├── kali-shell/            ← Electron/TypeScript shell
+│   ├── package.json
+│   ├── electron-builder.yml
 │   └── src/
-│       ├── main.rs
-│       ├── sidecar.rs     ← spawns + supervises kali-core
-│       ├── ipc.rs         ← bridges webview ↔ core over WS
-│       ├── commands.rs    ← Tauri commands exposed to webview
-│       └── capture/       ← ScreenCapture trait + backends
+│       ├── main.ts        ← Electron entrypoint
+│       ├── sidecar.ts     ← spawns + supervises kali-core
+│       └── preload.ts    ← IPC bridge
 ├── kali-web/              ← Frontend
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── src/
 │       ├── App.tsx
-│       ├── components/
+│       ├── stage/         ← Main stage components
+│       ├── workspace/     ← Window management
+│       ├── components/   ← UI components
 │       ├── hooks/
 │       ├── lib/
-│       └── locale/{en,es}/ ← i18n catalogues
+│       ├── locale/{en,es}/ ← i18n catalogues
+│       └── components/widgets/ ← 20+ widget types
 ├── kali-core/             ← Python sidecar
 │   ├── pyproject.toml
 │   └── kali_core/
 │       ├── __main__.py
 │       ├── server.py      ← WS server (kali-yarn host)
 │       ├── config.py
-│       ├── voice/         ← kali-voice (TTS)
+│       ├── voice/         ← kali-voice (TTS: Piper/Qwen/HTTP)
+│       │   └── qwen_cpp/  ← Qwen3-TTS C++ server
 │       ├── ear/           ← kali-ear (STT)
 │       ├── mind/          ← kali-mind (agent + LLM providers)
+│       │   ├── llm/       ← Direct + Nanobot providers
+│       │   ├── artifact_stream.py
+│       │   ├── json_stream_extractor.py
+│       │   └── vision.py
 │       ├── claws/         ← kali-claws (tools)
-│       ├── gaze/          ← kali-gaze client (talks to Rust)
-│       ├── canvas/        ← kali-canvas (artifact specs)
+│       │   ├── game/      ← Gaming tools
+│       │   └── create_artifact.py
+│       ├── gaze/          ← kali-gaze client (screen capture)
+│       ├── canvas/        ← kali-canvas (artifact specs + registry)
 │       ├── collar/        ← kali-collar (permissions)
 │       ├── nest/          ← kali-nest (sessions + memory)
 │       └── yarn/          ← kali-yarn (WS protocol schemas)
 └── scripts/
+    ├── dev.sh
+    ├── prod.sh
     ├── download-voices.sh
-    └── dev.sh
+    ├── download-stt-models.sh
+    ├── download-qwen-models.sh
+    ├── build-qwen-cpp.sh
+    ├── dev-qwen.sh / prod-qwen.sh
+    └── dev-qwen-vd.sh / prod-qwen-vd.sh
 ```
 
 See [COMPONENTS.md](./COMPONENTS.md) for per-module detail and

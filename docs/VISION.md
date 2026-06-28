@@ -61,8 +61,8 @@ X11/Windows/macOS later) that:
 3. **Voice/text parity.** No feature is designed for only one channel.
 4. **Platform abstraction.** Screen capture, command execution, and file
    access go through traits with per-OS/display-server backends.
-5. **Learnable.** Python carries the agent logic (sidecar), Rust is minimal
-   and commented for the shell. Documentation lives per module.
+5. **Learnable.** Python carries the agent logic (sidecar), Electron/TypeScript
+   is minimal for the shell. Documentation lives per module.
 6. **Local-first by default.** STT offline, TTS local. The LLM is configurable
    (local or cloud).
 7. **No heavy mandatory dependencies.** TTS effects use numpy (no ffmpeg

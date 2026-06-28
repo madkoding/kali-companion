@@ -15,14 +15,14 @@ The cat-themed names exist for two reasons:
 
 ```
             ┌────────────────────────────────────────────┐
-            │              kali-home  (Rust)              │
+            │              kali-shell  (Electron)           │
             │  ┌────────────────────────────────────────┐ │
             │  │            kali-web  (React)            │ │
-            │  │   kali-canvas widgets · ConsentModal     │ │
+            │  │   Stage · Workspace · Widgets          │ │
             │  └────────────────────────────────────────┘ │
-            │  Screen capture · launch apps · sidecar     │
+            │  System tray · window management · sidecar  │
             └──────────────────────┬──────────────────────┘
-                                   │  WS (kali-yarn)
+                                    │  WS (kali-yarn)
             ┌──────────────────────▼──────────────────────┐
             │              kali-core  (Python)              │
             │                                              │
@@ -31,7 +31,7 @@ The cat-themed names exist for two reasons:
             │     │     ┌────────┴────────┐   │            │
             │     ▼     ▼                   ▼   ▼            │
             │  LLM    fs/cmd/tests/git   permissions         │
-            │  providers  web/screenshot/launch  consent    │
+            │  providers  web/screenshot/launch/game      │
             │                                              │
             │  kali-voice (TTS)   kali-ear (STT)            │
             │  kali-gaze client  kali-canvas spec          │
@@ -41,104 +41,120 @@ The cat-themed names exist for two reasons:
 
 ---
 
-## kali-home — The Shell (Rust / Tauri 2)
+## kali-shell — The Shell (Electron / TypeScript)
 
 **Purpose.** The native application container. Opens a window on the user's
 OS, embeds a webview that renders `kali-web`, spawns and supervises the
-Python sidecar (`kali-core`), and provides the only path to system-level
-capabilities that Python cannot reach safely (screen capture, launching
-apps, native file dialogs, tray, notifications).
+Python sidecar (`kali-core`), and provides system-level capabilities
+(system tray, window management, notifications).
 
-**Design rule:** kali-home does not contain business logic. It is a thin,
-heavily-commented bridge. Every Rust file should be readable by someone who
-does not know Rust yet.
+**Design rule:** kali-shell does not contain business logic. It is a thin
+bridge in TypeScript that manages the Electron window lifecycle.
 
 ### Subcomponents
 
 | File | Purpose |
 |---|---|
-| `src/main.rs` | Tauri app entrypoint, registers commands, sets up the sidecar. |
-| `src/sidecar.rs` | Spawns `python -m kali_core` as a child process, waits for its WS to be ready, restarts on crash. |
-| `src/ipc.rs` | Forwards events between the webview and the Python sidecar over a local WS. |
-| `src/commands.rs` | Tauri commands exposed to the webview: `kali_capture_screen`, `kali_launch_app`, `kali_file_dialog`, etc. |
-| `src/capture/mod.rs` | `ScreenCapture` trait + runtime backend selection. |
-| `src/capture/wayland.rs` | Wayland backend via `xdg-desktop-portal`. Phase 3. |
-| `src/capture/x11.rs` | X11 backend. Phase 5 (stub for now). |
-| `tauri.conf.json` | Window config (fullscreen-capable), sidecar registration, permissions. |
+| `src/main.ts` | Electron app entrypoint, creates window, sets up IPC. |
+| `src/sidecar.ts` | Spawns `python -m kali_core` as a child process, waits for its WS to be ready, restarts on crash. |
+| `src/preload.ts` | Exposes safe IPC methods to the renderer process. |
+| `electron-builder.yml` | Electron Builder config for AppImage/.deb packaging. |
+| `package.json` | Electron 33.x + TypeScript 5.x dependencies. |
 
-### ScreenCapture trait
+### Dependencies (TypeScript)
 
-```rust
-pub trait ScreenCapture: Send + Sync {
-    fn available() -> bool where Self: Sized;
-    async fn capture_full(&self) -> Result<Vec<u8>, CaptureError>;
-    async fn capture_window(&self, id: WindowId) -> Result<Vec<u8>, CaptureError>;
-    async fn capture_region(&self, rect: Rect) -> Result<Vec<u8>, CaptureError>;
-    async fn list_windows(&self) -> Vec<WindowInfo>;
-}
-```
-
-Selection rule at startup: if `$WAYLAND_DISPLAY` is set, use `WaylandPortal`;
-else if `$DISPLAY` is set, use `X11Capture` (Phase 5); else on Windows/macOS
-use the platform-specific impl (Phase 5). The active backend is exposed to
-the webview via a command so the UI can show what is available.
-
-### Dependencies (Rust)
-
-- `tauri` 2.x (with the `shell` plugin for sidecar management).
-- `tauri-plugin-shell`, `tauri-plugin-dialog`, `tauri-plugin-notification`.
-- `tokio` (async runtime for capture).
-- Backend-specific crates added in their phase.
+- `electron` 33.x
+- `electron-builder` 25.x
+- `typescript` 5.x
+- `@types/node` 20.x
 
 ---
 
 ## kali-web — The Frontend (React + Vite + TypeScript)
 
-**Purpose.** The visible UI rendered inside the kali-home webview. Shows the
-dashboard, chat thread, live activity widgets, content canvas, consent
-modal, and the voice/text input bar. Talks to kali-core over WebSocket using
-the kali-yarn protocol.
+**Purpose.** The visible UI rendered inside the kali-shell webview. Shows the
+chat thread, live activity widgets, content canvas, consent modal, stage
+with avatar and dock, and the voice/text input bar. Talks to kali-core over
+WebSocket using the kali-yarn protocol.
 
 ### Layout
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ Header: profile · status · model · settings              │
-├──────────┬─────────────────────────┬───────────────────┤
-│ Sidebar  │  Chat / focus activity   │  kali-canvas      │
-│ sessions │  + activity widgets      │  (artifacts)      │
-│          │                           │                   │
-├──────────┴─────────────────────────┴───────────────────┤
-│ Input: [🎤 PTT] [text…] [send]                          │
+│ Stage: avatar · mood · presence · HUD                    │
+├─────────────────────────┬───────────────────────────────┤
+│ Spotlight Input         │  NeuralCanvas / Artifacts    │
+│ (voice + text input)    │  (draggable windows)         │
+│                         │                               │
+├─────────────────────────┴───────────────────────────────┤
+│ VoiceBar: waveform · playback status                     │
+├─────────────────────────────────────────────────────────┤
+│ Settings: modular sections (Provider/Appearance/       │
+│            Behavior/Voice/Generation)                  │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### Components
+### Stage Components (src/stage/)
 
 | Component | Purpose |
 |---|---|
-| `App.tsx` | Root, layout, providers (i18n, theme, WS client). |
-| `components/Sidebar.tsx` | Session list, new chat button. |
-| `components/ChatPanel.tsx` | Message list with syntax highlighting, streaming deltas, reasoning panel, tool hints. |
-| `components/Canvas.tsx` | Artifact renderer host. |
-| `components/artifacts/HtmlArtifact.tsx` | Sandboxed iframe for HTML/CSS/JS mockups (Gemini Canvas style). |
-| `components/artifacts/MarkdownArtifact.tsx` | Rendered markdown + mermaid diagrams. |
-| `components/artifacts/DiffArtifact.tsx` | Code diff with syntax highlighting. |
-| `components/ConsentModal.tsx` | Permission modal: `allow`, `no_capture` (implemented), `cancel`. |
-| `components/SettingsModal.tsx` | Voice, mode, LLM provider, profile and theme selectors, language. |
-| `components/AudioVisualizer.tsx` | Canvas viz during TTS playback. |
-| `components/PTTButton.tsx` | Push-to-talk button + status. |
-| `hooks/useChat.ts` | WebSocket connection, auto-reconnect, event dispatch, reasoning + delta state. |
+| `StageProvider.tsx` | Main stage context, session state, artifact state. |
+| `NeuralCanvas.tsx` | Artifact canvas hosting draggable windows. |
+| `NeuralDock.tsx` | Dock with overflow menu, avatar, minimize button. |
+| `MinimizeDock.tsx` | Minimize dock for collapsed state. |
+| `SpotlightInput.tsx` | Combined voice + text input with auto-scroll. |
+| `VoiceBar.tsx` | Audio waveform and playback status. |
+| `HUD.tsx` | Model stats, tokens, latency, connection status. |
+| `PresenceLayer.tsx` | Avatar mood and presence indicators. |
+| `SessionDrawer.tsx` | Session list drawer from the side. |
+| `ConversationModal.tsx` | Full conversation modal. |
+| `ArtifactWindow.tsx` | Individual artifact window wrapper. |
+| `ArtifactModal.tsx` | Modal view for artifacts. |
+| `DebugPad.tsx` | Debug panel for development. |
+| `CustomizerDrawer.tsx` | Avatar customization drawer. |
+| `TetherLayer.tsx` | Tether animation layer. |
+| `WindowContentRouter.tsx` | Routes content type to widget. |
+
+### UI Components (src/components/)
+
+| Component | Purpose |
+|---|---|
+| `SettingsModal.tsx` | Main settings modal with modular sections. |
+| `settings/ProviderSection.tsx` | LLM provider selection and config. |
+| `settings/AppearanceSection.tsx` | Theme, avatar, UI scale. |
+| `settings/BehaviorSection.tsx` | Auto-TTS, wake word, diff preview. |
+| `settings/VoiceSection.tsx` | Voice, mode, STT language. |
+| `settings/GenerationSection.tsx` | Max tokens, temperature. |
+| `settings/VoiceDesignControls.tsx` | Custom voice design (Qwen). |
+| `settings/VoicePreviewButton.tsx` | Preview button for TTS voices. |
+| `settings/fields.tsx` | Reusable form field components. |
+| `ConsentModal.tsx` | Permission modal: `allow`, `no_capture`, `cancel`. |
+| `ErrorBoundary.tsx` | Error boundary for component tree. |
+| `JobsPanel.tsx` | Background jobs panel. |
+| `ui/Overlay.tsx` | Reusable overlay component. |
+| `ui/Button.tsx`, `IconButton.tsx`, `Modal.tsx`, `Sheet.tsx` | UI primitives. |
+| `hooks/useChat.ts` | WebSocket connection, auto-reconnect, event dispatch. |
+| `hooks/useTTS.ts` | Audio playback + analyser. |
+| `hooks/usePTT.ts` | Push-to-talk / wake-word modes. |
+| `hooks/useUIScale.ts` | UI scale factor. |
+| `hooks/useDebug.ts` | Debug mode toggle. |
 | `lib/wsClient.ts` | Typed WS client implementing kali-yarn. |
+| `lib/protocol.ts` | TypeScript event type definitions. |
 | `lib/i18n.ts` | react-i18next setup, loads `locale/{en,es}`. |
 
-> Dashboard and WidgetGrid are planned for Phase 4 (multi-tool agentic flows).
+### Widgets (src/components/widgets/)
+
+25+ widget types including: HtmlWidget, MarkdownWidget, CodeWidget, DiffWidget,
+DocumentWidget, TableWidget, ChartWidget, ChecklistWidget, JsonTreeWidget,
+MermaidWidget, QuizWidget, EntityCardWidget, ResourceCardWidget, GameImage,
+and more.
 
 ### Sandboxing HTML artifacts
 
-`HtmlArtifact` mounts an `<iframe sandbox="allow-scripts">` (without
+`HtmlWidget` mounts an `<iframe sandbox="allow-scripts">` (without
 `allow-same-origin`) with a strict CSP. Generated mockups cannot reach Kali's
-origin, cookies, or localStorage.
+origin, cookies, or localStorage. Console logs can be retrieved via the
+`console_request`/`console_response` protocol.
 
 ### i18n
 
@@ -148,10 +164,11 @@ user can override in Settings. See [I18N.md](./I18N.md).
 
 ### Dependencies (JS)
 
-- `react`, `react-dom`, `react-i18next`, `i18next`.
-- `marked`, `marked-highlight`, `highlight.js` (markdown render + syntax highlighting, ported from legacy frontend).
-- `mermaid` (diagrams, Phase 3).
-- Vite + TypeScript.
+- `react` 18.x, `react-dom`, `react-i18next`, `i18next`.
+- `marked`, `marked-highlight`, `highlight.js` (markdown render + syntax highlighting).
+- `mermaid` (diagrams).
+- `recharts` (charts).
+- Vite + TypeScript + Tailwind CSS.
 
 ---
 
@@ -178,13 +195,15 @@ to. Imports each cat-themed module as a subpackage.
 **Purpose.** Convert text into playable audio, with `robot-es` (GLaDOS-like,
 no copyright) as the default voice. Customizable via JSON voice configs.
 
-**Architecture: hybrid.**
+**Architecture: three providers.**
 - `InProcTTSProvider` (default): runs Piper in-process. Lowest latency, no
   extra service.
+- `QwenTTSProvider` (optional): high-quality neural TTS via local C++ server
+  (`qwen_cpp/`). Requires building the server and downloading Qwen models.
 - `HTTPTTSProvider` (optional): points at an external TTS HTTP service via
   config. For users who already run lapis-tts or similar.
 
-Both implement the `TTSProvider` interface, so the rest of Kali is agnostic.
+All implement the `TTSProvider` interface, so the rest of Kali is agnostic.
 
 ### Subcomponents
 
@@ -196,9 +215,12 @@ Both implement the `TTSProvider` interface, so the rest of Kali is agnostic.
 | `effects/__init__.py` | Audio effects implemented with numpy/scipy (no ffmpeg). | **New.** |
 | `voice_configs/` | Per-voice JSON configs (params, modes). | Inspired by lapis-tts configs, simplified. |
 | `voice_configs/robot-es.json` | Default voice config. | New, derived from lapis-tts `robot-es.json`. |
+| `voice_configs/glados-es.json` | GLaDOS-style voice config. | New. |
 | `voices/` | Piper `.onnx` model files. Gitignored, downloaded by `scripts/download-voices.sh`. | — |
+| `qwen_cpp/` | Qwen3-TTS C++ server. Requires building + model download. | New submodule |
 | `providers/base.py` | `TTSProvider` ABC. | New. |
-| `providers/inproc.py` | `InProcTTSProvider`. | New. |
+| `providers/inproc.py` | `InProcTTSProvider` (Piper). | New. |
+| `providers/qwen.py` | `QwenTTSProvider` (Qwen3-TTS C++ server). | New. |
 | `providers/http.py` | `HTTPTTSProvider`. | New. |
 
 ### Audio effects (numpy, no ffmpeg)
@@ -290,6 +312,17 @@ not blocking. Documented as a future improvement.
 `piper` (Piper Python package), `numpy`, `scipy`. No ffmpeg required. Python
 3.12.
 
+### Qwen3-TTS C++ Server
+
+The `qwen_cpp/` directory contains a C++ server that provides high-quality
+neural TTS using Qwen3 models:
+
+- Build: `scripts/build-qwen-cpp.sh`
+- Download models: `scripts/download-qwen-models.sh`
+- Dev: `scripts/dev-qwen.sh`
+- Prod: `scripts/prod-qwen.sh`
+- Voice design: `scripts/dev-qwen-vd.sh`, `scripts/prod-qwen-vd.sh`
+
 ### Relationship to lapis-tts
 
 kali-voice is a new module, inspired by lapis-tts's architecture (Piper
@@ -311,24 +344,35 @@ lapis-tts can point Kali at it via the optional `HTTPTTSProvider`.
 | File | Purpose | Origin |
 |---|---|---|
 | `vosk_engine.py` — `StreamingSTT` | Vosk streaming recognizer. | Direct port of `app/stt.py` |
-| `manager.py` — `STTManager` | Manages recognition sessions, hot-swap model/language. | New. |
+| `manager.py` — `STTManager` | Manages recognition sessions, hot-swap model/language, wake word. | New. |
 | `models/` | Vosk model directories. Gitignored, downloaded by script. | — |
+| `lang_map.py` | Language code normalization (`es-ES` → `es`). | New. |
+| `claws/stt_corrector.py` | Post-process STT output for common corrections. | New. |
 
-> Wake word detection lives in `manager.py` as an optional feature (Phase 5).
+### Language Normalization
+
+`lang_map.py` normalizes regional language codes to internal codes:
+
+- `es-ES`, `es-MX`, `es-AR` → `es`
+- `en-US`, `en-GB`, `en-AU` → `en`
+
+This allows users to set their OS locale (e.g., `es-ES`) while the system
+uses the correct Vosk model (`vosk-model-small-es-0.42`).
 
 ### Config
 
 | Key | Default | Notes |
 |---|---|---|
 | `stt.model` | `vosk-model-small-es-0.42` | Model directory name. |
-| `stt.language` | `es` | Active language. |
+| `stt.language` | `es` | Active language (normalized from locale). |
 | `stt.wake_word.enabled` | `false` | Push-to-talk by default. |
 | `stt.wake_word.phrase` | `kali` | Wake phrase. |
 
 ### Flow
 
 browser mic → 16 kHz PCM → WS binary → `StreamingSTT.accept(chunk)` →
-partial/final transcript → text → `kali-mind`.
+partial/final transcript → `lang_map` normalization → `stt_corrector`
+(optional corrections) → text → `kali-mind`.
 
 ---
 
@@ -337,14 +381,14 @@ partial/final transcript → text → `kali-mind`.
 **Folder:** `kali-core/kali_core/mind/`
 
 **Purpose.** The agentic loop: receive a message (text or transcribed voice),
-plan, call tools, observe, and respond. Supports single-step (Phase 1) and
-multi-step (Phase 2+) planning.
+plan, call tools, observe, and respond. Supports single-step and multi-step
+planning. Handles artifact streaming and console retrieval.
 
 ### LLM providers (pluggable)
 
 | Provider | Description | Origin |
 |---|---|---|
-| `direct.py` — `DirectLLMProvider` | OpenAI-compatible (local Ollama, llama.cpp, OpenRouter, OpenAI). Streaming. | Port of `app/llm.py` |
+| `direct.py` — `DirectLLMProvider` | OpenAI-compatible (local Ollama, llama.cpp, OpenRouter, OpenAI). Streaming + function-calling. Bridges native tool calls to artifact streaming. | Port of `app/llm.py` |
 | `nanobot.py` — `NanobotLLMProvider` | Wraps nanobot's WS protocol (tools, reasoning, sessions). | Port of `app/nanobot.py` |
 | `provider.py` — `LLMProvider` (Protocol) | Common interface. | New. |
 
@@ -364,20 +408,36 @@ class LLMProvider(Protocol):
 
 | File | Purpose |
 |---|---|
-| `runtime.py` — `AgentRuntime` | Main loop: message → plan → act → observe → respond. |
+| `runtime.py` — `AgentRuntime` | Main loop: message → plan → act → observe → respond. Handles artifact streaming. |
 | `planner.py` | Decides single-step (one tool) vs. multi-step (plan with several). |
 | `executor.py` | Executes tools through kali-collar, collects observations. |
+| `artifact_stream.py` | `ArtifactStreamProcessor` — parses `[BEGIN/END_ARTIFACT]` markers, emits create/update/close events. |
+| `json_stream_extractor.py` | `StreamingArtifactArgParser` — incremental JSON parser for native tool-call args. |
+| `marker_suppressor.py` | `MarkerSuppressor` — strips `[TOOL_CALL:]` markers from deltas in real time. |
+| `console_requester.py` | Requests console logs from rendered HTML artifacts. |
+| `vision.py` | Vision processor: sends screenshots to vision-capable LLM. |
+| `ai_config.py` | AI configuration loader (system prompt, tools, etc.). |
+| `jobs.py` | Background job tracking. |
 | `llm/provider.py` | `LLMProvider` Protocol. |
 | `llm/direct.py` | `DirectLLMProvider`. |
 | `llm/nanobot.py` | `NanobotLLMProvider`. |
 
+### Artifact Streaming
+
+The runtime supports two artifact generation paths:
+
+1. **Text markers:** LLM emits `[BEGIN_ARTIFACT:type] {json}` as text; backend
+   parses and streams content live.
+2. **Tool call path:** Native OpenAI function calls (`create_artifact` tool)
+   are re-streamed as synthetic deltas for live preview.
+
+See [ARTIFACT_GENERATION.md](./ARTIFACT_GENERATION.md) for details.
+
 ### Agent modes
 
-- **Simple (Phase 1):** one LLM turn, tools via function-calling, one
-  response. Easiest to reason about; good baseline.
-- **Agentic (Phase 2+):** LLM proposes a plan, executor runs tools
-  sequentially, observes, iterates until the plan is done or the user
-  cancels.
+- **Simple:** one LLM turn, tools via function-calling, one response.
+- **Agentic:** LLM proposes a plan, executor runs tools sequentially, observes,
+  iterates until the plan is done or the user cancels.
 
 > For the learner: `kali-mind` is where you will experiment with planning,
 > memory, and reflection. The `LLMProvider` interface isolates you from the
@@ -423,8 +483,14 @@ callback. `ToolResult` is `{ "output": str | dict | artifact, "error": str | Non
 | `web_fetch` | safe | 2 | Fetch + extract text from a URL. |
 | `screenshot` | sensitive | 3 | Screen capture (via kali-gaze). |
 | `organize_folder` | sensitive | 3 | Propose + execute folder reorg (consent per file). |
-| `game/dota_builds` | safe | 4 | Dota build recommendations via public API. |
+| `create_artifact` | safe | 3 | Create HTML/code/markdown artifacts on canvas. |
+| `manage_artifacts` | safe | 3 | Get, close, or update existing artifacts. |
+| `get_artifact_console` | safe | 3 | Retrieve console logs from HTML artifacts. |
+| `game/dota_builds` | safe | 4 | Dota build recommendations via OpenDota API. |
+| `game/dota_live` | safe | 4 | Live Dota match data (anti-spoiler). |
 | `game/game_info` | safe | 4 | Game data (web_fetch + no-spoiler filter). |
+| `list_monitors` | safe | 5 | List available displays/monitors. |
+| `stt_corrector` | safe | 1 | Post-process STT output for corrections. |
 
 ### Subcomponents
 
@@ -438,19 +504,28 @@ callback. `ToolResult` is `{ "output": str | dict | artifact, "error": str | Non
 | `web.py` | `web_search`, `web_fetch`. |
 | `screenshot.py` | `screenshot` (calls kali-gaze). |
 | `launcher.py` | `launch_app`. |
-| `game/dota.py` | Dota builds. |
+| `organize.py` | `organize_folder`. |
+| `create_artifact.py` | `create_artifact` tool. |
+| `manage_artifacts.py` | `manage_artifacts`, `get_artifact_console`. |
+| `list_monitors.py` | `list_monitors`. |
+| `stt_corrector.py` | `stt_corrector`. |
+| `game/dota.py` | Dota builds via OpenDota. |
+| `game/dota_live.py` | Live Dota match data. |
 | `game/generic.py` | Generic game info with no-spoiler mode. |
+| `game/spoiler_filter.py` | Spoiler filter for game info. |
+| `game/image_cache.py` | Image caching for game resources. |
+| `game/fetch_resource.py` | Fetch and cache game hero/item images. |
+| `game/adapter.py` | Generic game data adapter. |
 
 ---
 
 ## kali-gaze — Screen Capture
 
-**Folder:** Rust side in `kali-home/src/capture/`, Python client in
-`kali-core/kali_core/gaze/`.
+**Folder:** `kali-core/kali_core/gaze/`
 
-**Purpose.** Non-intrusive screen capture with per-task consent. The Rust
-side implements the `ScreenCapture` trait; the Python side is a thin client
-that asks kali-home to do the actual capture via a Tauri command.
+**Purpose.** Non-intrusive screen capture with per-task consent. Uses the
+Python `mss` library which automatically selects the best backend for the
+current platform (Wayland/X11/Windows).
 
 ### Consent flow
 
@@ -459,29 +534,30 @@ that asks kali-home to do the actual capture via a Tauri command.
    your screen for [reason]. Allow?"
 3. ConsentModal in kali-web shows three choices: `allow`, `no_capture`,
    `cancel`.
-4. If `allow`: kali-core asks kali-home to capture → PNG bytes come back →
+4. If `allow`: kali-core calls `mss` to capture → PNG bytes returned →
    kali-mind sends the PNG to a vision-capable LLM as context.
 5. If `no_capture`: the agent continues without vision.
 6. If `cancel`: the task is aborted.
 
 ### Backends
 
-| Backend | Platform | Phase | Notes |
-|---|---|---|---|
-| `WaylandPortal` | Linux / Wayland | 3 | xdg-desktop-portal Screencast, no root, asks the first time. |
-| `X11Capture` | Linux / X11 | 5 | XGetImage / xwd. |
-| `WindowsCapture` | Windows | 5 | Graphics Capture API. |
-| `MacOSCapture` | macOS | 5 | ScreenCaptureKit (Screen Recording permission). |
+The `mss` library automatically selects:
 
-Backend selection at runtime: kali-home detects `$WAYLAND_DISPLAY` vs
-`$DISPLAY`, picks the right backend, and exposes its availability to the
-core via a Tauri command.
+| Backend | Platform | Notes |
+|---|---|---|
+| Wayland | Linux / Wayland | Via xdg-desktop-portal Screencast |
+| X11 | Linux / X11 | Via Xlib |
+| Windows | Windows | Via GDI |
+
+Backend detection at runtime: `mss` detects `$WAYLAND_DISPLAY` vs `$DISPLAY`,
+or uses `platform.system()` on Windows.
 
 ### Python client
 
 | File | Purpose |
 |---|---|
-| `gaze/__init__.py` — `GazeClient` | Calls the `kali_capture_screen` Tauri command via the WS bridge. Returns PNG bytes. |
+| `gaze/__init__.py` — `GazeClient` | Uses `mss` library for screen capture. Returns PNG bytes. |
+| `gaze/local.py` | Local capture implementation using `mss`. |
 
 ---
 
@@ -490,7 +566,25 @@ core via a Tauri command.
 **Folder:** Spec in `kali-core/kali_core/canvas/`, UI in `kali-web/src/components/artifacts/`.
 
 **Purpose.** Render content the agent generates: HTML mockups, documents,
-diagrams, code diffs, activity widgets.
+diagrams, code diffs, activity widgets, charts, quizzes, and more.
+
+### Artifact types
+
+| Type | Description | Streamable |
+|---|---|---|
+| `html` | Raw HTML | Yes |
+| `code` | Source code | Yes |
+| `document` | Markdown | Yes |
+| `diff` | Unified diff | Yes |
+| `mermaid` | Mermaid diagram | No |
+| `json` | JSON tree | No |
+| `table` | Tabular data | No |
+| `checklist` | Checklist | No |
+| `chart` | Chart (recharts) | No |
+| `quiz` | Quiz | No |
+
+**Streamable** types update live as content arrives. **Non-streamable** types
+show a spinner during streaming and render on close.
 
 ### Artifact protocol
 
@@ -500,10 +594,12 @@ The agent emits `artifact` events over WS:
 {
   "event": "artifact",
   "id": "uuid",
-  "type": "html" | "markdown" | "diff" | "widget",
+  "type": "html" | "markdown" | "code" | "diff" | "widget",
   "title": "Site mockup",
   "content": "<html>…</html>",
-  "update": "create" | "update" | "close"
+  "update": "create" | "update" | "close",
+  "phase": "streaming" | "complete",
+  "language": "html"
 }
 ```
 
@@ -511,18 +607,21 @@ The agent emits `artifact` events over WS:
 
 | Component | Purpose |
 |---|---|
-| `Canvas.tsx` | Hosts multiple artifacts. |
-| `HtmlArtifact.tsx` | Sandboxed iframe with strict CSP. |
-| `MarkdownArtifact.tsx` | Rendered markdown + mermaid. |
-| `DiffArtifact.tsx` | Diff view with syntax highlight. |
-
-> `WidgetGrid` is planned for Phase 4 (activity cards for multi-step agentic flows).
+| `NeuralCanvas.tsx` | Hosts multiple artifact windows. |
+| `ArtifactWindow.tsx` | Individual draggable window. |
+| `artifacts/HtmlArtifact.tsx` | Sandboxed iframe with strict CSP. |
+| `artifacts/MarkdownArtifact.tsx` | Rendered markdown + mermaid. |
+| `artifacts/DiffArtifact.tsx` | Diff view with syntax highlight. |
+| `artifacts/WidgetGrid.tsx` | Grid of activity cards. |
+| `widgets/` | 25+ widget types (HtmlWidget, CodeWidget, etc.). |
 
 ### Python side
 
 | File | Purpose |
 |---|---|
-| `canvas/__init__.py` | Helpers for building artifact events from tool output (`html_artifact`, `markdown_artifact`, `diff_artifact`, `widget_artifact`). |
+| `canvas/__init__.py` | Helpers for building artifact events (`html_artifact`, `markdown_artifact`, `diff_artifact`, `widget_artifact`). |
+| `canvas/registry.py` | Resolves domain `type` → frontend `windowType`. |
+| `canvas/streamer.py` | Streaming utilities for canvas updates. |
 
 ---
 
@@ -610,17 +709,15 @@ The full event catalogue is in [PROTOCOL.md](./PROTOCOL.md).
 
 ---
 
-## 9. Open questions
+## Resolved Design Decisions
 
-1. **Frontend framework.** React recommended (canvas ecosystem, familiy).
-   Confirm or pick Svelte (simpler curve).
-2. **Nanobot as a soft dependency.** The README will say Kali works without
-   nanobot; if you have it, you can opt in. Confirm.
-3. **Wake word.** Scheduled for Phase 5. Confirm.
-4. **Dedicated GLaDOS model.** For now `robot-es` (davefx + robotic effects).
-   If a community Piper GLaDOS `.onnx` appears later, drop it in
-   `voice/voices/` and add a `glados.json` config pointing at it. Should the
-   README document this?
-5. **Vision provider.** In Phase 3, screenshots get sent to the LLM. Do you
-   have a vision-capable model available (qwen-vl, gpt-4o, gemini), or do we
-   OCR with tesseract and pass the text? Depends on the LLM you run.
+The following questions from early design have been resolved:
+
+1. **Frontend framework:** React + Vite + TypeScript selected.
+2. **Shell:** Electron (not Tauri/Rust) - cross-platform, easier to maintain.
+3. **Nanobot:** Available as optional LLM provider, not required.
+4. **Wake word:** Implemented in Phase 5 (optional feature).
+5. **GLaDOS voice:** Added `glados-es.json` voice config.
+6. **Vision:** Screenshots sent to vision-capable LLM (qwen-vl, gpt-4o, etc.).
+7. **Artifact system:** Full streaming support with console retrieval.
+8. **Session management:** Full CRUD via SQLite, including delete operations.
