@@ -12,22 +12,49 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useChat, getSidecarPort, type ChatState } from "../hooks/useChat";
 import { useTTS, type TtsPlaybackState } from "../hooks/useTTS";
 import { usePTT, type PTTControls } from "../hooks/usePTT";
+import type { CustomVoice } from "../lib/protocol";
 
 interface StageContextValue {
   chat: ChatState;
   tts: TtsPlaybackState & { stop: () => void };
   ptt: PTTControls;
-  voices: { id: string; name: string }[];
+  voices: Record<string, unknown>[];
+  customVoices: CustomVoice[];
+  sttLanguage: string;
+  ttsProvider: string;
 }
 
 const StageContext = createContext<StageContextValue | null>(null);
+
+// Fetch with exponential-backoff retry. Guards against the core
+// sidecar not being ready yet (connection refused surfaces in
+// Firefox as a misleading "CORS did not succeed" error).
+async function fetchWithRetry(
+  url: string,
+  opts: { tries?: number; baseDelay?: number } = {},
+): Promise<Response | null> {
+  const tries = opts.tries ?? 5;
+  const baseDelay = opts.baseDelay ?? 400;
+  for (let attempt = 1; attempt <= tries; attempt += 1) {
+    try {
+      const resp = await fetch(url);
+      if (resp.ok || resp.status >= 400) return resp; // 4xx/5xx won't fix themselves
+      return resp;
+    } catch (err) {
+      if (attempt === tries) return null;
+      await new Promise((r) => setTimeout(r, baseDelay * 2 ** (attempt - 1)));
+    }
+  }
+  return null;
+}
 
 export function StageProvider({ children }: { children: ReactNode }) {
   const chat = useChat();
   const tts = useTTS(chat.subscribeTts, chat.onTtsEnded);
   const navigate = useNavigate();
   const { sid: urlSid } = useParams<{ sid?: string }>();
-  const [voices, setVoices] = useState<{ id: string; name: string }[]>([]);
+  const [voices, setVoices] = useState<Record<string, unknown>[]>([]);
+  const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
 
   // URL -> state: attach to the session in the URL once ready.
   const lastAttachedRef = useRef<string | null>(null);
@@ -74,32 +101,57 @@ export function StageProvider({ children }: { children: ReactNode }) {
     }
   }, [ptt.finalText, chat]);
 
-  // Voices list (one-shot).
+  // Voices list (one-shot). Waits until the core is ready so the
+  // fetch doesn't race a sidecar that is still booting.
   useEffect(() => {
+    if (chat.status !== "ready") return;
     async function fetchVoices() {
+      const port = await getSidecarPort();
+      const host = window.location.hostname;
+      const resp = await fetchWithRetry(`http://${host}:${port ?? 8900}/voices`);
+      if (!resp) return;
       try {
-        const port = await getSidecarPort();
-        const host = window.location.hostname;
-        const resp = await fetch(`http://${host}:${port ?? 8900}/voices`);
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.voices && Array.isArray(data.voices)) {
-            setVoices(
-              data.voices.map((v: { voice_id: string; name: string }) => ({
-                id: v.voice_id,
-                name: v.name,
-              })),
-            );
-          }
+        const data = await resp.json();
+        if (data.voices && Array.isArray(data.voices)) {
+          setVoices(data.voices as Record<string, unknown>[]);
         }
       } catch {
         // keep default empty
       }
     }
     void fetchVoices();
-  }, []);
+  }, [chat.status]);
 
-  const value: StageContextValue = { chat, tts, ptt, voices };
+  // Custom voices list (one-shot + refresh on event). Also gated on
+  // chat.status === "ready" to avoid racing the sidecar boot.
+  useEffect(() => {
+    if (chat.status !== "ready") return;
+    async function fetchCustomVoices() {
+      const port = await getSidecarPort();
+      const host = window.location.hostname;
+      const resp = await fetchWithRetry(
+        `http://${host}:${port ?? 8900}/voices/custom?provider=qwen3-voicedesign`,
+      );
+      if (!resp) return;
+      try {
+        const data = await resp.json();
+        if (data.voices && Array.isArray(data.voices)) {
+          setCustomVoices(data.voices as CustomVoice[]);
+        }
+      } catch {
+        // keep default empty
+      }
+    }
+    void fetchCustomVoices();
+
+    const handler = () => void fetchCustomVoices();
+    window.addEventListener("refresh-custom-voices", handler);
+    return () => window.removeEventListener("refresh-custom-voices", handler);
+  }, [chat.status]);
+
+  const sttLanguage = chat.systemStatus?.stt_language ?? "en";
+  const ttsProvider = chat.systemStatus?.tts_provider ?? "inproc";
+  const value: StageContextValue = { chat, tts, ptt, voices, customVoices, sttLanguage, ttsProvider };
   return <StageContext.Provider value={value}>{children}</StageContext.Provider>;
 }
 

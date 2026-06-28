@@ -19,7 +19,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   systemStatus: StatusEvent | null;
-  voices: { id: string; name: string }[];
+  voices: Record<string, unknown>[];
   onUpdate: (patch: Partial<SettingsEvent>) => void;
   theme: string;
   onThemeChange: (t: string) => void;

@@ -306,7 +306,9 @@ nanobot_api_url: str = os.getenv("KALI_NANOBOT_API_URL", "http://127.0.0.1:8765"
 nanobot_token: str = os.getenv("KALI_NANOBOT_TOKEN", "")
 
 # ── TTS (kali-voice) ───────────────────────────────────────
-tts_provider: Literal["inproc", "http"] = os.getenv("KALI_TTS_PROVIDER", "inproc")
+tts_provider: Literal["inproc", "http", "qwen3", "qwen3-voicedesign"] = os.getenv(
+    "KALI_TTS_PROVIDER", "inproc"
+)
 tts_voice: str = os.getenv("KALI_TTS_VOICE", "glados-es")
 tts_mode: str = os.getenv("KALI_TTS_MODE", "normal")
 tts_max_length: int = int(os.getenv("KALI_TTS_MAX_LENGTH", "2000"))
@@ -348,6 +350,25 @@ voice_configs_dir = base_dir / "voice" / "voice_configs"
 stt_models_dir = base_dir / "ear" / "models"
 profiles_dir = base_dir / "collar" / "profiles"
 
+# ── Qwen3-TTS (only used when KALI_TTS_PROVIDER is "qwen3" or "qwen3-voicedesign")
+_qwen_base = base_dir / "voice" / "qwen_cpp"
+_qwen_models = base_dir / "voice" / "qwen_models"
+qwen_binary: str = os.getenv("KALI_QWEN_BINARY", str(_qwen_base / "build" / "tts-server"))
+qwen_talker_model: str = os.getenv(
+    "KALI_QWEN_TALKER_MODEL",
+    str(_qwen_models / "qwen-talker-0.6b-customvoice-Q4_K_M.gguf"),
+)
+qwen_voicedesign_model: str = os.getenv(
+    "KALI_QWEN_VOICEDESIGN_MODEL",
+    str(_qwen_models / "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf"),
+)
+qwen_codec_model: str = os.getenv(
+    "KALI_QWEN_CODEC_MODEL",
+    str(_qwen_models / "qwen-tokenizer-12hz-Q4_K_M.gguf"),
+)
+qwen_port: int = int(os.getenv("KALI_QWEN_PORT", "8870"))
+qwen_backend: str = os.getenv("KALI_QWEN_BACKEND", "CPU")
+
 
 class _Settings:
     """Bag object so consumers can import a single `settings`."""
@@ -372,6 +393,13 @@ class _Settings:
     tts_max_length = tts_max_length
     tts_http_url = tts_http_url
     tts_enabled = tts_enabled
+
+    qwen_binary = qwen_binary
+    qwen_talker_model = qwen_talker_model
+    qwen_voicedesign_model = qwen_voicedesign_model
+    qwen_codec_model = qwen_codec_model
+    qwen_port = qwen_port
+    qwen_backend = qwen_backend
 
     stt_model = stt_model
     stt_model_en = stt_model_en

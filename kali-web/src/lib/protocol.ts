@@ -50,6 +50,9 @@ export interface SettingsEvent {
   feedback_mode?: string;
   plan_mode?: boolean;
   artifact_diff_preview?: boolean;
+  // Qwen3 VoiceDesign fields
+  voice_instructions?: string;
+  voice_seed?: number;
 }
 
 export interface ConsentResponseEvent {
@@ -113,7 +116,33 @@ export interface TtsSpeakEvent {
   text: string;
 }
 
-// ── Outgoing (core → web) ────────────────────────────────
+// Qwen3-TTS voice design preset (returned by /voices when provider is qwen3-voicedesign)
+export interface VoiceDesignPreset {
+  id: string;
+  name: string;
+  instructions: string;
+  seed: number;
+}
+
+// Custom voice created by the user (stored in SQLite)
+export interface CustomVoice {
+  id: string;
+  name: string;
+  provider: string;
+  instructions: string;
+  seed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Qwen3-TTS predefined voice (returned by /voices when provider is qwen3)
+export interface QwenVoice {
+  id: string;
+  name: string;
+  gender: string;
+}
+
+export type TtsProvider = "inproc" | "http" | "qwen3" | "qwen3-voicedesign";
 
 export interface ReadyEvent {
   event: "ready";
@@ -245,7 +274,7 @@ export interface StatusEvent {
   llm_api_key_set: boolean;
   llm_model: string;
   llm_max_tokens?: number;
-  tts_provider: string;
+  tts_provider: TtsProvider;
   voice: string;
   tts_mode: string;
   auto_tts: boolean;

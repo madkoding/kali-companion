@@ -14,6 +14,7 @@ from .pipeline import TTSPipeline
 from .providers.base import TTSProvider, TTSResult
 from .providers.http import HTTPTTSProvider
 from .providers.inproc import InProcTTSProvider
+from .providers.qwen import QwenTTSProvider, StartupError
 from .voice_config import VoiceConfigManager
 
 __all__ = [
@@ -22,5 +23,7 @@ __all__ = [
     "TTSResult",
     "InProcTTSProvider",
     "HTTPTTSProvider",
+    "QwenTTSProvider",
+    "StartupError",
     "VoiceConfigManager",
 ]

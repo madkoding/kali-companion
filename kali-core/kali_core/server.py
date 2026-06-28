@@ -38,6 +38,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from kali_core.claws.base import available_tools, register
@@ -66,15 +67,15 @@ from kali_core.collar.consent import ConsentManager as ConsentMgr
 from kali_core.collar.gateway import PermissionGateway
 from kali_core.config import settings
 from kali_core.ear.manager import STTManager, WakeWordDetector
-from kali_core.lang_map import normalize
 from kali_core.game.gsi import gsi_state
 from kali_core.gaze import GazeClient
+from kali_core.lang_map import normalize
 from kali_core.mind.ai_config import AIConfig
 from kali_core.mind.ai_config import load as load_ai_config
 from kali_core.mind.ai_config import save as save_ai_config
+from kali_core.mind.console_requester import ConsoleRequester
 from kali_core.mind.executor import Executor
 from kali_core.mind.jobs import JobManager
-from kali_core.mind.console_requester import ConsoleRequester
 from kali_core.mind.llm.direct import DirectLLMProvider
 from kali_core.mind.llm.nanobot import NanobotLLMProvider
 from kali_core.mind.llm.provider import LLMProvider, ToolDef
@@ -84,6 +85,11 @@ from kali_core.nest.store import SessionStore
 from kali_core.voice.pipeline import TTSPipeline
 from kali_core.voice.providers.http import HTTPTTSProvider
 from kali_core.voice.providers.inproc import InProcTTSProvider
+from kali_core.voice.providers.qwen import (
+    PREDEFINED_VOICES,
+    QwenTTSProvider,
+    get_random_preview_text,
+)
 from kali_core.voice.voice_config import VoiceConfigManager
 
 logger = logging.getLogger("kali_core.server")
@@ -112,6 +118,21 @@ def _build_llm_provider() -> LLMProvider:
 def _build_tts_provider():
     if settings.tts_provider == "http":
         return HTTPTTSProvider()
+    if settings.tts_provider in ("qwen3", "qwen3-voicedesign"):
+        voice_design = settings.tts_provider == "qwen3-voicedesign"
+        talker_model = (
+            settings.qwen_voicedesign_model
+            if voice_design
+            else settings.qwen_talker_model
+        )
+        return QwenTTSProvider(
+            binary=settings.qwen_binary,
+            talker_model=talker_model,
+            codec_model=settings.qwen_codec_model,
+            port=settings.qwen_port,
+            backend=settings.qwen_backend,
+            voice_design=voice_design,
+        )
     return InProcTTSProvider()
 
 
@@ -176,9 +197,17 @@ class Server:
         self.llm_provider = _build_llm_provider()
         self.tts_provider = _build_tts_provider()
         self.agent = AgentRuntime(self.llm_provider)
+        # For qwen3 providers, glados-es (the Piper default) is not a valid
+        # voice. Fall back to "serena" (first predefined voice) so the UI and
+        # the pipeline start in a consistent state.
+        default_voice = settings.tts_voice
+        if self.tts_provider.provider_name in ("qwen3", "qwen3-voicedesign"):
+            qwen_voice_ids = {v["id"] for v in PREDEFINED_VOICES}
+            if default_voice not in qwen_voice_ids:
+                default_voice = "serena"
         self.tts_pipeline = TTSPipeline(
             self.tts_provider,
-            voice=settings.tts_voice,
+            voice=default_voice,
             mode=settings.tts_mode,
             auto_tts=settings.tts_enabled,
         )
@@ -305,7 +334,89 @@ class Server:
 
         @self.app.get("/voices")
         async def voices() -> dict[str, Any]:
+            if hasattr(self.tts_provider, "list_voices"):
+                return {"voices": await self.tts_provider.list_voices()}
             return {"voices": self.voice_configs.list_voices()}
+
+        @self.app.get("/voices/custom")
+        async def list_custom_voices(provider: str | None = None) -> dict[str, Any]:
+            return {"voices": await self.session_store.list_custom_voices(provider)}
+
+        @self.app.post("/voices/custom")
+        async def create_custom_voice(request: Request) -> dict[str, Any]:
+            body = await request.json()
+            name = body.get("name", "").strip()
+            provider = body.get("provider", "qwen3-voicedesign")
+            instructions = body.get("instructions", "").strip()
+            seed = int(body.get("seed", -1))
+            if not name:
+                return JSONResponse(content={"error": "name is required"}, status_code=400)
+            if not instructions:
+                return JSONResponse(content={"error": "instructions is required"}, status_code=400)
+            voice = await self.session_store.create_custom_voice(name, provider, instructions, seed)
+            return {"voice": voice}
+
+        @self.app.put("/voices/custom/{voice_id}")
+        async def update_custom_voice(request: Request, voice_id: str) -> dict[str, Any]:
+            body = await request.json()
+            voice = await self.session_store.update_custom_voice(
+                voice_id,
+                name=body.get("name"),
+                instructions=body.get("instructions"),
+                seed=body.get("seed"),
+            )
+            if not voice:
+                return JSONResponse(content={"error": "Voice not found"}, status_code=404)
+            return {"voice": voice}
+
+        @self.app.delete("/voices/custom/{voice_id}")
+        async def delete_custom_voice(voice_id: str) -> dict[str, Any]:
+            deleted = await self.session_store.delete_custom_voice(voice_id)
+            if not deleted:
+                return JSONResponse(content={"error": "Voice not found"}, status_code=404)
+            return {"success": True}
+
+        @self.app.post("/api/tts/preview")
+        async def tts_preview(request: Request) -> Any:
+            body = await request.json()
+            voice_id = body.get("voice_id", "")
+            language = body.get("language", "en")
+            mode = body.get("mode", "normal")
+            text = body.get("text", "") or get_random_preview_text(language)
+            if not hasattr(self.tts_provider, "preview"):
+                return JSONResponse(content={"error": "Preview not supported by current TTS provider"}, status_code=400)
+            try:
+                audio = await self.tts_provider.preview(
+                    voice_id=voice_id, text=text, language=language, mode=mode
+                )
+            except Exception as exc:
+                logger.error("tts preview failed: %s", exc)
+                return JSONResponse(content={"error": f"TTS engine error: {exc}"}, status_code=500)
+            return Response(content=audio, media_type="audio/wav")
+
+        @self.app.post("/api/tts/voice-design")
+        async def tts_voice_design(request: Request) -> Any:
+            body = await request.json()
+            instructions = body.get("instructions", "")
+            seed = int(body.get("seed", -1))
+            language = body.get("language", "en")
+            text = body.get("text", "") or get_random_preview_text(language)
+            if not instructions or not instructions.strip():
+                return JSONResponse(content={"error": "instructions field is required and cannot be empty"}, status_code=400)
+            if not hasattr(self.tts_provider, "preview"):
+                return JSONResponse(content={"error": "Voice design not supported by current TTS provider"}, status_code=400)
+            try:
+                audio = await self.tts_provider.preview(
+                    voice_id=instructions,
+                    instructions=instructions,
+                    seed=seed,
+                    text=text,
+                    language=language,
+                )
+            except Exception as exc:
+                logger.error("voice-design preview failed: %s", exc)
+                return JSONResponse(content={"error": f"TTS engine error: {exc}"}, status_code=500)
+            return Response(content=audio, media_type="audio/wav")
 
         @self.app.get("/profiles")
         async def profiles() -> dict[str, Any]:
@@ -385,6 +496,8 @@ class Connection:
         self._input_mode: str = settings.input_mode
         self._feedback_mode: str = "minimal"
         self._plan_mode: bool = False
+        self._voice_instructions: str = ""
+        self._voice_seed: int = -1
 
     async def run(self) -> None:
         while True:
@@ -926,6 +1039,17 @@ class Connection:
             self._plan_mode = bool(event["plan_mode"])
         if "artifact_diff_preview" in event:
             settings.artifact_diff_preview = bool(event["artifact_diff_preview"])
+        # Qwen3 VoiceDesign settings
+        if "voice_instructions" in event:
+            self._voice_instructions = event["voice_instructions"]
+        if "voice_seed" in event:
+            self._voice_seed = int(event["voice_seed"])
+        # Propagate voice design params to the provider
+        if self.server.tts_provider.provider_name in ("qwen3", "qwen3-voicedesign"):
+            if hasattr(self.server.tts_provider, "set_voice_design"):
+                self.server.tts_provider.set_voice_design(
+                    self._voice_instructions, self._voice_seed
+                )
         await self._emit_status()
 
     async def _emit_status(self) -> None:

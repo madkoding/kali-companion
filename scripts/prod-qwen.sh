@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Full-app launcher with Qwen3-TTS (0.6B CustomVoice mode).
+#
+# Usage: scripts/prod-qwen.sh
+#
+# Requires (same as prod.sh plus):
+#   - scripts/build-qwen-cpp.sh cpu       # compile the C++ binary
+#   - scripts/download-qwen-models.sh     # download models
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$SCRIPT_DIR/.."
+QWEN_TTS_PROVIDER="qwen3"
+
+# ── Qwen3-TTS validation ───────────────────────────────────
+QWEN_BINARY="${KALI_QWEN_BINARY:-$ROOT/kali-core/kali_core/voice/qwen_cpp/build/tts-server}"
+QWEN_MODEL="${KALI_QWEN_TALKER_MODEL:-$ROOT/kali-core/kali_core/voice/qwen_models/qwen-talker-0.6b-customvoice-Q4_K_M.gguf}"
+QWEN_CODEC="${KALI_QWEN_CODEC_MODEL:-$ROOT/kali-core/kali_core/voice/qwen_models/qwen-tokenizer-12hz-Q4_K_M.gguf}"
+
+if [ ! -x "$QWEN_BINARY" ]; then
+  echo "ERROR: Qwen3-TTS binary not found or not executable:"
+  echo "  $QWEN_BINARY"
+  echo ""
+  echo "Run the following to set it up:"
+  echo "  1. scripts/build-qwen-cpp.sh cpu"
+  echo ""
+  exit 1
+fi
+
+if [ ! -f "$QWEN_MODEL" ]; then
+  echo "ERROR: Qwen3-TTS talker model not found:"
+  echo "  $QWEN_MODEL"
+  echo ""
+  echo "Run the following to download it:"
+  echo "  scripts/download-qwen-models.sh 0.6b-customvoice"
+  echo ""
+  exit 1
+fi
+
+if [ ! -f "$QWEN_CODEC" ]; then
+  echo "ERROR: Qwen3-TTS codec/tokenizer model not found:"
+  echo "  $QWEN_CODEC"
+  echo ""
+  echo "Run the following to download it:"
+  echo "  scripts/download-qwen-models.sh --tokenizer"
+  echo ""
+  exit 1
+fi
+
+echo "[prod-qwen] Qwen3-TTS binary and models OK"
+echo "            provider=qwen3"
+
+# ── Launch via prod.sh with qwen3 provider ───────────────────
+export KALI_TTS_PROVIDER="$QWEN_TTS_PROVIDER"
+export KALI_QWEN_BINARY="$QWEN_BINARY"
+export KALI_QWEN_TALKER_MODEL="$QWEN_MODEL"
+export KALI_QWEN_CODEC_MODEL="$QWEN_CODEC"
+
+exec "$SCRIPT_DIR/prod.sh"

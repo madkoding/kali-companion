@@ -85,3 +85,7 @@ class InProcTTSProvider:
 
     async def list_voices(self) -> list[dict]:
         return self._config_manager.list_voices()
+
+    async def preview(self, voice_id: str, text: str, language: str = "en", mode: str = "normal") -> bytes:
+        result = await self.synthesize(text, voice_id, mode=mode)
+        return result.audio
