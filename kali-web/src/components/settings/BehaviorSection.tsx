@@ -1,8 +1,11 @@
 // BehaviorSection — input mode, wake word, feedback mode, plan mode, profile.
 
 import { useTranslation } from "react-i18next";
+import { Sliders } from "lucide-react";
 import type { StatusEvent } from "../../lib/protocol";
-import { SelectField, ToggleField } from "./fields";
+import { SelectField, SliderField, ToggleField } from "./fields";
+import { MicLevelMeter } from "./MicLevelMeter";
+import { useStage } from "../../stage/StageProvider";
 
 interface Props {
   systemStatus: StatusEvent | null;
@@ -11,7 +14,6 @@ interface Props {
 
 const INPUT_MODES = [
   { id: "ptt", labelKey: "input_mode.ptt" },
-  { id: "wake_word", labelKey: "input_mode.wake_word" },
   { id: "continuous", labelKey: "input_mode.continuous" },
 ];
 
@@ -23,25 +25,35 @@ const FEEDBACK_MODES = [
 
 export function BehaviorSection({ systemStatus, onUpdate }: Props) {
   const { t } = useTranslation();
+  const { ptt } = useStage();
 
   const profile = systemStatus?.profile ?? "dev";
   const profiles = systemStatus?.available_profiles ?? ["dev", "general", "files", "gaming"];
-  const inputMode = (systemStatus as { input_mode?: string })?.input_mode ?? "wake_word";
+  const inputMode = (systemStatus as { input_mode?: string })?.input_mode ?? "ptt";
   const wakeWordEnabled = systemStatus?.wake_word_enabled ?? false;
+  const sttVadSilenceTimeout = systemStatus?.stt_vad_silence_timeout ?? 1.0;
+  const sttVadAutoCalibrate = systemStatus?.stt_vad_auto_calibrate ?? true;
+  const sttVadRmsThreshold = systemStatus?.stt_vad_rms_threshold ?? 0.015;
+  const showVad = inputMode !== "continuous";
   const feedbackMode = (systemStatus as { feedback_mode?: string })?.feedback_mode ?? "minimal";
   const planMode = (systemStatus as { plan_mode?: boolean })?.plan_mode ?? false;
   const artifactDiffPreview = systemStatus?.artifact_diff_preview ?? true;
 
   const handleInputModeChange = (mode: string) => {
-    if (mode === "wake_word") {
-      onUpdate({ input_mode: mode, wake_word_enabled: true });
-    } else {
+    if (mode === "continuous") {
       onUpdate({ input_mode: mode, wake_word_enabled: false });
+    } else {
+      onUpdate({ input_mode: mode });
     }
   };
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2 pb-1 border-b border-border">
+        <Sliders size={15} className="text-accent" />
+        <span className="text-sm font-semibold text-foreground">{t("settings.section.behavior")}</span>
+      </div>
+
       <SelectField
         label={t("settings.input_mode")}
         value={inputMode}
@@ -54,12 +66,66 @@ export function BehaviorSection({ systemStatus, onUpdate }: Props) {
         ))}
       </SelectField>
 
-      {inputMode === "wake_word" && (
+      {inputMode === "ptt" && (
         <ToggleField
           label={t("settings.wake_word")}
           checked={wakeWordEnabled}
           onChange={(v) => onUpdate({ wake_word_enabled: v })}
         />
+      )}
+
+      {showVad && (
+        <div className="flex flex-col gap-3 pt-2 border-t border-border">
+          <label className="text-xs text-muted font-semibold">{t("settings.stt_vad")}</label>
+
+          <SliderField
+            label={t("settings.stt_vad_silence_timeout")}
+            value={sttVadSilenceTimeout}
+            min={0.5}
+            max={3}
+            step={0.1}
+            onChange={(v) => onUpdate({ stt_vad_silence_timeout: v })}
+            displayValue={`${sttVadSilenceTimeout.toFixed(1)}${t("common.seconds_abbrev")}`}
+          />
+
+          <ToggleField
+            label={t("settings.stt_vad_auto_calibrate")}
+            checked={sttVadAutoCalibrate}
+            onChange={(v) => onUpdate({ stt_vad_auto_calibrate: v })}
+          />
+
+          <MicLevelMeter
+            micLevelRef={ptt.micLevelRef}
+            threshold={ptt.rmsThreshold}
+            calibrating={ptt.calibrating}
+          />
+
+          {!sttVadAutoCalibrate && (
+            <SliderField
+              label={t("settings.stt_vad_sensitivity")}
+              value={sttVadRmsThreshold}
+              min={0.001}
+              max={0.05}
+              step={0.001}
+              onChange={(v) => onUpdate({ stt_vad_rms_threshold: v })}
+              displayValue={sttVadRmsThreshold.toFixed(3)}
+            />
+          )}
+
+          <button
+            onClick={ptt.calibrate}
+            disabled={ptt.calibrating}
+            className={`text-xs px-3 py-1.5 rounded-md border transition-colors ${
+              ptt.calibrating
+                ? "border-border opacity-50 cursor-not-allowed"
+                : "border-accent/40 text-accent hover:bg-accent/10"
+            }`}
+          >
+            {ptt.calibrating ? t("settings.stt_vad_calibrating") : t("settings.stt_vad_calibrate_now")}
+          </button>
+
+          <p className="text-[10px] text-muted/60">{t("settings.stt_vad_frontend_helper")}</p>
+        </div>
       )}
 
       <SelectField

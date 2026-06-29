@@ -39,6 +39,7 @@ EventTypeOut = Literal[
     "message",
     "stt_partial",
     "stt_final",
+    "vad_state",
     "wake_word",
     "tts_audio",
     "tts_filtered",

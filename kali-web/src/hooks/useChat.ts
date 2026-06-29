@@ -31,6 +31,8 @@ import type {
   ImageReadyEvent,
   SelectedArtifactRef,
   TurnStatsEvent,
+  IncomingEvent,
+  ConnectionsListEvent,
 } from "../lib/protocol";
 
 export interface ChatMessage {
@@ -87,6 +89,7 @@ export interface ChatState {
   currentStep: number;
   turnStats: TurnStatsEvent | null;
   send: (text: string) => void;
+  sendEvent: (event: IncomingEvent) => void;
   setSelectedArtifactsProvider: (fn: (() => SelectedArtifactRef[]) | null) => void;
   stop: () => void;
   stopped: boolean;
@@ -334,6 +337,11 @@ export function useChat(): ChatState {
 
       client.on("status", (p) => {
         setSystemStatus(prev => ({ ...prev, ...(p as StatusEvent) }));
+      });
+
+      client.on("connections_list", (p) => {
+        const ev = p as ConnectionsListEvent;
+        setSystemStatus(prev => prev ? { ...prev, connections: ev.connections } : prev);
       });
 
       client.on("consent_request", (p) => {
@@ -600,6 +608,10 @@ export function useChat(): ChatState {
     clientRef.current?.send({ event: "clear_all_sessions" });
   }, []);
 
+  const sendEvent = useCallback((event: IncomingEvent) => {
+    clientRef.current?.send(event as unknown as Record<string, unknown>);
+  }, []);
+
   const updateSettings = useCallback((patch: Record<string, unknown>) => {
     clientRef.current?.send({ event: "settings", ...patch });
   }, []);
@@ -693,6 +705,7 @@ export function useChat(): ChatState {
     turnStats,
     stopped,
     send,
+    sendEvent,
     setSelectedArtifactsProvider,
     stop,
     newSession,

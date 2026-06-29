@@ -1,16 +1,24 @@
 // usePTT — push-to-talk hook with WhatsApp-style recording.
 //
-// Three input modes:
-//   ptt        — mic only on button press, one utterance per press
-//   wake_word  — persistent mic + wake word detector, one utterance per trigger
+// Input modes:
+//   ptt        — mic only on button press, one utterance per press. Wake word
+//                can be enabled inside PTT, which keeps the mic open and lets
+//                the wake word trigger a recording.
 //   continuous — persistent mic + always-on STT, every utterance auto-sent
 //
+// VAD (silence detection) runs in the frontend AudioWorklet via RMS energy
+// gating. When a wake-word-initiated recording detects sustained silence
+// (RMS below threshold for the configured timeout), the hook auto-ends the
+// recording. The mic level is exposed via a ref (updated ~3fps) so the UI
+// can render a live meter without triggering React re-renders.
+//
 // State machine:
-//   idle → (wake_word enabled) → listening
+//   idle → (PTT + wake word enabled) → listening
 //   idle → (continuous) → listening+continuous
 //   listening → (PTT press / wake word) → recording
-//   recording → (stt_final, wake_word mode) → listening   (auto audio_end)
-//   recording → (stt_final, continuous) → listening+STT   (no audio_end)
+//   recording → (silence timeout, wake word origin) → processing (auto audio_end)
+//   recording → (stt_final, manual origin) → idle                (manual audio_end)
+//   recording → (stt_final, continuous) → listening+STT         (no audio_end)
 //   recording → (stop) → listening / idle
 //   recording → (cancel) → listening / idle
 
@@ -19,22 +27,29 @@ import type { WSClient } from "../lib/wsClient";
 import type {
   SttPartialEvent,
   SttFinalEvent,
+  VadStateEvent,
 } from "../lib/protocol";
 
 export type PTTState = "idle" | "listening" | "recording" | "processing";
-export type InputMode = "ptt" | "wake_word" | "continuous";
+export type InputMode = "ptt" | "continuous";
 
 export interface PTTControls {
   state: PTTState;
   partialText: string;
   finalText: string;
   sttProvider: string;
+  isSpeaking: boolean;
   wakeWordActive: boolean;
   inputMode: InputMode;
   error: string | null;
   start: () => Promise<void>;
   stop: () => void;
   cancel: () => void;
+  // VAD — mic level meter + calibration
+  micLevelRef: React.RefObject<number>;
+  rmsThreshold: number;
+  calibrating: boolean;
+  calibrate: () => void;
 }
 
 interface Options {
@@ -42,9 +57,13 @@ interface Options {
   wakeWordEnabled: boolean;
   inputMode?: InputMode;
   onWakeWord?: () => void;
+  vadSilenceTimeout?: number;
+  vadAutoCalibrate?: boolean;
+  vadRmsThreshold?: number;
+  onVadSettingsChange?: (patch: { stt_vad_rms_threshold?: number }) => void;
 }
 
-// ── Inline downsample worklet (48 kHz → 16 kHz Int16 PCM) ──────────
+// ── Inline downsample worklet (48 kHz → 16 kHz Int16 PCM + RMS) ─────
 
 const _DOWNSAMPLE_WORKLET = `
 const BUFFER_TARGET = 5120;  // 320 ms at 16 kHz
@@ -74,15 +93,19 @@ class DownsampleProcessor extends AudioWorkletProcessor {
     }
     if (this._accumSamples >= BUFFER_TARGET) {
       const pcm = new Int16Array(this._accumSamples);
+      let sumSq = 0;
       let off = 0;
       for (const chunk of this._accum) {
         for (let j = 0; j < chunk.length; j++) {
           let s = chunk[j];
           s = Math.max(-1, Math.min(1, s));
           pcm[off++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+          const f = chunk[j];
+          sumSq += f * f;
         }
       }
-      this.port.postMessage(pcm.buffer, [pcm.buffer]);
+      const rms = Math.sqrt(sumSq / this._accumSamples);
+      this.port.postMessage({ pcm: pcm.buffer, rms }, [pcm.buffer]);
       this._accum = [];
       this._accumSamples = 0;
     }
@@ -123,23 +146,36 @@ function _micAvailable(): boolean {
 const _MIC_UNAVAILABLE_MSG =
   "Micrófono no disponible. Accede via HTTPS o localhost para usar voz.";
 
+// Number of RMS samples to collect during calibration (~2s at 320ms/chunk).
+const _CALIBRATION_SAMPLES = 6;
+// Multiplier applied to the measured noise floor to derive the threshold.
+const _CALIBRATION_MULTIPLIER = 2.5;
+// Minimum threshold to avoid setting it so low that background noise never triggers.
+const _MIN_THRESHOLD = 0.005;
+
 // ── Hook ────────────────────────────────────────────────────────────
 
 export function usePTT({
   client,
   wakeWordEnabled,
-  inputMode = "wake_word",
+  inputMode = "ptt",
   onWakeWord,
+  vadSilenceTimeout = 1.0,
+  vadAutoCalibrate = true,
+  vadRmsThreshold = 0.015,
+  onVadSettingsChange,
 }: Options): PTTControls {
   const [state, setState] = useState<PTTState>("idle");
   const [partialText, setPartialText] = useState("");
   const [finalText, setFinalText] = useState("");
   const [sttProvider, setSttProvider] = useState("vosk");
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [wakeWordActive, setWakeWordActive] = useState(false);
   const [error, setError] = useState<string | null>(
     _micAvailable() ? null : _MIC_UNAVAILABLE_MSG
   );
-
+  const [rmsThreshold, setRmsThreshold] = useState(vadRmsThreshold);
+  const [calibrating, setCalibrating] = useState(false);
 
   // Persistent audio resources (reused across recording sessions).
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -148,12 +184,84 @@ export function usePTT({
   const listeningRef = useRef(false);    // persistent mic stream active
   const recordingRef = useRef(false);    // STT active on server
   const continuousRef = useRef(false);   // continuous mode flag
+  const cancelledRef = useRef(false);    // true if current recording was cancelled
   const clientRef = useRef(client);
   clientRef.current = client;
   const onWakeWordRef = useRef(onWakeWord);
   onWakeWordRef.current = onWakeWord;
+  const inputModeRef = useRef(inputMode);
+  inputModeRef.current = inputMode;
+
+  // VAD refs — high-frequency values use refs to avoid re-renders.
+  const micLevelRef = useRef(0);          // RMS of the latest chunk (0-1), updated ~3fps
+  const silenceStartRef = useRef<number | null>(null);
+  const rmsThresholdRef = useRef(vadRmsThreshold);
+  rmsThresholdRef.current = rmsThreshold;
+  const silenceTimeoutRef = useRef(vadSilenceTimeout);
+  silenceTimeoutRef.current = vadSilenceTimeout;
+  const recordingOriginRef = useRef<string | null>(null);
+  const autoCalibrateRef = useRef(vadAutoCalibrate);
+  autoCalibrateRef.current = vadAutoCalibrate;
+  const calibratingRef = useRef(false);
+  const calibrationSamplesRef = useRef<number[]>([]);
+  const onVadSettingsChangeRef = useRef(onVadSettingsChange);
+  onVadSettingsChangeRef.current = onVadSettingsChange;
+
+  // ── VAD audio processing (runs inside onmessage) ────────
+
+  const processRms = useCallback((rms: number) => {
+    // Always update micLevelRef for the live meter (no setState — avoids re-renders).
+    micLevelRef.current = rms;
+
+    // Calibration mode: collect samples, compute threshold when done.
+    if (calibratingRef.current) {
+      calibrationSamplesRef.current.push(rms);
+      if (calibrationSamplesRef.current.length >= _CALIBRATION_SAMPLES) {
+        const samples = calibrationSamplesRef.current;
+        const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+        const newThreshold = Math.max(avg * _CALIBRATION_MULTIPLIER, _MIN_THRESHOLD);
+        rmsThresholdRef.current = newThreshold;
+        setRmsThreshold(newThreshold);
+        calibratingRef.current = false;
+        setCalibrating(false);
+        calibrationSamplesRef.current = [];
+        // Persist the calibrated threshold to backend.
+        onVadSettingsChangeRef.current?.({ stt_vad_rms_threshold: newThreshold });
+      }
+      return;
+    }
+
+    // Auto-end logic: only for wake-word-initiated recordings.
+    if (!recordingRef.current) return;
+    const threshold = rmsThresholdRef.current;
+
+    if (rms > threshold) {
+      // Speech detected — reset silence counter.
+      silenceStartRef.current = null;
+      if (!isSpeaking) setIsSpeaking(true);
+    } else {
+      // Silence detected.
+      if (silenceStartRef.current === null) {
+        silenceStartRef.current = Date.now();
+      }
+      if (isSpeaking) setIsSpeaking(false);
+
+      // Auto-end only when the recording was triggered by the wake word.
+      if (recordingOriginRef.current === "wake_word") {
+        const elapsed = Date.now() - silenceStartRef.current;
+        if (elapsed >= silenceTimeoutRef.current * 1000) {
+          silenceStartRef.current = null;
+          // Trigger stop (sends audio_end). Use ref to avoid stale closure.
+          stopRef.current();
+        }
+      }
+    }
+  }, [isSpeaking]);
 
   // ── Subscribe to STT + wake word events ─────────────────
+
+  // stopRef lets processRms call the latest stop() without a stale closure.
+  const stopRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!client) return;
@@ -178,21 +286,39 @@ export function usePTT({
 
       // Wake-word / PTT mode: one utterance per session.
       if (!recordingRef.current) return;
+      if (cancelledRef.current) {
+        cancelledRef.current = false;
+        setIsSpeaking(false);
+        return;
+      }
       recordingRef.current = false;
+      recordingOriginRef.current = null;
+      silenceStartRef.current = null;
+      setIsSpeaking(false);
       setFinalText(ev.text);
       setPartialText("");
-      clientRef.current?.send({ event: "audio_end" });
       setState(listeningRef.current ? "listening" : "idle");
     };
 
+    const onVadState = (p: unknown) => {
+      // Backend VAD state is optional supplementary info; the frontend
+      // RMS gate is the primary source for isSpeaking.
+      const ev = p as VadStateEvent;
+      void ev;
+    };
+
     const onWakeWord = () => {
+      if (recordingRef.current) return; // ignore wake word while already recording
       onWakeWordRef.current?.();
       _playBeep();
-      void startRecording();
+      void startRecording("wake_word");
     };
 
     const onSttError = () => {
       recordingRef.current = false;
+      recordingOriginRef.current = null;
+      silenceStartRef.current = null;
+      setIsSpeaking(false);
       setPartialText("");
       setFinalText("");
       setState(listeningRef.current ? "listening" : "idle");
@@ -200,12 +326,14 @@ export function usePTT({
 
     client.on("stt_partial", onPartial as (p: unknown) => void);
     client.on("stt_final", onFinal as (p: unknown) => void);
+    client.on("vad_state", onVadState as (p: unknown) => void);
     client.on("wake_word", onWakeWord as (p: unknown) => void);
     client.on("error", onSttError as (p: unknown) => void);
 
     return () => {
       client.off("stt_partial", onPartial as (p: unknown) => void);
       client.off("stt_final", onFinal as (p: unknown) => void);
+      client.off("vad_state", onVadState as (p: unknown) => void);
       client.off("wake_word", onWakeWord as (p: unknown) => void);
       client.off("error", onSttError as (p: unknown) => void);
     };
@@ -215,10 +343,20 @@ export function usePTT({
   // ── Mode setup: start persistent stream ─────────────────
 
   useEffect(() => {
-    const needsStream = wakeWordEnabled || inputMode === "continuous";
+    const needsStream = inputMode === "continuous" || (inputMode === "ptt" && wakeWordEnabled);
+    const prevMode = continuousRef.current ? "continuous" : inputModeRef.current;
+    const nextMode = inputMode;
+    const modeChanged = prevMode !== nextMode;
+
     if (needsStream) {
       continuousRef.current = inputMode === "continuous";
-      setWakeWordActive(wakeWordEnabled);
+      setWakeWordActive(inputMode === "ptt" && wakeWordEnabled);
+      // When switching between continuous and wake-word PTT, the mic is already
+      // open but the STT session origin differs. Tear down and rebuild the
+      // stream so the next audio_start carries the correct origin.
+      if (listeningRef.current && modeChanged) {
+        stopListening();
+      }
       void startListening();
     } else {
       continuousRef.current = false;
@@ -272,7 +410,9 @@ export function usePTT({
       source.connect(node);
 
       node.port.onmessage = (e: MessageEvent) => {
-        clientRef.current?.sendBinary(e.data as ArrayBuffer);
+        const data = e.data as { pcm: ArrayBuffer; rms: number };
+        clientRef.current?.sendBinary(data.pcm);
+        processRms(data.rms);
       };
 
       workletRef.current = node;
@@ -281,20 +421,28 @@ export function usePTT({
       // Continuous mode: start STT immediately.
       if (continuousRef.current) {
         recordingRef.current = true;
-        clientRef.current?.send({ event: "audio_start", language: undefined });
+        recordingOriginRef.current = "continuous";
+        clientRef.current?.send({ event: "audio_start", language: undefined, origin: "continuous" });
         setState("recording");
       } else {
         setState("listening");
+      }
+
+      // Auto-calibrate when wake word is enabled and auto-calibrate is on.
+      if (autoCalibrateRef.current && inputMode === "ptt" && wakeWordEnabled) {
+        startCalibration();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]);
+  }, [client, processRms]);
 
   const stopListening = useCallback(() => {
     listeningRef.current = false;
     recordingRef.current = false;
+    recordingOriginRef.current = null;
+    silenceStartRef.current = null;
 
     if (workletRef.current) {
       workletRef.current.disconnect();
@@ -316,20 +464,24 @@ export function usePTT({
 
   // ── Recording session control ────────────────────────────
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (origin: "manual" | "wake_word" | "continuous" = "manual") => {
     if (recordingRef.current) return;
+    cancelledRef.current = false;
+    setIsSpeaking(false);
     setPartialText("");
     setFinalText("");
+    silenceStartRef.current = null;
+    recordingOriginRef.current = origin;
 
     // Persistent stream is already running — just start STT.
     if (listeningRef.current) {
       recordingRef.current = true;
       setState("recording");
-      clientRef.current?.send({ event: "audio_start", language: undefined });
+      clientRef.current?.send({ event: "audio_start", language: undefined, origin });
       return;
     }
 
-    // One-off recording (PTT mode, no persistent stream).
+    // One-off recording (PTT mode without wake word).
     if (!_micAvailable()) {
       setError(_MIC_UNAVAILABLE_MSG);
       return;
@@ -365,27 +517,33 @@ export function usePTT({
       source.connect(node);
 
       node.port.onmessage = (e: MessageEvent) => {
-        clientRef.current?.sendBinary(e.data as ArrayBuffer);
+        const data = e.data as { pcm: ArrayBuffer; rms: number };
+        clientRef.current?.sendBinary(data.pcm);
+        processRms(data.rms);
       };
 
       workletRef.current = node;
       recordingRef.current = true;
       setState("recording");
 
-      clientRef.current?.send({ event: "audio_start", language: undefined });
+      clientRef.current?.send({ event: "audio_start", language: undefined, origin });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setState("idle");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]);
+  }, [client, processRms]);
 
   const stop = useCallback(() => {
     if (!recordingRef.current) return;
-    recordingRef.current = false;
     setState("processing");
 
+    // Send audio_end to request final transcript.
     clientRef.current?.send({ event: "audio_end" });
+
+    // Reset VAD state.
+    silenceStartRef.current = null;
+    recordingOriginRef.current = null;
 
     // One-off: destroy stream. Persistent: keep alive.
     if (!listeningRef.current) {
@@ -405,9 +563,16 @@ export function usePTT({
     }
   }, [client]);
 
+  // Keep stopRef in sync so processRms can call the latest stop().
+  stopRef.current = stop;
+
   const cancel = useCallback(() => {
     if (!recordingRef.current) return;
+    cancelledRef.current = true;
     recordingRef.current = false;
+    recordingOriginRef.current = null;
+    silenceStartRef.current = null;
+    setIsSpeaking(false);
     setPartialText("");
     setFinalText("");
     setState(listeningRef.current ? "listening" : "idle");
@@ -430,6 +595,20 @@ export function usePTT({
     }
   }, [client]);
 
+  // ── Calibration ─────────────────────────────────────────
+
+  const startCalibration = useCallback(() => {
+    calibrationSamplesRef.current = [];
+    calibratingRef.current = true;
+    setCalibrating(true);
+  }, []);
+
+  const calibrate = useCallback(() => {
+    // Only meaningful when the mic stream is active.
+    if (!listeningRef.current) return;
+    startCalibration();
+  }, [startCalibration]);
+
   // ── Return ───────────────────────────────────────────────
 
   return {
@@ -437,11 +616,16 @@ export function usePTT({
     partialText,
     finalText,
     sttProvider,
+    isSpeaking,
     wakeWordActive,
     inputMode: continuousRef.current ? "continuous" : inputMode,
     error,
-    start: startRecording,
+    start: () => startRecording("manual"),
     stop,
     cancel,
+    micLevelRef,
+    rmsThreshold,
+    calibrating,
+    calibrate,
   };
 }

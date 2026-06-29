@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, Loader, Mic } from "lucide-react";
 import type { StatusEvent, SttProvider } from "../../lib/protocol";
-import { SelectField, SliderField, TextField, ToggleField } from "./fields";
+import { SelectField, TextField, ToggleField } from "./fields";
 import { useStage } from "../../stage/StageProvider";
 
 interface Props {
@@ -77,9 +77,6 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
   const sttDevice = systemStatus?.stt_device ?? "";
   const sttStreaming = systemStatus?.stt_streaming ?? true;
   const sttModelsDir = systemStatus?.stt_models_dir ?? "";
-  const sttVadEnabled = systemStatus?.stt_vad_enabled ?? false;
-  const sttVadMode = systemStatus?.stt_vad_mode ?? 1;
-  const sttVadSilenceTimeout = systemStatus?.stt_vad_silence_timeout ?? 1.5;
 
   const [tab, setTab] = useState<SttProvider>(activeProvider);
   const [models, setModels] = useState<SttModelInfo[]>([]);
@@ -87,7 +84,7 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
   const [loadingModels, setLoadingModels] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState(sttDevice || "cpu");
-  const [modelsDir, setModelsDir] = useState(sttModelsDir || "~/.cache/huggingface/hub");
+  const [modelsDir, setModelsDir] = useState(sttModelsDir || t("stt.models_dir_placeholder"));
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
@@ -149,7 +146,7 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
   }, [sttDevice]);
 
   useEffect(() => {
-    setModelsDir(sttModelsDir || "~/.cache/huggingface/hub");
+    setModelsDir(sttModelsDir || t("stt.models_dir_placeholder"));
   }, [sttModelsDir]);
 
   const handleLoadModel = async (modelId: string) => {
@@ -160,7 +157,7 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
       const resp = await fetch(`${base}/stt/models/${encodeURIComponent(modelId)}/load?device=${encodeURIComponent(selectedDevice)}&provider=${tab}`, { method: "POST" });
       if (!resp.ok) {
         const data = await resp.json();
-        throw new Error(data.error ?? "Failed to load model");
+        throw new Error(data.error ?? t("stt.failed_load_model"));
       }
       await fetchModels(tab);
     } catch (err) {
@@ -178,7 +175,7 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
       const resp = await fetch(`${base}/stt/models/unload?provider=${tab}`, { method: "POST" });
       if (!resp.ok) {
         const data = await resp.json();
-        throw new Error(data.error ?? "Failed to unload model");
+        throw new Error(data.error ?? t("stt.failed_unload_model"));
       }
       await fetchModels(tab);
       // Auto-switch to Vosk if the active Qwen3 model was unloaded
@@ -212,10 +209,10 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
       : "bg-muted";
 
   const activeLabel = activeProvider === "vosk"
-    ? "vosk"
+    ? t("stt.provider.vosk")
     : sttLoaded
       ? `${sttModel} · ${sttDevice}`
-      : `qwen3 · ${t("stt.status.not_loaded")}`;
+      : `${t("stt.provider.qwen3")} · ${t("stt.status.not_loaded")}`;
 
   const qwenHasLoadedModel = models.some((m) => m.loaded);
 
@@ -373,8 +370,15 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
                 {compatibleDevices.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.id === "cpu"
-                      ? `CPU (${d.ram_total_mb != null ? `${(d.ram_free_mb ?? 0) / 1024} GB libre` : ""})`
-                      : `${d.id} — ${d.name} (${((d.vram_free_mb ?? 0) / 1024).toFixed(1)}/${((d.vram_total_mb ?? 0) / 1024).toFixed(1)} GB libre)`}
+                      ? t("stt.device_cpu", {
+                          free: d.ram_free_mb != null ? ((d.ram_free_mb ?? 0) / 1024).toFixed(0) : "",
+                        })
+                      : t("stt.device_gpu", {
+                          id: d.id,
+                          name: d.name,
+                          free: ((d.vram_free_mb ?? 0) / 1024).toFixed(1),
+                          total: ((d.vram_total_mb ?? 0) / 1024).toFixed(1),
+                        })}
                   </option>
                 ))}
               </select>
@@ -394,7 +398,7 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
             label={t("settings.stt_models_dir")}
             value={modelsDir}
             onChange={handleModelsDirChange}
-            placeholder="~/.cache/huggingface/hub"
+            placeholder={t("stt.models_dir_placeholder")}
             helperText={t("settings.stt_models_dir_hint")}
           />
 
@@ -412,41 +416,6 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
         </div>
       )}
 
-      {/* VAD controls — shared, only active in wake word mode */}
-      <div className="flex flex-col gap-3 pt-2 border-t border-border">
-        <label className="text-xs text-muted font-semibold">{t("settings.stt_vad")}</label>
-        <ToggleField
-          label={t("settings.stt_vad_enabled")}
-          checked={sttVadEnabled}
-          onChange={(v) => onUpdate({ stt_vad_enabled: v })}
-        />
-        {sttVadEnabled && (
-          <>
-            <SelectField
-              label={t("settings.stt_vad_mode")}
-              value={String(sttVadMode)}
-              onChange={(v) => onUpdate({ stt_vad_mode: parseInt(v) })}
-            >
-              {[0, 1, 2, 3].map((m) => (
-                <option key={m} value={String(m)}>
-                  {t(`settings.stt_vad_mode_${m}`)}
-                </option>
-              ))}
-            </SelectField>
-            <SliderField
-              label={t("settings.stt_vad_silence_timeout")}
-              value={sttVadSilenceTimeout}
-              min={0.5}
-              max={5}
-              step={0.1}
-              onChange={(v) => onUpdate({ stt_vad_silence_timeout: v })}
-              displayValue={`${sttVadSilenceTimeout.toFixed(1)}s`}
-            />
-          </>
-        )}
-        <p className="text-[10px] text-muted/60">{t("settings.stt_vad_wake_only")}</p>
-      </div>
-
       {/* Error display */}
       {error && (
         <div className="px-3 py-2 rounded-lg bg-err/10 border border-err/30 text-err text-xs whitespace-pre-wrap">
@@ -456,7 +425,7 @@ export function STTSection({ systemStatus, onUpdate }: Props) {
                 key={i}
                 onClick={() => navigator.clipboard.writeText(line.trim())}
                 className="block w-full text-left bg-black/80 dark:bg-black/90 rounded px-3 py-2 mt-1 font-mono text-[11px] text-green-400 border border-white/10 cursor-pointer hover:bg-black/90 transition-colors"
-                title="Click to copy"
+                title={t("common.click_to_copy")}
               >
                 <span className="select-all">{line.trim()}</span>
               </button>

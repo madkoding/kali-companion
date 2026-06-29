@@ -1649,3 +1649,13 @@ html.kali-perf-low .aw {
 .ai-modal-enter {
   animation: modal-slide-in 200ms ease-out forwards;
 }
+
+/* ── Recording button pulse ─────────────────────────────────────────────── */
+@keyframes rec-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.12); opacity: 0.85; }
+}
+
+.animate-rec-pulse {
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}

@@ -5,6 +5,7 @@
 // The backend selects a random preview text for the given language.
 
 import { useCallback, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getSidecarPort } from "../../hooks/useChat";
 
 export function VoicePreviewButton({
@@ -16,6 +17,7 @@ export function VoicePreviewButton({
   sttLanguage?: string;
   mode?: string;
 }) {
+  const { t } = useTranslation();
   const [playing, setPlaying] = useState(false);
   const ctxRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -91,7 +93,7 @@ export function VoicePreviewButton({
           : "border-border text-muted hover:border-accent hover:text-accent"
       }`}
     >
-      {playing ? "Stop" : "Preview"}
+      {playing ? t("voice_design.stop_button") : t("voice_design.preview_button")}
     </button>
   );
 }

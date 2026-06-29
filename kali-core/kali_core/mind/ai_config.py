@@ -27,6 +27,7 @@ class AIConfig:
     model: str = "glm-5.1"
     system_prompt_override: str | None = None
     max_tokens: int = 16384
+    connection_id: str | None = None
 
     def to_env_map(self) -> dict[str, str]:
         """Return a dict suitable for updating os.environ / dotenv."""

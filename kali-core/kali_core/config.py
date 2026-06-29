@@ -323,10 +323,12 @@ stt_language: str = os.getenv("KALI_STT_LANGUAGE", "es")
 stt_wake_word_enabled: bool = _env_bool("KALI_STT_WAKE_WORD", False)
 stt_wake_word_threshold: float = float(os.getenv("KALI_STT_WAKE_WORD_THRESHOLD", "0.3"))
 stt_wake_word_cooldown: float = float(os.getenv("KALI_STT_WAKE_WORD_COOLDOWN", "2.0"))
-stt_vad_enabled: bool = _env_bool("KALI_STT_VAD_ENABLED", False)
-stt_vad_mode: int = int(os.getenv("KALI_STT_VAD_MODE", "1"))
-stt_vad_silence_timeout: float = float(os.getenv("KALI_STT_VAD_SILENCE_TIMEOUT", "1.5"))
-input_mode: str = os.getenv("KALI_INPUT_MODE", "wake_word")
+stt_vad_enabled: bool = _env_bool("KALI_STT_VAD_ENABLED", True)
+stt_vad_mode: int = int(os.getenv("KALI_STT_VAD_MODE", "2"))
+stt_vad_silence_timeout: float = float(os.getenv("KALI_STT_VAD_SILENCE_TIMEOUT", "1.0"))
+stt_vad_auto_calibrate: bool = _env_bool("KALI_STT_VAD_AUTO_CALIBRATE", True)
+stt_vad_rms_threshold: float = float(os.getenv("KALI_STT_VAD_RMS_THRESHOLD", "0.015"))
+input_mode: str = os.getenv("KALI_INPUT_MODE", "ptt")
 
 # ── Qwen3-ASR (only used when KALI_STT_PROVIDER is "qwen3")
 qwen_asr_model: str = os.getenv("KALI_QWEN_ASR_MODEL", "qwen3-asr-0.6b")
@@ -424,6 +426,8 @@ class _Settings:
     stt_vad_enabled = stt_vad_enabled
     stt_vad_mode = stt_vad_mode
     stt_vad_silence_timeout = stt_vad_silence_timeout
+    stt_vad_auto_calibrate = stt_vad_auto_calibrate
+    stt_vad_rms_threshold = stt_vad_rms_threshold
     input_mode = input_mode
 
     qwen_asr_model = qwen_asr_model

@@ -12,7 +12,15 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useChat, getSidecarPort, type ChatState } from "../hooks/useChat";
 import { useTTS, type TtsPlaybackState } from "../hooks/useTTS";
 import { usePTT, type PTTControls } from "../hooks/usePTT";
-import type { CustomVoice } from "../lib/protocol";
+import type {
+  CloudProviderInfo,
+  ConnectionSummary,
+  CustomVoice,
+} from "../lib/protocol";
+import {
+  listConnections,
+  listCloudProviders,
+} from "../lib/api/connections";
 
 interface StageContextValue {
   chat: ChatState;
@@ -23,6 +31,11 @@ interface StageContextValue {
   sttLanguage: string;
   ttsProvider: string;
   sttProvider: string;
+  connections: ConnectionSummary[];
+  activeConnectionId: string | null;
+  cloudProviders: CloudProviderInfo[];
+  refreshConnections: () => Promise<void>;
+  activateConnection: (id: string, model: string) => Promise<void>;
 }
 
 const StageContext = createContext<StageContextValue | null>(null);
@@ -56,6 +69,64 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const { sid: urlSid } = useParams<{ sid?: string }>();
   const [voices, setVoices] = useState<Record<string, unknown>[]>([]);
   const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
+  const [connections, setConnections] = useState<ConnectionSummary[]>([]);
+  const [cloudProviders, setCloudProviders] = useState<CloudProviderInfo[]>([]);
+
+  // Sync the connections list from the live status event (server pushes
+  // it after every CRUD).  Falls back to a one-shot fetch on first ready
+  // so a fresh page load still shows the persisted list.
+  useEffect(() => {
+    const live = chat.systemStatus?.connections;
+    if (live && live.length >= 0) {
+      setConnections(live);
+    }
+  }, [chat.systemStatus?.connections]);
+
+  const refreshConnections = useCallback(async () => {
+    try {
+      const list = await listConnections();
+      setConnections(list);
+    } catch {
+      // keep stale list
+    }
+  }, []);
+
+  // One-shot fetch on ready + on custom event (mirrors custom-voices pattern).
+  useEffect(() => {
+    if (chat.status !== "ready") return;
+    void refreshConnections();
+    const handler = () => void refreshConnections();
+    window.addEventListener("refresh-connections", handler);
+    return () => window.removeEventListener("refresh-connections", handler);
+  }, [chat.status, refreshConnections]);
+
+  // Cloud providers list (static, fetched once).
+  useEffect(() => {
+    if (chat.status !== "ready") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await listCloudProviders();
+        if (!cancelled) setCloudProviders(list);
+      } catch {
+        // keep empty
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chat.status]);
+
+  const activateConnection = useCallback(
+    async (id: string, model: string) => {
+      // Reuse the WS event defined in protocol.ts; server validates the id
+      // and hot-swaps the live DirectLLMProvider.  A fresh status event
+      // follows within milliseconds, updating `connections` via the effect
+      // above.
+      chat.sendEvent({ event: "activate_connection", id, model });
+    },
+    [chat],
+  );
 
   // URL -> state: attach to the session in the URL once ready.
   const lastAttachedRef = useRef<string | null>(null);
@@ -86,8 +157,12 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const ptt = usePTT({
     client: chat.wsClient,
     wakeWordEnabled: chat.systemStatus?.wake_word_enabled ?? false,
-    inputMode: chat.systemStatus?.input_mode as "ptt" | "wake_word" | "continuous" | undefined,
+    inputMode: chat.systemStatus?.input_mode as "ptt" | "continuous" | undefined,
     onWakeWord,
+    vadSilenceTimeout: chat.systemStatus?.stt_vad_silence_timeout ?? 1.0,
+    vadAutoCalibrate: chat.systemStatus?.stt_vad_auto_calibrate ?? true,
+    vadRmsThreshold: chat.systemStatus?.stt_vad_rms_threshold ?? 0.015,
+    onVadSettingsChange: (patch) => chat.updateSettings(patch),
   });
 
   // PTT final transcript -> chat.send (strip the wake word).
@@ -153,7 +228,22 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const sttLanguage = chat.systemStatus?.stt_language ?? "en";
   const ttsProvider = chat.systemStatus?.tts_provider ?? "inproc";
   const sttProvider = chat.systemStatus?.stt_provider ?? "vosk";
-  const value: StageContextValue = { chat, tts, ptt, voices, customVoices, sttLanguage, ttsProvider, sttProvider };
+  const activeConnectionId = chat.systemStatus?.llm_connection_id ?? null;
+  const value: StageContextValue = {
+    chat,
+    tts,
+    ptt,
+    voices,
+    customVoices,
+    sttLanguage,
+    ttsProvider,
+    sttProvider,
+    connections,
+    activeConnectionId,
+    cloudProviders,
+    refreshConnections,
+    activateConnection,
+  };
   return <StageContext.Provider value={value}>{children}</StageContext.Provider>;
 }
 

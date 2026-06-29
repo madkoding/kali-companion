@@ -89,7 +89,7 @@ export function SettingsModal({
                 ? isAISection(s.id)
                   ? "bg-ai-signal/10 text-ai-signal border border-ai-signal/30"
                   : "bg-accent/15 text-accent border border-accent/30"
-                  : "text-muted hover:text-fg hover:bg-white/5 border border-transparent"
+                  : "text-fg hover:bg-white/5 border border-transparent"
             }`}
           >
             <Icon size={14} />
@@ -114,7 +114,7 @@ export function SettingsModal({
           </>
         ) : (
           <div className="flex flex-1 overflow-hidden">
-            <aside className="w-44 border-r border-border p-3 shrink-0">
+            <aside className="w-60 border-r border-border p-3 shrink-0">
               <div className="flex flex-col gap-1">
                 {SECTIONS.map((s) => {
                   const Icon = s.icon;
@@ -123,12 +123,12 @@ export function SettingsModal({
                     <button
                       key={s.id}
                       onClick={() => setActive(s.id)}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left ${
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left whitespace-nowrap ${
                         isActive
                           ? isAISection(s.id)
                             ? "bg-ai-signal/10 text-ai-signal"
                             : "bg-accent/15 text-accent"
-                          : "text-muted hover:text-fg hover:bg-white/5"
+                          : "text-fg hover:bg-white/5"
                       }`}
                     >
                       <Icon size={14} />
@@ -146,7 +146,7 @@ export function SettingsModal({
   );
 
   function renderSection() {
-    if (active === "provider") return <ProviderSection systemStatus={systemStatus} onUpdate={onUpdate} />;
+    if (active === "provider") return <ProviderSection />;
     if (active === "generation") return <GenerationSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     if (active === "voice") return <VoiceSection systemStatus={systemStatus} voices={voices} onUpdate={onUpdate} />;
     if (active === "stt") return <STTSection systemStatus={systemStatus} onUpdate={onUpdate} />;

@@ -53,6 +53,8 @@ export interface SettingsEvent {
   stt_vad_enabled?: boolean;
   stt_vad_mode?: number;
   stt_vad_silence_timeout?: number;
+  stt_vad_auto_calibrate?: boolean;
+  stt_vad_rms_threshold?: number;
   wake_word_enabled?: boolean;
   input_mode?: string;
   feedback_mode?: string;
@@ -113,6 +115,7 @@ export interface RequestImageEvent {
 export interface AudioStartEvent {
   event: "audio_start";
   language?: string;
+  origin?: "manual" | "wake_word" | "continuous";
 }
 
 export interface AudioEndEvent {
@@ -200,6 +203,11 @@ export interface SttFinalEvent {
   provider?: string;
 }
 
+export interface VadStateEvent {
+  event: "vad_state";
+  is_speech: boolean;
+}
+
 export interface WakeWordEvent {
   event: "wake_word";
   text: string;
@@ -277,6 +285,80 @@ export interface SessionListEvent {
   sessions: Array<{ id: string; title: string; updated: string }>;
 }
 
+// ── AI provider connections (saved LLM endpoints) ────────────
+
+export type ConnectionKind = "local" | "cloud";
+export type ApiFormat = "openai" | "ollama" | "llamacpp" | "lmstudio" | "vllm" | "custom";
+
+export interface ConnectionSummary {
+  id: string;
+  name: string;
+  kind: ConnectionKind;
+  api_url: string;
+  api_format: ApiFormat;
+  vendor_detected: string;
+  model_count: number;
+  is_active: boolean;
+  active_model: string | null;
+}
+
+export interface CloudProviderInfo {
+  id: string;
+  name: string;
+  api_url: string;
+  docs_url: string;
+  notes: string;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  vendor: string;
+  models: string[];
+  detail: string;
+}
+
+export interface CreateConnectionRequest {
+  event: "create_connection";
+  name: string;
+  kind: ConnectionKind;
+  api_url: string;
+  api_format: ApiFormat;
+  api_key?: string;
+  vendor_detected?: string;
+  models?: string[];
+}
+
+export interface UpdateConnectionRequest {
+  event: "update_connection";
+  id: string;
+  patch: {
+    name?: string;
+    api_url?: string;
+    api_format?: ApiFormat;
+    api_key?: string;
+    vendor_detected?: string;
+    models?: string[];
+  };
+}
+
+export interface DeleteConnectionRequest {
+  event: "delete_connection";
+  id: string;
+}
+
+export interface ActivateConnectionRequest {
+  event: "activate_connection";
+  id: string;
+  model: string;
+}
+
+// Backend → frontend: full connections snapshot
+export interface ConnectionsListEvent {
+  event: "connections_list";
+  connections: ConnectionSummary[];
+  active_id: string | null;
+}
+
 export interface StatusEvent {
   event: "status";
   llm_provider: string;
@@ -284,6 +366,9 @@ export interface StatusEvent {
   llm_api_key_set: boolean;
   llm_model: string;
   llm_max_tokens?: number;
+  llm_connection_id?: string | null;
+  llm_connection_name?: string | null;
+  connections?: ConnectionSummary[];
   tts_provider: TtsProvider;
   voice: string;
   tts_mode: string;
@@ -300,6 +385,8 @@ export interface StatusEvent {
   stt_vad_enabled?: boolean;
   stt_vad_mode?: number;
   stt_vad_silence_timeout?: number;
+  stt_vad_auto_calibrate?: boolean;
+  stt_vad_rms_threshold?: number;
   stt_language?: string;
   wake_word_enabled?: boolean;
   input_mode?: string;
@@ -419,7 +506,11 @@ export type IncomingEvent =
   | ListJobsEvent
   | CancelJobEvent
   | GetJobLogsEvent
-  | RequestImageEvent;
+  | RequestImageEvent
+  | CreateConnectionRequest
+  | UpdateConnectionRequest
+  | DeleteConnectionRequest
+  | ActivateConnectionRequest;
 
 export type OutgoingEvent =
   | ReadyEvent
@@ -430,6 +521,7 @@ export type OutgoingEvent =
   | MessageEvent
   | SttPartialEvent
   | SttFinalEvent
+  | VadStateEvent
   | WakeWordEvent
   | TtsAudioEvent
   | TtsFilteredEvent
@@ -440,6 +532,7 @@ export type OutgoingEvent =
   | ConsoleRequestEvent
   | SessionListEvent
   | StatusEvent
+  | ConnectionsListEvent
   | ErrorEvent
   | DisconnectedEvent
   | JobStartEvent

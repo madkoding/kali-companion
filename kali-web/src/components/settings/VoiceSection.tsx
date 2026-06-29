@@ -33,7 +33,7 @@ export function VoiceSection({ systemStatus, voices, onUpdate }: Props) {
 
   // VoiceDesign state
   const [instructions, setInstructions] = useState(
-    "A young female voice, warm and gentle, moderate pacing.",
+    t("voice.instructions_default"),
   );
   const [seed, setSeed] = useState(-1);
   const [selectedPreset, setSelectedPreset] = useState("warm-female");
@@ -112,7 +112,7 @@ export function VoiceSection({ systemStatus, voices, onUpdate }: Props) {
 
         {/* Language always auto for qwen3 */}
         <p className="text-[11px] text-muted/60">
-          Language is always auto-detected with Qwen3-TTS
+          {t("voice.qwen3_language_auto")}
         </p>
 
         <ToggleField

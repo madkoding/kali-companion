@@ -22,10 +22,10 @@ const BACKDROP = "fixed inset-0 z-50";
 const BACKDROP_BG = "bg-black/55";
 
 const sizeMap: Record<string, string> = {
-  sm: "max-w-sm",
-  md: "max-w-md",
-  lg: "max-w-lg",
-  xl: "max-w-2xl",
+  sm: "w-[min(384px,80vw)]",
+  md: "w-[min(448px,80vw)]",
+  lg: "w-[min(512px,80vw)]",
+  xl: "w-[min(960px,92vw)]",
 };
 
 const modalAnim = {
@@ -110,7 +110,7 @@ export function Overlay({
   const isModal = effectiveVariant === "modal" || effectiveVariant === "drawer";
 
   const panelClasses = isModal
-    ? `bg-elevated border border-border rounded-xl shadow-xl w-full ${sizeMap[size]} max-h-[85vh] overflow-hidden flex flex-col`
+    ? `bg-elevated border border-border rounded-xl shadow-xl ${sizeMap[size]} h-[85vh] overflow-hidden flex flex-col`
     : effectiveVariant === "sheet-bottom"
       ? "bg-elevated border-t border-border rounded-t-sheet max-h-[85vh] overflow-auto"
       : `bg-elevated border-border w-[80vw] max-w-sidebar h-full overflow-auto ${
