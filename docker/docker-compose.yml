@@ -1,0 +1,91 @@
+# =============================================================================
+# Kali — Docker Compose (recomendado)
+# =============================================================================
+#
+# Uso:
+#   cp docker/.env.example .env
+#   $EDITOR .env
+#   docker compose up -d
+#
+# Con GPU:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# El .env controla qué motores TTS y STT se usan.
+# =============================================================================
+
+services:
+  kali:
+    image: kali:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: kali
+    restart: unless-stopped
+
+    ports:
+      - "${KALI_PORT:-8900}:8900"   # kali-core WebSocket + HTTP API
+      - "${KALI_WEB_PORT:-8080}:80"  # nginx (kali-web frontend)
+
+    volumes:
+      # Modelos (Piper .onnx, Vosk, Qwen3 .gguf) — se descargan en el primer arranque
+      - kali-models:/app/models
+
+      # Datos persistentes (SQLite sessions, ai_config.json, snapshots, imágenes)
+      - kali-data:/app/data
+
+      # Audio: ALSA (micrófono)
+      - /dev/snd:/dev/snd
+
+      # Audio: PulseAudio socket (para compartir audio con el host)
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/pulse:${XDG_RUNTIME_DIR:-/run/user/1000}/pulse
+
+    environment:
+      # ── Core ──
+      - KALI_PORT=${KALI_PORT:-8900}
+      - KALI_HOST=0.0.0.0
+
+      # ── TTS Engine ──
+      - KALI_TTS_PROVIDER=${KALI_TTS_PROVIDER:-inproc}
+      - KALI_TTS_VOICE=${KALI_TTS_VOICE:-glados-es}
+      - KALI_TTS_MODE=${KALI_TTS_MODE:-normal}
+      - KALI_TTS_ENABLED=${KALI_TTS_ENABLED:-true}
+
+      # ── STT Engine ──
+      - KALI_STT_PROVIDER=${KALI_STT_PROVIDER:-vosk}
+      - KALI_STT_MODEL=${KALI_STT_MODEL:-vosk-model-small-es-0.42}
+      - KALI_STT_MODEL_EN=${KALI_STT_MODEL_EN:-vosk-model-small-en-us-0.15}
+      - KALI_STT_LANGUAGE=${KALI_STT_LANGUAGE:-es}
+
+      # ── Qwen3-TTS (solo si KALI_TTS_PROVIDER=qwen3*) ──
+      - KALI_QWEN_BACKEND=${KALI_QWEN_BACKEND:-CPU}
+      - KALI_QWEN_PORT=${KALI_QWEN_PORT:-8870}
+      - KALI_QWEN_BINARY=${KALI_QWEN_BINARY:-/app/qwen-cpp/build/tts-server}
+      - KALI_QWEN_TALKER_MODEL=${KALI_QWEN_TALKER_MODEL:-/app/models/qwen-talker-0.6b-customvoice-Q4_K_M.gguf}
+      - KALI_QWEN_VOICEDESIGN_MODEL=${KALI_QWEN_VOICEDESIGN_MODEL:-/app/models/qwen-talker-1.7b-voicedesign-Q4_K_M.gguf}
+      - KALI_QWEN_CODEC_MODEL=${KALI_QWEN_CODEC_MODEL:-/app/models/qwen-tokenizer-12hz-Q4_K_M.gguf}
+
+      # ── LLM ──
+      - KALI_LLM_PROVIDER=${KALI_LLM_PROVIDER:-direct}
+      - KALI_LLM_API_URL=${KALI_LLM_API_URL:-http://localhost:11434/v1}
+      - KALI_LLM_API_KEY=${KALI_LLM_API_KEY:-}
+      - KALI_LLM_MODEL=${KALI_LLM_MODEL:-glm-5.1}
+
+      # ── Permissions ──
+      - KALI_PROFILE=${KALI_PROFILE:-dev}
+
+      # ── PulseAudio ──
+      - PULSE_SERVER=unix:${XDG_RUNTIME_DIR:-/run/user/1000}/pulse/native
+
+    # Audio device access
+    devices:
+      - /dev/snd:/dev/snd
+
+    # Usar network_mode: host simplifica la conexión a Ollama en localhost:11434
+    # Comenta esta línea si prefieres usar el puente de Docker y host.docker.internal
+    network_mode: host
+
+volumes:
+  kali-models:
+    name: kali-models
+  kali-data:
+    name: kali-data

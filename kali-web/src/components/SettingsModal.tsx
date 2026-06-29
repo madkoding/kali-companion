@@ -5,12 +5,13 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Cpu, Volume2, Sliders, Palette, Gauge } from "lucide-react";
+import { Cpu, Volume2, Sliders, Palette, Gauge, Mic } from "lucide-react";
 import type { StatusEvent, SettingsEvent } from "../lib/protocol";
 import { Modal } from "./ui/Modal";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import { ProviderSection } from "./settings/ProviderSection";
 import { VoiceSection } from "./settings/VoiceSection";
+import { STTSection } from "./settings/STTSection";
 import { BehaviorSection } from "./settings/BehaviorSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { GenerationSection } from "./settings/GenerationSection";
@@ -31,7 +32,7 @@ interface Props {
   onLanguageChange: (lang: string) => void;
 }
 
-type SectionId = "provider" | "voice" | "behavior" | "generation" | "appearance";
+type SectionId = "provider" | "voice" | "stt" | "behavior" | "generation" | "appearance";
 
 interface SectionDef {
   id: SectionId;
@@ -43,6 +44,7 @@ const SECTIONS: SectionDef[] = [
   { id: "provider", icon: Cpu, labelKey: "settings.section.provider" },
   { id: "generation", icon: Gauge, labelKey: "settings.section.generation" },
   { id: "voice", icon: Volume2, labelKey: "settings.section.voice" },
+  { id: "stt", icon: Mic, labelKey: "settings.section.stt" },
   { id: "behavior", icon: Sliders, labelKey: "settings.section.behavior" },
   { id: "appearance", icon: Palette, labelKey: "settings.section.appearance" },
 ];
@@ -147,6 +149,7 @@ export function SettingsModal({
     if (active === "provider") return <ProviderSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     if (active === "generation") return <GenerationSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     if (active === "voice") return <VoiceSection systemStatus={systemStatus} voices={voices} onUpdate={onUpdate} />;
+    if (active === "stt") return <STTSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     if (active === "behavior") return <BehaviorSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     return (
       <AppearanceSection

@@ -28,6 +28,7 @@ export interface PTTControls {
   state: PTTState;
   partialText: string;
   finalText: string;
+  sttProvider: string;
   wakeWordActive: boolean;
   inputMode: InputMode;
   error: string | null;
@@ -133,6 +134,7 @@ export function usePTT({
   const [state, setState] = useState<PTTState>("idle");
   const [partialText, setPartialText] = useState("");
   const [finalText, setFinalText] = useState("");
+  const [sttProvider, setSttProvider] = useState("vosk");
   const [wakeWordActive, setWakeWordActive] = useState(false);
   const [error, setError] = useState<string | null>(
     _micAvailable() ? null : _MIC_UNAVAILABLE_MSG
@@ -163,12 +165,14 @@ export function usePTT({
 
     const onFinal = (p: unknown) => {
       const ev = p as SttFinalEvent;
-      if (!ev.text) return;
+      if (ev.provider) setSttProvider(ev.provider);
 
       if (continuousRef.current) {
         // Continuous mode: keep STT alive, just forward the text.
-        setFinalText(ev.text);
-        setPartialText("");
+        if (ev.text) {
+          setFinalText(ev.text);
+          setPartialText("");
+        }
         return;
       }
 
@@ -187,14 +191,23 @@ export function usePTT({
       void startRecording();
     };
 
+    const onSttError = () => {
+      recordingRef.current = false;
+      setPartialText("");
+      setFinalText("");
+      setState(listeningRef.current ? "listening" : "idle");
+    };
+
     client.on("stt_partial", onPartial as (p: unknown) => void);
     client.on("stt_final", onFinal as (p: unknown) => void);
     client.on("wake_word", onWakeWord as (p: unknown) => void);
+    client.on("error", onSttError as (p: unknown) => void);
 
     return () => {
       client.off("stt_partial", onPartial as (p: unknown) => void);
       client.off("stt_final", onFinal as (p: unknown) => void);
       client.off("wake_word", onWakeWord as (p: unknown) => void);
+      client.off("error", onSttError as (p: unknown) => void);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
@@ -423,6 +436,7 @@ export function usePTT({
     state,
     partialText,
     finalText,
+    sttProvider,
     wakeWordActive,
     inputMode: continuousRef.current ? "continuous" : inputMode,
     error,

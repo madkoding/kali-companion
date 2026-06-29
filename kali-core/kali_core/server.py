@@ -31,6 +31,7 @@ import base64
 import json
 import logging
 import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -66,7 +67,8 @@ from kali_core.claws.web import WebFetchTool, WebSearchTool
 from kali_core.collar.consent import ConsentManager as ConsentMgr
 from kali_core.collar.gateway import PermissionGateway
 from kali_core.config import settings
-from kali_core.ear.manager import STTManager, WakeWordDetector
+from kali_core.ear.manager import WakeWordDetector
+from kali_core.ear.providers import get_stt_provider
 from kali_core.game.gsi import gsi_state
 from kali_core.gaze import GazeClient
 from kali_core.lang_map import normalize
@@ -136,6 +138,17 @@ def _build_tts_provider():
     return InProcTTSProvider()
 
 
+def _build_stt_provider():
+    provider = get_stt_provider(settings.stt_provider)
+    if settings.stt_provider == "qwen3":
+        if hasattr(provider, "configure"):
+            provider.configure(models_dir=settings.qwen_asr_models_dir)
+        provider.set_streaming(settings.qwen_asr_streaming)
+    else:
+        provider.load_model(settings.stt_model)
+    return provider
+
+
 def _register_tools() -> None:
     """Register all available tools in the tool registry."""
     register(FsReadTool())
@@ -196,6 +209,7 @@ class Server:
         # Shared components.
         self.llm_provider = _build_llm_provider()
         self.tts_provider = _build_tts_provider()
+        self.stt_provider = _build_stt_provider()
         self.agent = AgentRuntime(self.llm_provider)
         # For qwen3 providers, glados-es (the Piper default) is not a valid
         # voice. Fall back to "serena" (first predefined voice) so the UI and
@@ -242,7 +256,45 @@ class Server:
         self.agent.set_executor(self.executor)
         self.agent.set_tools(self.tool_defs)
         self.agent.set_session_store(self.session_store)
+        self._connections: list[Connection] = []
         self._register_routes()
+
+    async def broadcast(self, payload: dict[str, Any]) -> None:
+        for conn in list(self._connections):
+            try:
+                await conn.send(payload)
+            except Exception:
+                pass
+
+    async def broadcast_status(self) -> None:
+        """Send a full, per-connection status to all connected clients."""
+        for conn in list(self._connections):
+            try:
+                await conn._emit_status()
+            except Exception:
+                pass
+
+    def _build_status_payload(self) -> dict[str, Any]:
+        return {
+            "event": "status",
+            "llm_provider": self.llm_provider.provider_name,
+            "llm_api_url": getattr(self.llm_provider, "_api_url", settings.llm_api_url),
+            "llm_api_key_set": bool(getattr(self.llm_provider, "_api_key", "")),
+            "llm_model": getattr(self.llm_provider, "_model", settings.llm_model),
+            "llm_max_tokens": getattr(self.llm_provider, "_max_tokens", settings.llm_max_tokens),
+            "tts_provider": self.tts_provider.provider_name,
+            "voice": self.tts_pipeline.voice,
+            "tts_mode": self.tts_pipeline.mode,
+            "auto_tts": self.tts_pipeline.auto_tts,
+            "capture_backend": "mss" if self.gaze_client.connected else "none",
+            "profile": self.executor.profile,
+            "stt_provider": self.stt_provider.provider_name,
+            "stt_model": self.stt_provider.loaded_model,
+            "stt_device": self.stt_provider.device,
+            "stt_loaded": self.stt_provider.is_loaded,
+            "stt_streaming": getattr(self.stt_provider, "_streaming", True),
+            "stt_models_dir": str(getattr(self.stt_provider, "_models_dir", "")),
+        }
 
     def _register_routes(self) -> None:
         # Static file serving for cached images.
@@ -321,12 +373,15 @@ class Server:
         async def ws_endpoint(ws: WebSocket) -> None:
             await ws.accept()
             conn = Connection(ws, self)
+            self._connections.append(conn)
             try:
                 await conn.run()
             except WebSocketDisconnect:
                 logger.info("frontend disconnected")
             except Exception:
                 logger.exception("connection error")
+            finally:
+                self._connections.remove(conn)
 
         @self.app.get("/health")
         async def health() -> dict[str, Any]:
@@ -469,6 +524,132 @@ class Server:
             models = await list_models(api_url=api_url, api_key=api_key)
             return {"models": models}
 
+        # ── STT management ──────────────────────────────────────
+
+        @self.app.get("/stt/providers")
+        async def stt_providers() -> dict[str, Any]:
+            from kali_core.ear.providers import list_stt_providers
+            return {"providers": list_stt_providers()}
+
+        @self.app.get("/stt/models")
+        async def stt_models(provider: str | None = None) -> dict[str, Any]:
+            import dataclasses
+            if provider and provider != self.stt_provider.provider_name:
+                from kali_core.ear.providers import get_stt_provider
+                temp = get_stt_provider(provider)
+                return {
+                    "models": [
+                        dataclasses.asdict(m) for m in temp.list_models()
+                    ]
+                }
+            return {
+                "models": [
+                    dataclasses.asdict(m) for m in self.stt_provider.list_models()
+                ]
+            }
+
+        @self.app.get("/stt/devices")
+        async def stt_devices() -> dict[str, Any]:
+            devices: list[dict] = []
+            try:
+                import torch
+                for i in range(torch.cuda.device_count()):
+                    props = torch.cuda.get_device_properties(i)
+                    free, total = torch.cuda.mem_get_info(i)
+                    devices.append({
+                        "id": f"cuda:{i}",
+                        "name": props.name,
+                        "vram_total_mb": round(total / 1024**2),
+                        "vram_free_mb": round(free / 1024**2),
+                    })
+            except ImportError:
+                try:
+                    result = subprocess.run(
+                        ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.free",
+                         "--format=csv,noheader,nounits"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    for line in result.stdout.strip().split("\n"):
+                        if not line.strip():
+                            continue
+                        idx, name, total, free = [p.strip() for p in line.split(",")]
+                        devices.append({
+                            "id": f"cuda:{idx}",
+                            "name": name,
+                            "vram_total_mb": int(total),
+                            "vram_free_mb": int(free),
+                        })
+                except Exception:
+                    pass
+            try:
+                import psutil
+                mem = psutil.virtual_memory()
+                devices.append({
+                    "id": "cpu",
+                    "name": "CPU",
+                    "ram_total_mb": round(mem.total / 1024**2),
+                    "ram_free_mb": round(mem.available / 1024**2),
+                })
+            except ImportError:
+                devices.append({"id": "cpu", "name": "CPU"})
+            return {"devices": devices}
+
+        @self.app.post("/stt/models/{model_id}/load")
+        async def stt_load_model(
+            model_id: str, device: str = "cpu", provider: str | None = None
+        ) -> dict[str, Any]:
+            if any(c._stt_session_active for c in self._connections):
+                return JSONResponse(
+                    content={"error": "Cannot load model during active recording"},
+                    status_code=400,
+                )
+            from kali_core.ear.providers import get_stt_provider
+            stt = get_stt_provider(provider) if provider else self.stt_provider
+            loop = asyncio.get_event_loop()
+            try:
+                await loop.run_in_executor(
+                    None, stt.load_model, model_id, device
+                )
+                await self.broadcast_status()
+                return {"status": "ready", "model": model_id, "device": device}
+            except Exception as exc:
+                logger.exception("STT model load failed")
+                return JSONResponse(
+                    content={"error": str(exc)}, status_code=500
+                )
+
+        @self.app.post("/stt/models/unload")
+        async def stt_unload_model(provider: str | None = None) -> dict[str, Any]:
+            if any(c._stt_session_active for c in self._connections):
+                return JSONResponse(
+                    content={"error": "Cannot unload model during active recording"},
+                    status_code=400,
+                )
+            target_name = provider or self.stt_provider.provider_name
+            if target_name == self.stt_provider.provider_name:
+                return JSONResponse(
+                    content={"error": "Cannot unload the active STT provider's model. Switch to another provider first."},
+                    status_code=400,
+                )
+            from kali_core.ear.providers import get_stt_provider
+            stt = get_stt_provider(provider) if provider else self.stt_provider
+            stt.unload_model()
+            await self.broadcast_status()
+            return {"status": "unloaded"}
+
+        @self.app.get("/stt/status")
+        async def stt_status() -> dict[str, Any]:
+            return {
+                "provider": self.stt_provider.provider_name,
+                "model": self.stt_provider.loaded_model,
+                "device": self.stt_provider.device,
+                "loaded": self.stt_provider.is_loaded,
+                "streaming": getattr(self.stt_provider, "_streaming", True),
+                "models_dir": str(
+                    getattr(self.stt_provider, "_models_dir", "")
+                ),
+            }
+
     async def run(self) -> None:
         config = uvicorn.Config(
             self.app,
@@ -489,7 +670,7 @@ class Connection:
         self.server = server
         self.session_id: str | None = None
         self._current_task: asyncio.Task | None = None
-        self._stt_manager: STTManager | None = None
+        self._stt_session_active: bool = False
         self._wake_word: WakeWordDetector | None = None
         self._stt_language: str = normalize(settings.stt_language)
         self._wake_word_enabled: bool = settings.stt_wake_word_enabled
@@ -498,6 +679,15 @@ class Connection:
         self._plan_mode: bool = False
         self._voice_instructions: str = ""
         self._voice_seed: int = -1
+        # VAD (Voice Activity Detection) — silence-based auto-end in wake word mode
+        self._stt_vad_enabled: bool = settings.stt_vad_enabled
+        self._stt_vad_mode: int = settings.stt_vad_mode
+        self._stt_vad_silence_timeout: float = settings.stt_vad_silence_timeout
+        self._vad: Any = None  # webrtcvad.Vad — lazy init
+        self._vad_buffer = bytearray()
+        self._vad_silence_frames = 0
+        self._recording_start_time: float | None = None
+        self._max_recording_duration: float = 180.0  # safety timeout (seconds)
 
     async def run(self) -> None:
         while True:
@@ -721,13 +911,39 @@ class Connection:
 
     async def _handle_audio_start(self, event: dict[str, Any]) -> None:
         """Start a new STT session."""
+        if not self.server.stt_provider.is_loaded:
+            await self.send(
+                {
+                    "event": "error",
+                    "detail": (
+                        "STT provider not loaded. "
+                        "Load a model first in Settings > Speech to Text."
+                    ),
+                }
+            )
+            return
         language = normalize(event.get("language", self._stt_language))
-        if self._stt_manager is None:
-            self._stt_manager = STTManager(language)
-        else:
-            self._stt_manager.set_language(language)
-        self._stt_manager.start_session()
+        self.server.stt_provider.start_session(language)
+        self._stt_session_active = True
         logger.debug("STT session started (lang=%s)", language)
+
+        # Reset VAD state for new session.
+        self._vad_buffer = bytearray()
+        self._vad_silence_frames = 0
+        self._recording_start_time = time.monotonic()
+        if self._wake_word_enabled and self._stt_vad_enabled:
+            logger.info(
+                "STT session started with VAD (mode=%d, silence_timeout=%.1fs, wake_word=%s)",
+                self._stt_vad_mode,
+                self._stt_vad_silence_timeout,
+                self._wake_word_enabled,
+            )
+        else:
+            logger.info(
+                "STT session started without VAD (wake_word=%s, vad_enabled=%s)",
+                self._wake_word_enabled,
+                self._stt_vad_enabled,
+            )
 
         # Pause wake word while recording (avoids feedback).
         if self._wake_word is not None:
@@ -746,32 +962,42 @@ class Connection:
                 )
 
         # Feed the main STT session if active.
-        if self._stt_manager is not None:
-            stt = self._stt_manager.current()
-            if stt is not None and stt.active:
-                result = stt.accept(chunk)
-                if result is not None:
-                    if "partial" in result:
-                        partial = result.get("partial", "")
-                        if partial:
-                            await self.send(
-                                {"event": "stt_partial", "text": partial}
-                            )
-                    elif "text" in result:
-                        text = result.get("text", "")
-                        if text:
-                            # Apply STT correction.
-                            corrected, _changes = correct_stt_text(text)
-                            await self.send(
-                                {"event": "stt_final", "text": corrected}
-                            )
+        stt_returned_final = False
+        if self._stt_session_active:
+            result = self.server.stt_provider.accept(chunk)
+            if result is not None:
+                if "partial" in result:
+                    partial = result.get("partial", "")
+                    if partial:
+                        await self.send(
+                            {"event": "stt_partial", "text": partial}
+                        )
+                elif "text" in result:
+                    stt_returned_final = True
+                    text = result.get("text", "")
+                    if text:
+                        # Apply STT correction.
+                        corrected, _changes = correct_stt_text(text)
+                        await self.send(
+                            {"event": "stt_final", "text": corrected, "provider": self.server.stt_provider.provider_name}
+                        )
+
+        # VAD-based auto-end (wake word mode only).
+        if self._stt_session_active and not stt_returned_final and self._wake_word_enabled and self._stt_vad_enabled:
+            await self._process_vad(chunk)
+
+        # Safety timeout: never let a recording exceed max duration.
+        if self._stt_session_active and self._recording_start_time is not None:
+            elapsed = time.monotonic() - self._recording_start_time
+            if elapsed >= self._max_recording_duration:
+                logger.warning("Recording safety timeout reached (%.1fs), auto-ending session", elapsed)
+                await self._handle_audio_end()
 
     async def _handle_audio_end(self) -> None:
         """End the STT session and emit the final transcript."""
-        if self._stt_manager is not None:
-            stt = self._stt_manager.current()
-            if stt is not None:
-                result = stt.finish()
+        if self._stt_session_active:
+            try:
+                result = self.server.stt_provider.finish()
                 text = result.get("text", "").strip()
                 # Apply STT correction (fuzzy matching against game terms).
                 corrected, changes = correct_stt_text(text)
@@ -779,12 +1005,51 @@ class Connection:
                     logger.info("STT corrected: %s → %s (changes: %s)", text, corrected, changes)
                     await self.send({"event": "stt_uncorrected", "text": text})
                 text = corrected
-                await self.send({"event": "stt_final", "text": text})
-            self._stt_manager.end_session()
+                await self.send({"event": "stt_final", "text": text, "provider": self.server.stt_provider.provider_name})
+            except Exception:
+                logger.exception("STT finish failed")
+                await self.send({"event": "error", "detail": "STT transcription failed. Model may have been unloaded."})
+            finally:
+                self._stt_session_active = False
 
-        # Resume wake word if enabled.
-        if self._wake_word_enabled and self._wake_word is not None:
+        # Resume wake word if enabled and not already running.
+        if self._wake_word_enabled and self._wake_word is not None and not self._wake_word.running:
             self._wake_word.start()
+
+        # Reset VAD state at the end (new session will re-arm if needed).
+        self._vad_buffer = bytearray()
+        self._vad_silence_frames = 0
+        self._recording_start_time = None
+
+    async def _process_vad(self, chunk: bytes) -> None:
+        import webrtcvad
+        if self._vad is None:
+            self._vad = webrtcvad.Vad(self._stt_vad_mode)
+            logger.info("VAD initialized (mode=%d, silence_timeout=%.1fs)", self._stt_vad_mode, self._stt_vad_silence_timeout)
+
+        self._vad_buffer.extend(chunk)
+        frame_size = 320  # 10ms @ 16kHz 16-bit mono
+        prev_silence_frames = self._vad_silence_frames
+
+        while len(self._vad_buffer) >= frame_size:
+            frame = bytes(self._vad_buffer[:frame_size])
+            self._vad_buffer = self._vad_buffer[frame_size:]
+
+            if self._vad.is_speech(frame, 16000):
+                if self._vad_silence_frames > 0:
+                    logger.debug("VAD: speech detected after %d silence frames", self._vad_silence_frames)
+                self._vad_silence_frames = 0
+            else:
+                self._vad_silence_frames += 1
+
+        timeout_frames = int(self._stt_vad_silence_timeout * 100)
+        if self._vad_silence_frames >= timeout_frames:
+            logger.info("VAD: silence timeout reached (%d frames), auto-ending session", self._vad_silence_frames)
+            self._vad_silence_frames = 0
+            self._vad_buffer = bytearray()
+            await self._handle_audio_end()
+        elif self._vad_silence_frames > 0 and self._vad_silence_frames % 50 == 0 and self._vad_silence_frames != prev_silence_frames:
+            logger.debug("VAD: %d silence frames (%.1fs)", self._vad_silence_frames, self._vad_silence_frames * 0.01)
 
     # ── Wake word ──────────────────────────────────────────
 
@@ -1021,8 +1286,70 @@ class Connection:
             save_ai_config(cfg)
         if "stt_language" in event:
             self._stt_language = normalize(event["stt_language"])
-            if self._stt_manager is not None:
-                self._stt_manager.set_language(self._stt_language)
+        if "stt_provider" in event:
+            if self._stt_session_active:
+                await self.send(
+                    {"event": "error", "detail": "Cannot change STT provider during active recording"}
+                )
+            else:
+                new_provider = event["stt_provider"]
+                if new_provider != self.server.stt_provider.provider_name:
+                    self.server.stt_provider = get_stt_provider(new_provider)
+                    if new_provider == "qwen3" and hasattr(self.server.stt_provider, "configure"):
+                        self.server.stt_provider.configure(
+                            models_dir=event.get("stt_models_dir", settings.qwen_asr_models_dir)
+                        )
+                    await self.server.broadcast_status()
+        if "stt_model" in event:
+            if self._stt_session_active:
+                await self.send(
+                    {"event": "error", "detail": "Cannot change STT model during active recording"}
+                )
+            else:
+                device = event.get("stt_device", "cpu")
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, self.server.stt_provider.load_model, event["stt_model"], device
+                )
+        if "stt_device" in event:
+            if self._stt_session_active:
+                await self.send(
+                    {"event": "error", "detail": "Cannot change STT device during active recording"}
+                )
+            elif self.server.stt_provider.is_loaded:
+                current_model = self.server.stt_provider.loaded_model
+                self.server.stt_provider.unload_model()
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, self.server.stt_provider.load_model, current_model, event["stt_device"]
+                )
+        if "stt_streaming" in event:
+            self.server.stt_provider.set_streaming(bool(event["stt_streaming"]))
+        if "stt_models_dir" in event:
+            if self._stt_session_active:
+                await self.send(
+                    {"event": "error", "detail": "Cannot change models directory during active recording"}
+                )
+            elif hasattr(self.server.stt_provider, "configure"):
+                was_loaded = self.server.stt_provider.is_loaded
+                current_model = self.server.stt_provider.loaded_model
+                current_device = self.server.stt_provider.device
+                if was_loaded:
+                    self.server.stt_provider.unload_model()
+                self.server.stt_provider.configure(models_dir=event["stt_models_dir"])
+                if was_loaded and current_model:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None, self.server.stt_provider.load_model, current_model, current_device or "cpu"
+                    )
+        if "stt_vad_enabled" in event:
+            self._stt_vad_enabled = bool(event["stt_vad_enabled"])
+        if "stt_vad_mode" in event:
+            self._stt_vad_mode = int(event["stt_vad_mode"])
+            if self._vad is not None:
+                self._vad.set_mode(self._stt_vad_mode)
+        if "stt_vad_silence_timeout" in event:
+            self._stt_vad_silence_timeout = float(event["stt_vad_silence_timeout"])
         if "wake_word_enabled" in event:
             self._wake_word_enabled = bool(event["wake_word_enabled"])
             if self._wake_word_enabled:
@@ -1053,30 +1380,21 @@ class Connection:
         await self._emit_status()
 
     async def _emit_status(self) -> None:
-        await self.send(
-            {
-                "event": "status",
-                "llm_provider": self.server.llm_provider.provider_name,
-                "llm_api_url": getattr(self.server.llm_provider, "_api_url", settings.llm_api_url),
-                "llm_api_key_set": bool(getattr(self.server.llm_provider, "_api_key", "")),
-                "llm_model": getattr(self.server.llm_provider, "_model", settings.llm_model),
-                "llm_max_tokens": getattr(self.server.llm_provider, "_max_tokens", settings.llm_max_tokens),
-                "tts_provider": self.server.tts_provider.provider_name,
-                "voice": self.server.tts_pipeline.voice,
-                "tts_mode": self.server.tts_pipeline.mode,
-                "auto_tts": self.server.tts_pipeline.auto_tts,
-                "capture_backend": "mss" if self.server.gaze_client.connected else "none",
-                "profile": self.server.executor.profile,
-                "stt_language": self._stt_language,
-                "wake_word_enabled": self._wake_word_enabled,
-                "input_mode": self._input_mode,
-                "feedback_mode": self._feedback_mode,
-                "plan_mode": self._plan_mode,
-                "artifact_diff_preview": settings.artifact_diff_preview,
-                "tools": [t.name for t in available_tools()],
-                "available_profiles": [p["id"] for p in self.server.gateway.list_profiles()],
-            }
-        )
+        payload = self.server._build_status_payload()
+        payload.update({
+            "stt_language": self._stt_language,
+            "wake_word_enabled": self._wake_word_enabled,
+            "input_mode": self._input_mode,
+            "feedback_mode": self._feedback_mode,
+            "plan_mode": self._plan_mode,
+            "artifact_diff_preview": settings.artifact_diff_preview,
+            "tools": [t.name for t in available_tools()],
+            "available_profiles": [p["id"] for p in self.server.gateway.list_profiles()],
+            "stt_vad_enabled": self._stt_vad_enabled,
+            "stt_vad_mode": self._stt_vad_mode,
+            "stt_vad_silence_timeout": self._stt_vad_silence_timeout,
+        })
+        await self.send(payload)
 
     async def send(self, payload: dict[str, Any]) -> None:
         try:

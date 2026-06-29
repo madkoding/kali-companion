@@ -36,6 +36,7 @@ import { ArtifactCanvas } from "./ArtifactCanvas";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { SpotlightInput } from "./SpotlightInput";
 import { VoiceBar } from "./VoiceBar";
+import { TranscriptionBar } from "./TranscriptionBar";
 import { ConversationModal } from "./ConversationModal";
 import { CustomizerDrawer } from "./CustomizerDrawer";
 import { MinimizeDock } from "./MinimizeDock";
@@ -314,6 +315,9 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
 
       {/* Voice bar — TTS playback indicator */}
       <VoiceBar />
+
+      {/* Transcription bar — live STT text */}
+      <TranscriptionBar />
 
       {/* Minimize dock — minimized windows */}
       <MinimizeDock windows={api.windows} onRestore={api.toggleMinimize} />

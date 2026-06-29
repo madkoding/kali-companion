@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+*.egg
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+*.whl
+
+# Node
+node_modules/
+kali-web/dist/
+*.tsbuildinfo
+
+# Voice and STT models (downloaded at runtime, not baked into image)
+kali-core/kali_core/voice/voices/*.onnx
+kali-core/kali_core/voice/voices/*.onnx.json
+kali-core/kali_core/ear/models/*
+kali-core/kali_core/voice/qwen_models/*
+kali-core/kali_core/voice/qwen_cpp/build/
+kali-core/kali_core/voice/qwen_cpp/build-gpu/
+
+# Config / data
+.env
+.env.local
+*.db
+*.db-journal
+*.log
+
+# IDE / OS
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitmodules
+
+# Docs / misc
+docs/
+demos/
+ui-brainstorm/
+.agents/
+.opencode/
+skills-lock.json

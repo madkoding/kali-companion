@@ -1,0 +1,28 @@
+# =============================================================================
+# Kali — Docker Compose GPU Override
+# =============================================================================
+# Extiende docker-compose.yml con soporte GPU (nvidia-container-toolkit).
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# Requisitos:
+#   - nvidia-container-toolkit instalado en el host
+#   - Imagen kali:gpu (docker build -f docker/Dockerfile.gpu -t kali:gpu .)
+# =============================================================================
+
+services:
+  kali:
+    image: kali:gpu
+
+    environment:
+      - KALI_QWEN_BACKEND=CUDA0
+      - NVIDIA_VISIBLE_DEVICES=all
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

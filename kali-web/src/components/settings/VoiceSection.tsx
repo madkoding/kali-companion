@@ -16,10 +16,10 @@ interface Props {
 }
 
 const MODES = ["normal", "whisper", "robotic", "radio", "deep"];
-const STT_LANGS = [
-  { id: "es", labelKey: "language.es" },
-  { id: "es-CL", labelKey: "language.es_CL" },
+const TTS_LANGS = [
+  { id: "auto", labelKey: "language.auto" },
   { id: "en", labelKey: "language.en" },
+  { id: "es", labelKey: "language.es" },
 ];
 
 export function VoiceSection({ systemStatus, voices, onUpdate }: Props) {
@@ -171,11 +171,11 @@ export function VoiceSection({ systemStatus, voices, onUpdate }: Props) {
       />
 
       <SelectField
-        label={t("settings.stt_language")}
+        label={t("settings.tts_language")}
         value={sttLanguage}
         onChange={(v) => onUpdate({ stt_language: v })}
       >
-        {STT_LANGS.map((l) => (
+        {TTS_LANGS.map((l) => (
           <option key={l.id} value={l.id}>
             {t(l.labelKey)}
           </option>

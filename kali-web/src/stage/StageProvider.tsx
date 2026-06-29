@@ -22,6 +22,7 @@ interface StageContextValue {
   customVoices: CustomVoice[];
   sttLanguage: string;
   ttsProvider: string;
+  sttProvider: string;
 }
 
 const StageContext = createContext<StageContextValue | null>(null);
@@ -151,7 +152,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   const sttLanguage = chat.systemStatus?.stt_language ?? "en";
   const ttsProvider = chat.systemStatus?.tts_provider ?? "inproc";
-  const value: StageContextValue = { chat, tts, ptt, voices, customVoices, sttLanguage, ttsProvider };
+  const sttProvider = chat.systemStatus?.stt_provider ?? "vosk";
+  const value: StageContextValue = { chat, tts, ptt, voices, customVoices, sttLanguage, ttsProvider, sttProvider };
   return <StageContext.Provider value={value}>{children}</StageContext.Provider>;
 }
 

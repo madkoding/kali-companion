@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings, Plus, History, Radio, Cpu, Palette, Library, MessageSquare, X, Zap } from "lucide-react";
+import { Settings, Plus, History, Radio, Cpu, Palette, Library, MessageSquare, X, Zap, Mic } from "lucide-react";
 import { useStage } from "./StageProvider";
 import { IconButton } from "../components/ui/IconButton";
 import { Tooltip } from "../components/ui/Tooltip";
@@ -57,6 +57,17 @@ export function HUD({
 
   const statusDotClass =
     chat.status === "ready" ? "bg-ok" : chat.status === "error" ? "bg-err" : "bg-muted";
+
+  const sttProvider = chat.systemStatus?.stt_provider ?? "vosk";
+  const sttLoaded = chat.systemStatus?.stt_loaded ?? (sttProvider === "vosk");
+  const sttModel = chat.systemStatus?.stt_model ?? "";
+  const sttDevice = chat.systemStatus?.stt_device ?? "";
+  const sttStatusDotClass = sttLoaded ? "bg-ok" : "bg-muted";
+  const sttLabel = sttProvider === "vosk"
+    ? `vosk · ${chat.systemStatus?.stt_language ?? "es"}`
+    : sttLoaded
+      ? `${sttModel} · ${sttDevice}`
+      : `qwen3 · ${t("stt.status.not_loaded")}`;
 
   const openArtifacts = artifactsOpenCount;
   const closedArtifacts = artifactsClosedCount;
@@ -115,6 +126,12 @@ export function HUD({
           <span className="hud-pill" title={t("wake_word.listening")}>
             <Radio size={11} className="text-accent" />
             {t("wake_word.listening")}
+          </span>
+        )}
+        {chat.systemStatus && (
+          <span className="hud-pill" title={sttLabel}>
+            <span className={`w-1.5 h-1.5 rounded-full ${sttStatusDotClass}`} />
+            {sttLabel}
           </span>
         )}
         {chat.systemStatus && (
@@ -234,6 +251,13 @@ function ModelStatsPanel({
           <StatsRow label={t("stats.model")} value={systemStatus.llm_model} mono />
           <StatsRow label={t("stats.api_url")} value={systemStatus.llm_api_url.replace(/^https?:\/\//, "")} mono />
           <StatsRow label={t("stats.max_tokens")} value={String(systemStatus.llm_max_tokens ?? "-")} />
+        </StatsSection>
+
+        <StatsSection title="STT" icon={<Mic size={12} />}>
+          <StatsRow label={t("stats.provider")} value={systemStatus.stt_provider} />
+          <StatsRow label={t("stats.model")} value={systemStatus.stt_model ?? "-"} mono />
+          <StatsRow label={t("stats.device")} value={systemStatus.stt_device ?? "-"} mono />
+          <StatsRow label="Streaming" value={systemStatus.stt_streaming ? "On" : "Off"} />
         </StatsSection>
 
         <StatsSection title={t("stats.session")} icon={<MessageSquare size={12} />}>

@@ -316,13 +316,26 @@ tts_http_url: str = os.getenv("KALI_TTS_HTTP_URL", "http://localhost:3000")
 tts_enabled: bool = _env_bool("KALI_TTS_ENABLED", True)
 
 # ── STT (kali-ear) ────────────────────────────────────────
+stt_provider: Literal["vosk", "qwen3"] = os.getenv("KALI_STT_PROVIDER", "vosk")
 stt_model: str = os.getenv("KALI_STT_MODEL", "vosk-model-small-es-0.42")
 stt_model_en: str = os.getenv("KALI_STT_MODEL_EN", "vosk-model-small-en-us-0.15")
 stt_language: str = os.getenv("KALI_STT_LANGUAGE", "es")
 stt_wake_word_enabled: bool = _env_bool("KALI_STT_WAKE_WORD", False)
 stt_wake_word_threshold: float = float(os.getenv("KALI_STT_WAKE_WORD_THRESHOLD", "0.3"))
 stt_wake_word_cooldown: float = float(os.getenv("KALI_STT_WAKE_WORD_COOLDOWN", "2.0"))
+stt_vad_enabled: bool = _env_bool("KALI_STT_VAD_ENABLED", False)
+stt_vad_mode: int = int(os.getenv("KALI_STT_VAD_MODE", "1"))
+stt_vad_silence_timeout: float = float(os.getenv("KALI_STT_VAD_SILENCE_TIMEOUT", "1.5"))
 input_mode: str = os.getenv("KALI_INPUT_MODE", "wake_word")
+
+# ── Qwen3-ASR (only used when KALI_STT_PROVIDER is "qwen3")
+qwen_asr_model: str = os.getenv("KALI_QWEN_ASR_MODEL", "qwen3-asr-0.6b")
+qwen_asr_device: str = os.getenv("KALI_QWEN_ASR_DEVICE", "cpu")
+qwen_asr_streaming: bool = _env_bool("KALI_QWEN_ASR_STREAMING", True)
+qwen_asr_models_dir: str = os.getenv(
+    "KALI_QWEN_ASR_MODELS_DIR",
+    str(Path.home() / ".cache" / "huggingface" / "hub"),
+)
 
 # ── Web tools (kali-claws) ────────────────────────────────
 searxng_url: str = os.getenv("KALI_SEARXNG_URL", "http://127.0.0.1:8080")
@@ -401,13 +414,22 @@ class _Settings:
     qwen_port = qwen_port
     qwen_backend = qwen_backend
 
+    stt_provider = stt_provider
     stt_model = stt_model
     stt_model_en = stt_model_en
     stt_language = stt_language
     stt_wake_word_enabled = stt_wake_word_enabled
     stt_wake_word_threshold = stt_wake_word_threshold
     stt_wake_word_cooldown = stt_wake_word_cooldown
+    stt_vad_enabled = stt_vad_enabled
+    stt_vad_mode = stt_vad_mode
+    stt_vad_silence_timeout = stt_vad_silence_timeout
     input_mode = input_mode
+
+    qwen_asr_model = qwen_asr_model
+    qwen_asr_device = qwen_asr_device
+    qwen_asr_streaming = qwen_asr_streaming
+    qwen_asr_models_dir = qwen_asr_models_dir
 
     vision_mode = vision_mode
 

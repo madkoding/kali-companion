@@ -232,7 +232,15 @@ export function useChat(): ChatState {
       client.on("error", (p) => {
         const ev = p as ErrorEvent;
         setError(ev.detail ?? "connection error");
-        setStatus("error");
+        // Only mark connection as broken for transport-level errors,
+        // not operational errors like "Cannot change STT provider...".
+        const isTransportError = ev.detail?.includes("connection")
+          || ev.detail?.includes("WebSocket")
+          || ev.detail?.includes("handshake")
+          || !ev.detail;
+        if (isTransportError) {
+          setStatus("error");
+        }
       });
 
       client.on("turn_start", () => {
@@ -325,7 +333,7 @@ export function useChat(): ChatState {
       });
 
       client.on("status", (p) => {
-        setSystemStatus(p as StatusEvent);
+        setSystemStatus(prev => ({ ...prev, ...(p as StatusEvent) }));
       });
 
       client.on("consent_request", (p) => {

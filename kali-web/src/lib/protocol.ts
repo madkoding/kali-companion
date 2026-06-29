@@ -45,6 +45,14 @@ export interface SettingsEvent {
   profile?: string;
   language?: string;
   stt_language?: string;
+  stt_provider?: string;
+  stt_model?: string;
+  stt_device?: string;
+  stt_streaming?: boolean;
+  stt_models_dir?: string;
+  stt_vad_enabled?: boolean;
+  stt_vad_mode?: number;
+  stt_vad_silence_timeout?: number;
   wake_word_enabled?: boolean;
   input_mode?: string;
   feedback_mode?: string;
@@ -143,6 +151,7 @@ export interface QwenVoice {
 }
 
 export type TtsProvider = "inproc" | "http" | "qwen3" | "qwen3-voicedesign";
+export type SttProvider = "vosk" | "qwen3";
 
 export interface ReadyEvent {
   event: "ready";
@@ -188,6 +197,7 @@ export interface SttPartialEvent {
 export interface SttFinalEvent {
   event: "stt_final";
   text: string;
+  provider?: string;
 }
 
 export interface WakeWordEvent {
@@ -281,6 +291,15 @@ export interface StatusEvent {
   capture_backend: string;
   profile: string;
   available_profiles?: string[];
+  stt_provider: SttProvider;
+  stt_model?: string;
+  stt_device?: string;
+  stt_loaded?: boolean;
+  stt_streaming?: boolean;
+  stt_models_dir?: string;
+  stt_vad_enabled?: boolean;
+  stt_vad_mode?: number;
+  stt_vad_silence_timeout?: number;
   stt_language?: string;
   wake_word_enabled?: boolean;
   input_mode?: string;
