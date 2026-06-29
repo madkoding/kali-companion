@@ -79,13 +79,16 @@ class SessionStore:
                 CREATE TABLE IF NOT EXISTS custom_voices (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
-                    provider TEXT NOT NULL DEFAULT 'qwen3-voicedesign',
+                    provider TEXT NOT NULL DEFAULT 'qwen3',
                     instructions TEXT NOT NULL,
                     seed INTEGER NOT NULL DEFAULT -1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
             """)
+            await db.execute(
+                "UPDATE custom_voices SET provider='qwen3' WHERE provider='qwen3-voicedesign'"
+            )
             await db.commit()
 
     async def create_session(self, title: str = "New chat") -> dict:
