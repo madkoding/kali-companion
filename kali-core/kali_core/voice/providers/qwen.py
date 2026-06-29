@@ -25,6 +25,21 @@ from kali_core.voice.providers.base import StartupError, TTSProvider, TTSResult
 
 logger = logging.getLogger("kali_core.voice.qwen")
 
+QWEN_MODELS: dict[str, dict] = {
+    "qwen3-tts-0.6b-customvoice": {
+        "filename": "qwen-talker-0.6b-customvoice-Q4_K_M.gguf",
+        "variant": "customvoice",
+        "display_name": "Qwen3-TTS 0.6B CustomVoice",
+        "estimated_vram_mb": 600,
+    },
+    "qwen3-tts-1.7b-voicedesign": {
+        "filename": "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf",
+        "variant": "voicedesign",
+        "display_name": "Qwen3-TTS 1.7B VoiceDesign",
+        "estimated_vram_mb": 1700,
+    },
+}
+
 PREDEFINED_VOICES = [
     {"id": "serena",   "name": "Serena",   "gender": "female"},
     {"id": "vivian",   "name": "Vivian",   "gender": "female"},
@@ -189,33 +204,43 @@ def get_random_preview_text(language: str = "en") -> str:
 
 
 class QwenTTSProvider:
-    """Manages the qwen-tts-cpp-server C++ binary as a native subprocess."""
+    """Manages the qwen-tts-cpp-server C++ binary as a native subprocess.
 
-    provider_name: str
+    A single provider id 'qwen3' with two loadable models:
+      - qwen3-tts-0.6b-customvoice (stock voices: Serena, Aiden, etc.)
+      - qwen3-tts-1.7b-voicedesign (voice design via instructions + seed)
+    Switching models kills and respawns the subprocess with the other .gguf.
+    """
+
+    _provider_name = "qwen3"
 
     def __init__(
         self,
         *,
         binary: str | Path,
-        talker_model: str | Path,
+        talker_models_dir: str | Path,
         codec_model: str | Path,
         port: int = 8870,
         backend: str = "CPU",
         voice_design: bool = False,
     ) -> None:
         self._binary = Path(binary).expanduser().resolve()
-        self._talker_model = Path(talker_model).expanduser().resolve()
+        self._talker_models_dir = Path(talker_models_dir).expanduser().resolve()
         self._codec_model = Path(codec_model).expanduser().resolve()
         self._port = port
         self._backend = backend.upper()
         self._voice_design = voice_design
-        self._provider_name = "qwen3-voicedesign" if voice_design else "qwen3"
         self._instructions = ""
         self._seed = -1
         self._proc: subprocess.Popen[bytes] | None = None
         self._client: httpx.AsyncClient | None = None
         self._log_file: Path | None = None
-
+        self._loaded_model_id: str | None = None
+        self._last_error: str | None = None
+        self._talker_model: Path | None = None
+        self._available_models: dict[str, Path] = {}
+        self._discover_talker_models()
+        self._select_initial_model(voice_design)
         self._validate_and_spawn()
 
     # ── public TTSProvider interface ─────────────────────────────────
@@ -223,6 +248,34 @@ class QwenTTSProvider:
     @property
     def provider_name(self) -> str:
         return self._provider_name
+
+    @property
+    def is_loaded(self) -> bool:
+        return (
+            self._client is not None
+            and self._proc is not None
+            and self._proc.poll() is None
+        )
+
+    @property
+    def device(self) -> str | None:
+        return self._backend if self.is_loaded else None
+
+    @property
+    def loaded_model(self) -> str | None:
+        return self._loaded_model_id
+
+    @property
+    def is_available(self) -> bool:
+        return self._client is not None
+
+    @property
+    def last_error(self) -> str | None:
+        return self._last_error
+
+    @property
+    def tts_variant(self) -> str:
+        return "voicedesign" if self._voice_design else "customvoice"
 
     async def synthesize(
         self,
@@ -313,6 +366,95 @@ class QwenTTSProvider:
         self._instructions = instructions
         self._seed = seed
 
+    # ── model management ───────────────────────────────────────────
+
+    def _discover_talker_models(self) -> dict[str, Path]:
+        result: dict[str, Path] = {}
+        for mid, cfg in QWEN_MODELS.items():
+            path = self._talker_models_dir / cfg["filename"]
+            if path.exists():
+                result[mid] = path
+        self._available_models = result
+        return result
+
+    def _select_initial_model(self, voice_design: bool) -> None:
+        preferred = (
+            "qwen3-tts-1.7b-voicedesign" if voice_design
+            else "qwen3-tts-0.6b-customvoice"
+        )
+        if preferred in self._available_models:
+            self._talker_model = self._available_models[preferred]
+            self._voice_design = voice_design
+            self._loaded_model_id = preferred
+            return
+        if self._available_models:
+            any_id = next(iter(self._available_models))
+            self._talker_model = self._available_models[any_id]
+            self._voice_design = QWEN_MODELS[any_id]["variant"] == "voicedesign"
+            self._loaded_model_id = any_id
+            return
+        self._talker_model = None
+
+    def list_models(self) -> list:
+        from .base import TTSModelInfo, TTSModelVoice
+        models: list[TTSModelInfo] = []
+        for mid, cfg in QWEN_MODELS.items():
+            path = self._talker_models_dir / cfg["filename"]
+            is_loaded = (mid == self._loaded_model_id and self.is_loaded)
+            voices: list[TTSModelVoice] = []
+            if cfg["variant"] == "customvoice":
+                for v in PREDEFINED_VOICES:
+                    voices.append(TTSModelVoice(
+                        id=v["id"], name=v["name"], gender=v["gender"], source="speaker",
+                    ))
+            else:
+                for p in VOICE_DESIGN_PRESETS:
+                    voices.append(TTSModelVoice(
+                        id=p["id"], name=p["name"], source="preset",
+                    ))
+            models.append(TTSModelInfo(
+                id=mid,
+                display_name=cfg["display_name"],
+                estimated_vram_mb=cfg["estimated_vram_mb"],
+                available=path.exists(),
+                loaded=is_loaded,
+                device=self._backend if is_loaded else None,
+                supported_languages=["en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko"],
+                voices=voices,
+                variant=cfg["variant"],
+            ))
+        return models
+
+    def load_model(self, model_id: str, device: str = "cpu") -> None:
+        if model_id not in QWEN_MODELS:
+            raise ValueError(f"Unknown Qwen3-TTS model: {model_id}")
+        if model_id == self._loaded_model_id and self.is_loaded:
+            return
+        new_path = self._talker_models_dir / QWEN_MODELS[model_id]["filename"]
+        if not new_path.exists():
+            raise FileNotFoundError(
+                f"Talker model not found: {new_path}\n"
+                f"  Run: scripts/download-qwen-models.sh {QWEN_MODELS[model_id]['variant']}"
+            )
+        self.shutdown()
+        self._talker_model = new_path
+        self._voice_design = QWEN_MODELS[model_id]["variant"] == "voicedesign"
+        if device and device.upper() != "CPU":
+            self._backend = device.upper()
+        self._last_error = None
+        try:
+            self._validate_and_spawn()
+            self._loaded_model_id = model_id
+        except StartupError as exc:
+            self._last_error = str(exc)
+            raise
+
+    def unload_model(self) -> None:
+        self.shutdown()
+        self._loaded_model_id = None
+        self._client = None
+        self._proc = None
+
     # ── lifecycle ───────────────────────────────────────────────────
 
     def _validate_and_spawn(self) -> None:
@@ -326,10 +468,11 @@ class QwenTTSProvider:
         elif not os.access(self._binary, os.X_OK):
             errors.append(f"Qwen3-TTS binary is not executable: {self._binary}")
 
-        if not self._talker_model.exists():
+        if self._talker_model is None or not self._talker_model.exists():
             model_id = "1.7b-voicedesign" if self._voice_design else "0.6b-customvoice"
+            path_str = str(self._talker_model) if self._talker_model else "(none selected)"
             errors.append(
-                f"Talker model not found at: {self._talker_model}\n"
+                f"Talker model not found at: {path_str}\n"
                 f"  Run: scripts/download-qwen-models.sh {model_id}"
             )
 

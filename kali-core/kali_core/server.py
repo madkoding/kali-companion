@@ -127,14 +127,10 @@ def _build_tts_provider():
         return HTTPTTSProvider()
     if settings.tts_provider in ("qwen3", "qwen3-voicedesign"):
         voice_design = settings.tts_provider == "qwen3-voicedesign"
-        talker_model = (
-            settings.qwen_voicedesign_model
-            if voice_design
-            else settings.qwen_talker_model
-        )
+        talker_models_dir = Path(settings.qwen_talker_model).parent
         return QwenTTSProvider(
             binary=settings.qwen_binary,
-            talker_model=talker_model,
+            talker_models_dir=talker_models_dir,
             codec_model=settings.qwen_codec_model,
             port=settings.qwen_port,
             backend=settings.qwen_backend,
