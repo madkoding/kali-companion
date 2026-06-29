@@ -45,11 +45,24 @@ export interface SettingsEvent {
   profile?: string;
   language?: string;
   stt_language?: string;
+  stt_provider?: string;
+  stt_model?: string;
+  stt_device?: string;
+  stt_streaming?: boolean;
+  stt_models_dir?: string;
+  stt_vad_enabled?: boolean;
+  stt_vad_mode?: number;
+  stt_vad_silence_timeout?: number;
+  stt_vad_auto_calibrate?: boolean;
+  stt_vad_rms_threshold?: number;
   wake_word_enabled?: boolean;
   input_mode?: string;
   feedback_mode?: string;
   plan_mode?: boolean;
   artifact_diff_preview?: boolean;
+  // Qwen3 VoiceDesign fields
+  voice_instructions?: string;
+  voice_seed?: number;
 }
 
 export interface ConsentResponseEvent {
@@ -102,6 +115,7 @@ export interface RequestImageEvent {
 export interface AudioStartEvent {
   event: "audio_start";
   language?: string;
+  origin?: "manual" | "wake_word" | "continuous";
 }
 
 export interface AudioEndEvent {
@@ -113,7 +127,34 @@ export interface TtsSpeakEvent {
   text: string;
 }
 
-// ── Outgoing (core → web) ────────────────────────────────
+// Qwen3-TTS voice design preset (returned by /voices when provider is qwen3-voicedesign)
+export interface VoiceDesignPreset {
+  id: string;
+  name: string;
+  instructions: string;
+  seed: number;
+}
+
+// Custom voice created by the user (stored in SQLite)
+export interface CustomVoice {
+  id: string;
+  name: string;
+  provider: string;
+  instructions: string;
+  seed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Qwen3-TTS predefined voice (returned by /voices when provider is qwen3)
+export interface QwenVoice {
+  id: string;
+  name: string;
+  gender: string;
+}
+
+export type TtsProvider = "inproc" | "http" | "qwen3" | "qwen3-voicedesign";
+export type SttProvider = "vosk" | "qwen3";
 
 export interface ReadyEvent {
   event: "ready";
@@ -159,6 +200,12 @@ export interface SttPartialEvent {
 export interface SttFinalEvent {
   event: "stt_final";
   text: string;
+  provider?: string;
+}
+
+export interface VadStateEvent {
+  event: "vad_state";
+  is_speech: boolean;
 }
 
 export interface WakeWordEvent {
@@ -238,6 +285,80 @@ export interface SessionListEvent {
   sessions: Array<{ id: string; title: string; updated: string }>;
 }
 
+// ── AI provider connections (saved LLM endpoints) ────────────
+
+export type ConnectionKind = "local" | "cloud";
+export type ApiFormat = "openai" | "ollama" | "llamacpp" | "lmstudio" | "vllm" | "custom";
+
+export interface ConnectionSummary {
+  id: string;
+  name: string;
+  kind: ConnectionKind;
+  api_url: string;
+  api_format: ApiFormat;
+  vendor_detected: string;
+  model_count: number;
+  is_active: boolean;
+  active_model: string | null;
+}
+
+export interface CloudProviderInfo {
+  id: string;
+  name: string;
+  api_url: string;
+  docs_url: string;
+  notes: string;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  vendor: string;
+  models: string[];
+  detail: string;
+}
+
+export interface CreateConnectionRequest {
+  event: "create_connection";
+  name: string;
+  kind: ConnectionKind;
+  api_url: string;
+  api_format: ApiFormat;
+  api_key?: string;
+  vendor_detected?: string;
+  models?: string[];
+}
+
+export interface UpdateConnectionRequest {
+  event: "update_connection";
+  id: string;
+  patch: {
+    name?: string;
+    api_url?: string;
+    api_format?: ApiFormat;
+    api_key?: string;
+    vendor_detected?: string;
+    models?: string[];
+  };
+}
+
+export interface DeleteConnectionRequest {
+  event: "delete_connection";
+  id: string;
+}
+
+export interface ActivateConnectionRequest {
+  event: "activate_connection";
+  id: string;
+  model: string;
+}
+
+// Backend → frontend: full connections snapshot
+export interface ConnectionsListEvent {
+  event: "connections_list";
+  connections: ConnectionSummary[];
+  active_id: string | null;
+}
+
 export interface StatusEvent {
   event: "status";
   llm_provider: string;
@@ -245,19 +366,34 @@ export interface StatusEvent {
   llm_api_key_set: boolean;
   llm_model: string;
   llm_max_tokens?: number;
-  tts_provider: string;
+  llm_connection_id?: string | null;
+  llm_connection_name?: string | null;
+  connections?: ConnectionSummary[];
+  tts_provider: TtsProvider;
   voice: string;
   tts_mode: string;
   auto_tts: boolean;
   capture_backend: string;
   profile: string;
   available_profiles?: string[];
+  stt_provider: SttProvider;
+  stt_model?: string;
+  stt_device?: string;
+  stt_loaded?: boolean;
+  stt_streaming?: boolean;
+  stt_models_dir?: string;
+  stt_vad_enabled?: boolean;
+  stt_vad_mode?: number;
+  stt_vad_silence_timeout?: number;
+  stt_vad_auto_calibrate?: boolean;
+  stt_vad_rms_threshold?: number;
   stt_language?: string;
   wake_word_enabled?: boolean;
   input_mode?: string;
   feedback_mode?: string;
   plan_mode?: boolean;
   artifact_diff_preview?: boolean;
+  config_warnings?: string[];
 }
 
 export interface ErrorEvent {
@@ -371,7 +507,11 @@ export type IncomingEvent =
   | ListJobsEvent
   | CancelJobEvent
   | GetJobLogsEvent
-  | RequestImageEvent;
+  | RequestImageEvent
+  | CreateConnectionRequest
+  | UpdateConnectionRequest
+  | DeleteConnectionRequest
+  | ActivateConnectionRequest;
 
 export type OutgoingEvent =
   | ReadyEvent
@@ -382,6 +522,7 @@ export type OutgoingEvent =
   | MessageEvent
   | SttPartialEvent
   | SttFinalEvent
+  | VadStateEvent
   | WakeWordEvent
   | TtsAudioEvent
   | TtsFilteredEvent
@@ -392,6 +533,7 @@ export type OutgoingEvent =
   | ConsoleRequestEvent
   | SessionListEvent
   | StatusEvent
+  | ConnectionsListEvent
   | ErrorEvent
   | DisconnectedEvent
   | JobStartEvent

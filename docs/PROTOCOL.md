@@ -130,6 +130,61 @@ Reply to a `consent_request` from the core.
 
 `decision` ∈ `{"allow", "no_capture", "cancel"}`.
 
+### `delete_session`
+
+Delete a session by ID.
+
+```json
+{
+  "event": "delete_session",
+  "session_id": "sess_abc"
+}
+```
+
+### `delete_all_sessions`
+
+Delete all sessions.
+
+```json
+{
+  "event": "delete_all_sessions"
+}
+```
+
+### `get_artifact_content`
+
+Request the full content of an artifact (for metadata-only replays).
+
+```json
+{
+  "event": "get_artifact_content",
+  "artifact_id": "art_xyz"
+}
+```
+
+### `get_artifact_console`
+
+Request console logs from an HTML artifact.
+
+```json
+{
+  "event": "get_artifact_console",
+  "artifact_id": "art_xyz",
+  "limit": 200
+}
+```
+
+### `close_artifact`
+
+Close an artifact window.
+
+```json
+{
+  "event": "close_artifact",
+  "artifact_id": "art_xyz"
+}
+```
+
 ### `console_request`
 
 Backend → frontend: the agent requests the runtime console logs of an
@@ -180,7 +235,7 @@ below.
 
 ### `system_command`
 
-A request that kali-home should handle (it requires OS access the core
+A request that kali-shell should handle (it requires OS access the core
 does not have). The core is the one that sends these when a tool needs them;
 the web side does not initiate them.
 
@@ -193,7 +248,7 @@ the web side does not initiate them.
 }
 ```
 
-kali-home performs the action and returns the result via `system_result`.
+kali-shell performs the action and returns the result via `system_result`.
 
 ## Events: core → web
 
@@ -300,12 +355,15 @@ A canvas artifact create/update/close.
   "type": "html",
   "title": "Site mockup",
   "content": "<html>…</html>",
-  "update": "create"
+  "update": "create",
+  "phase": "streaming",
+  "language": "html"
 }
 ```
 
-`type` ∈ `{"html", "markdown", "diff", "widget"}`.
+`type` ∈ `{"html", "markdown", "code", "diff", "mermaid", "json", "table", "checklist", "chart", "quiz", "widget"}`.
 `update` ∈ `{"create", "update", "close"}`.
+`phase` ∈ `{"streaming", "complete"}`.
 `content` holds the full payload during live streaming and `update_artifact`
 re-emits. On session (re)attach the backend replays the session's artifacts as
 **metadata-only** `create` events: `content` is `null` and a short `preview`
@@ -315,7 +373,7 @@ on demand via `GET /sessions/{session_id}/artifacts/{artifact_id}` when the
 user reopens one.
 
 Optional fields: `preview` (string, metadata-only replays), `language`
-(string), `phase` (`"streaming" | "complete"`, streaming lifecycle).
+(string, programming language for code/diff artifacts).
 
 ### `tool_event`
 
@@ -403,23 +461,155 @@ etc.).
   "event": "status",
   "llm_provider": "direct",
   "llm_model": "glm-5.1",
-  "tts_provider": "inproc",
+  "tts_provider": "qwen",
   "voice": "robot-es",
+  "stt_language": "es",
   "capture_backend": "wayland",
   "profile": "dev",
   "available_profiles": ["dev", "gaming", "files", "general"]
 }
 ```
 
+### `session_deleted`
+
+Confirm session deletion.
+
+```json
+{
+  "event": "session_deleted",
+  "session_id": "sess_abc"
+}
+```
+
+### `step_start`
+
+Agent started a new step in multi-turn execution.
+
+```json
+{
+  "event": "step_start",
+  "session_id": "sess_abc",
+  "step": 2
+}
+```
+
+### `model_stats`
+
+Streaming model statistics.
+
+```json
+{
+  "event": "model_stats",
+  "session_id": "sess_abc",
+  "prompt_tokens": 1200,
+  "completion_tokens": 350,
+  "total_tokens": 1550
+}
+```
+
+### `voice_config`
+
+Voice configuration loaded.
+
+```json
+{
+  "event": "voice_config",
+  "voice": "robot-es",
+  "mode": "robotic",
+  "tts_provider": "qwen"
+}
+```
+
+### `stt_language`
+
+STT language changed.
+
+```json
+{
+  "event": "stt_language",
+  "language": "es"
+}
+```
+
+### `voice_loaded`
+
+Voice loaded and ready.
+
+```json
+{
+  "event": "voice_loaded",
+  "voice": "robot-es"
+}
+```
+
+### `artifact_content`
+
+Response to `get_artifact_content` (full artifact content for metadata-only replays).
+
+```json
+{
+  "event": "artifact_content",
+  "artifact_id": "art_xyz",
+  "content": "<html>…</html>"
+}
+```
+
+### `artifact_console`
+
+Response to `get_artifact_console` (console logs from HTML artifact).
+
+```json
+{
+  "event": "artifact_console",
+  "artifact_id": "art_xyz",
+  "logs": [
+    { "level": "error", "message": "Uncaught TypeError: ...", "timestamp": 1719000000000 }
+  ]
+}
+```
+
+### `jobs`
+
+List of background jobs.
+
+```json
+{
+  "event": "jobs",
+  "jobs": [
+    { "id": "job_001", "type": "download", "progress": 75, "status": "running" }
+  ]
+}
+```
+
+### `job_update`
+
+Job progress update.
+
+```json
+{
+  "event": "job_update",
+  "id": "job_001",
+  "progress": 80,
+  "status": "running"
+}
+```
+
 ## HTTP endpoints
 
-In addition to the WebSocket protocol, kali-core exposes a few HTTP endpoints for querying state:
+In addition to the WebSocket protocol, kali-core exposes HTTP endpoints for querying state:
 
 | Endpoint | Description |
 |---|---|
 | `GET /health` | Health check. Returns `200 OK` if the sidecar is alive. |
 | `GET /voices` | Returns the list of available TTS voices and modes. |
-| `GET /profiles` | Returns the list of available permission profiles (name + id) for the profile selector in the UI. |
+| `GET /profiles` | Returns the list of available permission profiles (name + id). |
+| `GET /sessions` | Returns all sessions. |
+| `GET /sessions/{session_id}` | Returns a specific session. |
+| `GET /sessions/{session_id}/messages` | Returns messages for a session. |
+| `GET /sessions/{session_id}/artifacts` | Returns artifacts for a session. |
+| `GET /sessions/{session_id}/artifacts/{artifact_id}` | Returns full artifact content (for metadata-only replays). |
+| `DELETE /sessions/{session_id}` | Deletes a session. |
+| `DELETE /sessions` | Deletes all sessions. |
 
 ## Versioning
 

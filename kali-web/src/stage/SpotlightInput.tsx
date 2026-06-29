@@ -87,9 +87,12 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
               type="text"
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={t("chat.placeholder") as string}
+              placeholder={chat.isTurnActive ? (t("stage.waiting_response") as string) : (t("chat.placeholder") as string)}
               onKeyDown={onKeyDown}
-              className="w-full bg-transparent outline-none text-center text-fg placeholder:text-muted/40"
+              disabled={chat.isTurnActive}
+              className={`w-full bg-transparent outline-none text-center placeholder:text-muted/40 ${
+                chat.isTurnActive ? "text-muted/50 cursor-not-allowed" : "text-fg"
+              }`}
               style={{
                 fontFamily: "Fraunces, serif",
                 fontSize: "calc(2rem * var(--mul-text))",
@@ -99,10 +102,10 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
               aria-label={t("chat.placeholder") as string}
             />
             <div className="text-center text-xs text-muted/50 mt-3">
-              {chat.isThinking ? (
+              {chat.isTurnActive ? (
                 <span>{t("stage.thinking")} · <kbd className="kbd">Esc</kbd> {t("chat.cancel")}</span>
               ) : (
-                <><kbd className="kbd">Enter</kbd> {t("chat.send")} · <kbd className="kbd">Esc</kbd> {t("chat.cancel")}</>
+                <><kbd className="kbd">Enter</kbd> {t("chat.send")} · <kbd className="kbd">Esc</kbd> {t("chat.cancel")}{value.length > 0 && <> · <span className="font-mono">{value.length}</span></>}</>
               )}
             </div>
           </motion.div>

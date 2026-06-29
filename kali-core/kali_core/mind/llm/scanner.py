@@ -33,7 +33,7 @@ class LocalEndpoint:
     models: list[str]
 
 
-def _guess_vendor(data: dict, text: str) -> str:
+def _guess_vendor(data: dict, text: str, url: str = "") -> str:
     obj = str(data.get("object", ""))
     combined = f"{obj} {text}".lower()
     if "ollama" in combined:
@@ -46,6 +46,9 @@ def _guess_vendor(data: dict, text: str) -> str:
         return "vllm"
     if "unsloth" in combined:
         return "unsloth"
+    # Heuristic for OpenRouter: non-standard path prefix and namespace-shaped ids.
+    if "/api/v1" in url:
+        return "openrouter"
     return "openai-compatible"
 
 
@@ -93,7 +96,7 @@ async def _http_probe(client: httpx.AsyncClient, host: str, port: int, timeout: 
             except Exception:
                 continue
             models = _parse_models(data)
-            vendor = _guess_vendor(data, resp.text[:500])
+            vendor = _guess_vendor(data, resp.text[:4096], url)
             return LocalEndpoint(
                 port=port,
                 url=f"http://{host}:{port}/v1",
@@ -150,6 +153,117 @@ async def scan_local(
 
     results.sort(key=lambda e: e.port)
     return results
+
+
+@dataclass
+class EndpointProbe:
+    ok: bool
+    vendor: str
+    models: list[str]
+    detail: str = ""
+
+
+async def probe_endpoint(api_url: str, api_key: str = "") -> EndpointProbe:
+    """Probe an arbitrary OpenAI-compatible URL for reachability + vendor.
+
+    Returns a structured result so the caller can show the user a precise
+    diagnostic (vendor, model count, or failure reason) without having to
+    duplicate the HTTP plumbing.
+    """
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    base = api_url.rstrip("/")
+    last_err = ""
+    for path in ("/v1/models", "/models"):
+        url = f"{base}{path}"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=headers, timeout=10.0)
+        except Exception as exc:
+            last_err = f"{type(exc).__name__}: {exc}"
+            continue
+        if resp.status_code in (401, 403):
+            return EndpointProbe(
+                ok=False, vendor="", models=[],
+                detail=f"API key rejected ({resp.status_code} {resp.reason_phrase})",
+            )
+        if resp.status_code != 200:
+            last_err = f"HTTP {resp.status_code} at {url}"
+            continue
+        try:
+            data = resp.json()
+        except Exception as exc:
+            last_err = f"invalid JSON at {url} ({exc})"
+            continue
+        models = _parse_models(data)
+        vendor = _guess_vendor(data, resp.text[:4096], url)
+        return EndpointProbe(ok=True, vendor=vendor, models=models, detail="ok")
+    return EndpointProbe(ok=False, vendor="", models=[], detail=last_err or "no /v1/models endpoint")
+
+
+async def verify_api_key(api_url: str, api_key: str) -> tuple[bool, str]:
+    """Verify an API key by attempting a minimal chat completion.
+
+    Tries multiple path layouts so both of these work:
+      api_url=http://localhost:11434/v1  →  POST /chat/completions
+      api_url=http://localhost:11434     →  POST /v1/chat/completions
+
+    Returns (ok, detail) where:
+      ok=True  — the key was accepted (auth passed, even if model not found)
+      ok=False — the key was rejected (401/403) or all attempts failed
+    """
+    if not api_key:
+        return False, "no API key provided"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    base = api_url.rstrip("/")
+    payload = {
+        "model": "gpt-3.5-turbo",
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+
+    # Build unique candidate URLs so we handle both /v1-prefixed and bare bases.
+    candidates: list[str] = []
+    for suffix in ("/chat/completions", "/v1/chat/completions"):
+        candidates.append(f"{base}{suffix}")
+        # If base already has a /v1 segment, also try without it and vice versa.
+        if base.endswith("/v1"):
+            bare = base[:-3]
+            candidates.append(f"{bare}{suffix}")
+        elif not base.endswith("/v1"):
+            candidates.append(f"{base}/v1{suffix}")
+
+    seen: set[str] = set()
+    for url in candidates:
+        if url in seen:
+            continue
+        seen.add(url)
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, headers=headers, json=payload, timeout=10.0)
+        except Exception:
+            continue
+
+        # 401 / 403 → auth definitively rejected
+        if resp.status_code in (401, 403):
+            return False, f"API key rejected ({resp.status_code} {resp.reason_phrase})"
+
+        # 200 → key valid, endpoint works
+        if resp.status_code == 200:
+            return True, "API key is valid"
+
+        # 404 → auth passed (server checked key THEN said model not found)
+        if resp.status_code == 404:
+            return True, "API key accepted (model not found, but auth passed)"
+
+        # 405 or any other non-2xx → try next candidate
+        continue
+
+    return False, "could not reach chat completions endpoint on any known path"
 
 
 async def list_models(api_url: str, api_key: str = "") -> list[str]:

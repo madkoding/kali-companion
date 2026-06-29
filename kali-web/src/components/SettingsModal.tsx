@@ -5,12 +5,13 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Cpu, Volume2, Sliders, Palette, Gauge } from "lucide-react";
+import { Cpu, Volume2, Sliders, Palette, Gauge, Mic } from "lucide-react";
 import type { StatusEvent, SettingsEvent } from "../lib/protocol";
 import { Modal } from "./ui/Modal";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import { ProviderSection } from "./settings/ProviderSection";
 import { VoiceSection } from "./settings/VoiceSection";
+import { STTSection } from "./settings/STTSection";
 import { BehaviorSection } from "./settings/BehaviorSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { GenerationSection } from "./settings/GenerationSection";
@@ -19,7 +20,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   systemStatus: StatusEvent | null;
-  voices: { id: string; name: string }[];
+  voices: Record<string, unknown>[];
   onUpdate: (patch: Partial<SettingsEvent>) => void;
   theme: string;
   onThemeChange: (t: string) => void;
@@ -31,7 +32,7 @@ interface Props {
   onLanguageChange: (lang: string) => void;
 }
 
-type SectionId = "provider" | "voice" | "behavior" | "generation" | "appearance";
+type SectionId = "provider" | "voice" | "stt" | "behavior" | "generation" | "appearance";
 
 interface SectionDef {
   id: SectionId;
@@ -43,6 +44,7 @@ const SECTIONS: SectionDef[] = [
   { id: "provider", icon: Cpu, labelKey: "settings.section.provider" },
   { id: "generation", icon: Gauge, labelKey: "settings.section.generation" },
   { id: "voice", icon: Volume2, labelKey: "settings.section.voice" },
+  { id: "stt", icon: Mic, labelKey: "settings.section.stt" },
   { id: "behavior", icon: Sliders, labelKey: "settings.section.behavior" },
   { id: "appearance", icon: Palette, labelKey: "settings.section.appearance" },
 ];
@@ -87,7 +89,7 @@ export function SettingsModal({
                 ? isAISection(s.id)
                   ? "bg-ai-signal/10 text-ai-signal border border-ai-signal/30"
                   : "bg-accent/15 text-accent border border-accent/30"
-                  : "text-muted hover:text-fg hover:bg-white/5 border border-transparent"
+                  : "text-fg hover:bg-white/5 border border-transparent"
             }`}
           >
             <Icon size={14} />
@@ -112,7 +114,7 @@ export function SettingsModal({
           </>
         ) : (
           <div className="flex flex-1 overflow-hidden">
-            <aside className="w-44 border-r border-border p-3 shrink-0">
+            <aside className="w-60 border-r border-border p-3 shrink-0">
               <div className="flex flex-col gap-1">
                 {SECTIONS.map((s) => {
                   const Icon = s.icon;
@@ -121,12 +123,12 @@ export function SettingsModal({
                     <button
                       key={s.id}
                       onClick={() => setActive(s.id)}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left ${
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left whitespace-nowrap ${
                         isActive
                           ? isAISection(s.id)
                             ? "bg-ai-signal/10 text-ai-signal"
                             : "bg-accent/15 text-accent"
-                          : "text-muted hover:text-fg hover:bg-white/5"
+                          : "text-fg hover:bg-white/5"
                       }`}
                     >
                       <Icon size={14} />
@@ -144,9 +146,10 @@ export function SettingsModal({
   );
 
   function renderSection() {
-    if (active === "provider") return <ProviderSection systemStatus={systemStatus} onUpdate={onUpdate} />;
+    if (active === "provider") return <ProviderSection />;
     if (active === "generation") return <GenerationSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     if (active === "voice") return <VoiceSection systemStatus={systemStatus} voices={voices} onUpdate={onUpdate} />;
+    if (active === "stt") return <STTSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     if (active === "behavior") return <BehaviorSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     return (
       <AppearanceSection

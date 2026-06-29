@@ -14,7 +14,15 @@ interface Props {
   onLanguageChange: (lang: string) => void;
 }
 
-const THEMES = ["amberwave", "foxglove", "vellum", "tidepool"];
+const THEMES = ["amberwave", "foxglove", "vellum", "tidepool", "aether"];
+
+const THEME_SWATCHES: Record<string, string[]> = {
+  amberwave: ["#E8A24C", "#100E14", "#F2EBE0", "#7DD692"],
+  foxglove: ["#C77DFF", "#1A1620", "#EDE7F0", "#8FD694"],
+  vellum: ["#C24A2D", "#1F1B17", "#EFE6D3", "#8FAE6B"],
+  tidepool: ["#E88AA8", "#0E1714", "#E4EDE8", "#6FBF8B"],
+  aether: ["#6C6FF7", "#0A0C14", "#EDEDEF", "#34D399"],
+};
 const LANGS = [
   { id: "en", labelKey: "language.en" },
   { id: "es", labelKey: "language.es" },
@@ -34,17 +42,39 @@ export function AppearanceSection({
 
   return (
     <div className="flex flex-col gap-4">
-      <SelectField
-        label={t("settings.theme")}
-        value={theme}
-        onChange={onThemeChange}
-      >
-        {THEMES.map((tname) => (
-          <option key={tname} value={tname}>
-            {t(`theme.${tname}`)}
-          </option>
-        ))}
-      </SelectField>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs text-muted">{t("settings.theme")}</label>
+        <div className="grid grid-cols-5 gap-2">
+          {THEMES.map((tname) => {
+            const swatches = THEME_SWATCHES[tname] || [];
+            return (
+              <button
+                key={tname}
+                onClick={() => onThemeChange(tname)}
+                className={`flex flex-col items-center gap-1.5 p-2 rounded-lg border transition-all ${
+                  theme === tname
+                    ? "border-accent bg-accent/10"
+                    : "border-border hover:border-accent/30 bg-surface"
+                }`}
+                title={t(`theme.${tname}`)}
+              >
+                <div className="flex gap-0.5">
+                  {swatches.map((c, i) => (
+                    <span
+                      key={i}
+                      className="w-3 h-3 rounded-full border border-white/10"
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+                <span className="text-[10px] text-muted truncate w-full text-center">
+                  {t(`theme.${tname}`)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <SelectField
         label={t("settings.language")}

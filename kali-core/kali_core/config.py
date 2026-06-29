@@ -306,7 +306,9 @@ nanobot_api_url: str = os.getenv("KALI_NANOBOT_API_URL", "http://127.0.0.1:8765"
 nanobot_token: str = os.getenv("KALI_NANOBOT_TOKEN", "")
 
 # ── TTS (kali-voice) ───────────────────────────────────────
-tts_provider: Literal["inproc", "http"] = os.getenv("KALI_TTS_PROVIDER", "inproc")
+tts_provider: Literal["inproc", "http", "qwen3", "qwen3-voicedesign"] = os.getenv(
+    "KALI_TTS_PROVIDER", "inproc"
+)
 tts_voice: str = os.getenv("KALI_TTS_VOICE", "glados-es")
 tts_mode: str = os.getenv("KALI_TTS_MODE", "normal")
 tts_max_length: int = int(os.getenv("KALI_TTS_MAX_LENGTH", "2000"))
@@ -314,13 +316,28 @@ tts_http_url: str = os.getenv("KALI_TTS_HTTP_URL", "http://localhost:3000")
 tts_enabled: bool = _env_bool("KALI_TTS_ENABLED", True)
 
 # ── STT (kali-ear) ────────────────────────────────────────
+stt_provider: Literal["vosk", "qwen3"] = os.getenv("KALI_STT_PROVIDER", "vosk")
 stt_model: str = os.getenv("KALI_STT_MODEL", "vosk-model-small-es-0.42")
 stt_model_en: str = os.getenv("KALI_STT_MODEL_EN", "vosk-model-small-en-us-0.15")
 stt_language: str = os.getenv("KALI_STT_LANGUAGE", "es")
 stt_wake_word_enabled: bool = _env_bool("KALI_STT_WAKE_WORD", False)
 stt_wake_word_threshold: float = float(os.getenv("KALI_STT_WAKE_WORD_THRESHOLD", "0.3"))
 stt_wake_word_cooldown: float = float(os.getenv("KALI_STT_WAKE_WORD_COOLDOWN", "2.0"))
-input_mode: str = os.getenv("KALI_INPUT_MODE", "wake_word")
+stt_vad_enabled: bool = _env_bool("KALI_STT_VAD_ENABLED", True)
+stt_vad_mode: int = int(os.getenv("KALI_STT_VAD_MODE", "2"))
+stt_vad_silence_timeout: float = float(os.getenv("KALI_STT_VAD_SILENCE_TIMEOUT", "1.0"))
+stt_vad_auto_calibrate: bool = _env_bool("KALI_STT_VAD_AUTO_CALIBRATE", True)
+stt_vad_rms_threshold: float = float(os.getenv("KALI_STT_VAD_RMS_THRESHOLD", "0.015"))
+input_mode: str = os.getenv("KALI_INPUT_MODE", "ptt")
+
+# ── Qwen3-ASR (only used when KALI_STT_PROVIDER is "qwen3")
+qwen_asr_model: str = os.getenv("KALI_QWEN_ASR_MODEL", "qwen3-asr-0.6b")
+qwen_asr_device: str = os.getenv("KALI_QWEN_ASR_DEVICE", "cpu")
+qwen_asr_streaming: bool = _env_bool("KALI_QWEN_ASR_STREAMING", True)
+qwen_asr_models_dir: str = os.getenv(
+    "KALI_QWEN_ASR_MODELS_DIR",
+    str(Path.home() / ".cache" / "huggingface" / "hub"),
+)
 
 # ── Web tools (kali-claws) ────────────────────────────────
 searxng_url: str = os.getenv("KALI_SEARXNG_URL", "http://127.0.0.1:8080")
@@ -348,6 +365,25 @@ voice_configs_dir = base_dir / "voice" / "voice_configs"
 stt_models_dir = base_dir / "ear" / "models"
 profiles_dir = base_dir / "collar" / "profiles"
 
+# ── Qwen3-TTS (only used when KALI_TTS_PROVIDER is "qwen3" or "qwen3-voicedesign")
+_qwen_base = base_dir / "voice" / "qwen_cpp"
+_qwen_models = base_dir / "voice" / "qwen_models"
+qwen_binary: str = os.getenv("KALI_QWEN_BINARY", str(_qwen_base / "build" / "tts-server"))
+qwen_talker_model: str = os.getenv(
+    "KALI_QWEN_TALKER_MODEL",
+    str(_qwen_models / "qwen-talker-0.6b-customvoice-Q4_K_M.gguf"),
+)
+qwen_voicedesign_model: str = os.getenv(
+    "KALI_QWEN_VOICEDESIGN_MODEL",
+    str(_qwen_models / "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf"),
+)
+qwen_codec_model: str = os.getenv(
+    "KALI_QWEN_CODEC_MODEL",
+    str(_qwen_models / "qwen-tokenizer-12hz-Q4_K_M.gguf"),
+)
+qwen_port: int = int(os.getenv("KALI_QWEN_PORT", "8870"))
+qwen_backend: str = os.getenv("KALI_QWEN_BACKEND", "CPU")
+
 
 class _Settings:
     """Bag object so consumers can import a single `settings`."""
@@ -373,13 +409,31 @@ class _Settings:
     tts_http_url = tts_http_url
     tts_enabled = tts_enabled
 
+    qwen_binary = qwen_binary
+    qwen_talker_model = qwen_talker_model
+    qwen_voicedesign_model = qwen_voicedesign_model
+    qwen_codec_model = qwen_codec_model
+    qwen_port = qwen_port
+    qwen_backend = qwen_backend
+
+    stt_provider = stt_provider
     stt_model = stt_model
     stt_model_en = stt_model_en
     stt_language = stt_language
     stt_wake_word_enabled = stt_wake_word_enabled
     stt_wake_word_threshold = stt_wake_word_threshold
     stt_wake_word_cooldown = stt_wake_word_cooldown
+    stt_vad_enabled = stt_vad_enabled
+    stt_vad_mode = stt_vad_mode
+    stt_vad_silence_timeout = stt_vad_silence_timeout
+    stt_vad_auto_calibrate = stt_vad_auto_calibrate
+    stt_vad_rms_threshold = stt_vad_rms_threshold
     input_mode = input_mode
+
+    qwen_asr_model = qwen_asr_model
+    qwen_asr_device = qwen_asr_device
+    qwen_asr_streaming = qwen_asr_streaming
+    qwen_asr_models_dir = qwen_asr_models_dir
 
     vision_mode = vision_mode
 

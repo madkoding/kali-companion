@@ -14,9 +14,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 
 from .config import settings
 from .server import Server
+from .voice.providers.qwen import StartupError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,7 +31,11 @@ def main() -> None:
     port = int(os.environ.get("KALI_WS_PORT", settings.port))
     host = os.environ.get("KALI_HOST", settings.host)
     logger.info("kali-core starting on %s:%d", host, port)
-    server = Server(host=host, port=port)
+    try:
+        server = Server(host=host, port=port)
+    except StartupError as e:
+        logger.error(str(e))
+        sys.exit(1)
     asyncio.run(server.run())
 
 

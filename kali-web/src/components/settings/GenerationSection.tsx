@@ -1,11 +1,4 @@
-// GenerationSection — LLM generation params (max response tokens).
-//
-// Separate from the model selector in ProviderSection: this governs *how*
-// the model responds in the chat, not *which* model. Reasoning models
-// (Ornith, DeepSeek-R1, Qwen3) spend part of this budget on chain-of-thought
-// before producing the answer, so a higher ceiling is needed for complex
-// artifacts than the legacy 16384 default.
-
+import { useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { StatusEvent, SettingsEvent } from "../../lib/protocol";
 
@@ -20,7 +13,7 @@ const STEP = 2048;
 
 function clampTokens(v: number): number {
   if (!Number.isFinite(v)) return MIN_TOKENS;
-  return Math.max(MIN_TOKENS, Math.floor(Math.abs(v)));
+  return Math.min(MAX_TOKENS, Math.max(MIN_TOKENS, Math.floor(Math.abs(v))));
 }
 
 function formatTokens(v: number): string {
@@ -31,15 +24,19 @@ function formatTokens(v: number): string {
 export function GenerationSection({ systemStatus, onUpdate }: Props) {
   const { t } = useTranslation();
   const value = systemStatus?.llm_max_tokens ?? 16384;
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleChange = (v: number) => {
+  const handleChange = useCallback((v: number) => {
     const next = clampTokens(v);
-    if (next !== value) onUpdate({ llm_max_tokens: next });
-  };
+    if (next === value) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      onUpdate({ llm_max_tokens: next });
+    }, 300);
+  }, [value, onUpdate]);
 
   return (
     <div className="flex flex-col gap-4">
-      {/* ── Max response tokens ──────────────────────────── */}
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
@@ -68,6 +65,7 @@ export function GenerationSection({ systemStatus, onUpdate }: Props) {
           <input
             type="number"
             min={MIN_TOKENS}
+            max={MAX_TOKENS}
             step={STEP}
             value={value}
             onChange={(e) => handleChange(Number(e.target.value))}

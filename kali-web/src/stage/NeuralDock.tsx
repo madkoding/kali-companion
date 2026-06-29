@@ -8,8 +8,8 @@
  * Panel buttons (customizer/library/conversation) moved to HUD top-left.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Bug, MoreHorizontal, Volume2, Undo2, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Bug, Mic, MoreHorizontal, Send, Square, Trash2, Undo2, Volume2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useStage } from "./StageProvider";
 import type { WorkspaceAPI } from "../workspace/types";
@@ -25,20 +25,25 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const overflowRef = useRef<HTMLDivElement>(null);
 
-  const onStop = useCallback(() => chat.stop(), [chat]);
-
   const isStreaming = chat.messages.some((m) => m.streaming);
-  const isPttActive = ptt.state !== "idle";
+  const isRecording = ptt.state === "recording";
+  const isSpeaking = ptt.isSpeaking;
   const isChatActive = isStreaming || chat.isThinking;
-  const isActive = isPttActive || isChatActive;
+  const isControlVisible = isRecording || isChatActive;
 
-  const handleMicClick = () => {
-    if (isPttActive) {
+  const handleRecordClick = () => {
+    if (isRecording) {
       ptt.stop();
-    } else if (isChatActive) {
-      onStop();
     } else {
       ptt.start();
+    }
+  };
+
+  const handleControlClick = () => {
+    if (isRecording) {
+      ptt.cancel();
+    } else if (isChatActive) {
+      chat.stop();
     }
   };
 
@@ -56,38 +61,15 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
   return (
     <footer className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40">
       <div className="glass-strong rounded-2xl px-3 py-2.5 flex items-center gap-2 shadow-2xl border border-white/10">
-        {/* ── Primary: Mic / Stop ─────────────────────────── */}
-        <button
-          onClick={handleMicClick}
-          className={`flex items-center gap-2 h-9 px-4 rounded-xl transition badge ${
-            isActive
-              ? "bg-red-500/15 text-red-300 hover:brightness-110"
-              : "bg-accent/10 text-accent hover:bg-accent/20"
-          }`}
-          aria-label={isActive ? t("dock.mic_stop") : t("dock.mic_label")}
-          title={isActive ? t("dock.mic_stop") : t("dock.mic_label")}
-        >
-          {isActive ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="6" y="6" width="12" height="12" rx="2" />
-            </svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-          )}
-          <span className="text-xs font-medium">{isActive ? t("dock.mic_stop") : t("dock.mic_label")}</span>
-        </button>
-
-        <div className="w-px h-5 bg-white/10 mx-0.5" />
-
         {/* ── Workspace ops ───────────────────────────────── */}
         <button
           onClick={api.toggleGrid}
-          className="tooltip h-9 w-9 rounded-xl hover:bg-white/8 text-muted hover:text-fg transition flex items-center justify-center badge"
+          disabled={isChatActive || isRecording}
+          className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
+            isChatActive || isRecording
+              ? "opacity-30 cursor-not-allowed"
+              : "hover:bg-white/8 text-muted hover:text-fg"
+          }`}
           title={t("dock.grid")}
           aria-label={t("dock.grid")}
         >
@@ -101,7 +83,12 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
 
         <button
           onClick={api.focusLast}
-          className="tooltip h-9 w-9 rounded-xl hover:bg-white/8 text-muted hover:text-fg transition flex items-center justify-center badge"
+          disabled={isChatActive || isRecording}
+          className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
+            isChatActive || isRecording
+              ? "opacity-30 cursor-not-allowed"
+              : "hover:bg-white/8 text-muted hover:text-fg"
+          }`}
           title={t("dock.focus")}
           aria-label={t("dock.focus")}
         >
@@ -114,7 +101,12 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
 
         <button
           onClick={api.arrangeOrbit}
-          className="tooltip h-9 w-9 rounded-xl hover:bg-accent2/20 text-muted hover:text-accent2 transition flex items-center justify-center badge"
+          disabled={isChatActive || isRecording}
+          className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
+            isChatActive || isRecording
+              ? "opacity-30 cursor-not-allowed"
+              : "hover:bg-accent/20 text-muted hover:text-accent"
+          }`}
           title={t("dock.orbit")}
           aria-label={t("dock.orbit")}
         >
@@ -127,7 +119,12 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
 
         <button
           onClick={api.networkPulse}
-          className="tooltip h-9 w-9 rounded-xl hover:bg-accent/20 text-muted hover:text-accent transition flex items-center justify-center badge"
+          disabled={isChatActive || isRecording}
+          className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
+            isChatActive || isRecording
+              ? "opacity-30 cursor-not-allowed"
+              : "hover:bg-accent/20 text-muted hover:text-accent"
+          }`}
           title={t("dock.pulse")}
           aria-label={t("dock.pulse")}
         >
@@ -137,6 +134,39 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
         </button>
 
         <div className="w-px h-5 bg-white/10 mx-0.5" />
+
+        {/* ── Central record button ─────────────────────────── */}
+        <button
+          onClick={handleRecordClick}
+          className={`flex items-center justify-center h-14 w-14 rounded-full shadow-lg transition-all hover:scale-105 active:scale-95 ${
+            isRecording
+              ? isSpeaking
+                ? "bg-red-500 text-white shadow-red-500/25 animate-rec-pulse"
+                : "bg-red-500 text-white hover:bg-red-600 shadow-red-500/25"
+              : "bg-accent text-white hover:bg-accent/90 shadow-accent/25"
+          }`}
+          aria-label={isRecording ? t("dock.mic_stop") : t("dock.mic_label")}
+          title={isRecording ? t("dock.mic_stop") : t("dock.mic_label")}
+        >
+          {isRecording ? (isSpeaking ? <div className="w-5 h-5 rounded-full bg-current" /> : <Send size={24} />) : <Mic size={24} />}
+        </button>
+
+        <div className="w-px h-5 bg-white/10 mx-0.5" />
+
+        {/* ── Control button (right side): cancel recording or stop AI ───────────────── */}
+        <button
+          onClick={handleControlClick}
+          disabled={!isControlVisible}
+          className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
+            isControlVisible
+              ? "bg-red-500/15 text-red-300 hover:bg-red-500/25"
+              : "opacity-30 cursor-not-allowed text-muted"
+          }`}
+          aria-label={isRecording ? t("dock.mic_cancel") : t("dock.mic_stop")}
+          title={isRecording ? t("dock.mic_cancel") : t("dock.mic_stop")}
+        >
+          {isRecording ? <X size={16} /> : <Square size={16} />}
+        </button>
 
         {/* ── Overflow menu ───────────────────────────────── */}
         <div className="relative" ref={overflowRef}>

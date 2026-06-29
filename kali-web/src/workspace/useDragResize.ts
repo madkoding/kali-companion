@@ -48,6 +48,7 @@ function trySnap(el: HTMLElement, x: number, y: number, otherWindows: Array<{ el
 
 export function startDrag(opts: DragOpts) {
   const { id, el, startPos, startMouse, onMove, onEnd, otherWindows, shiftHeld } = opts;
+  let lastPos = startPos;
 
   const onPointerMove = (ev: PointerEvent) => {
     let nx = startPos.x + (ev.clientX - startMouse.x);
@@ -55,21 +56,24 @@ export function startDrag(opts: DragOpts) {
     nx = Math.max(0, Math.min(window.innerWidth - 80, nx));
     ny = Math.max(50, Math.min(window.innerHeight - 60, ny));
     const snap = trySnap(el, nx, ny, otherWindows, shiftHeld());
+    lastPos = snap.pos;
     onMove(id, snap.pos);
   };
 
-  const onPointerUp = () => {
+  const cleanup = () => {
     document.removeEventListener("pointermove", onPointerMove);
     document.removeEventListener("pointerup", onPointerUp);
     document.removeEventListener("pointercancel", onPointerCancel);
-    onEnd(id, startPos, startPos);
+  };
+
+  const onPointerUp = () => {
+    cleanup();
+    onEnd(id, lastPos, startPos);
   };
 
   const onPointerCancel = () => {
-    document.removeEventListener("pointermove", onPointerMove);
-    document.removeEventListener("pointerup", onPointerUp);
-    document.removeEventListener("pointercancel", onPointerCancel);
-    onEnd(id, startPos, startPos);
+    cleanup();
+    onEnd(id, lastPos, startPos);
   };
 
   document.addEventListener("pointermove", onPointerMove);
@@ -99,6 +103,21 @@ export function startResize(opts: ResizeOpts) {
   document.body.style.pointerEvents = "none";
   el.style.pointerEvents = "auto";
 
+  const safetyTimer = setTimeout(() => {
+    document.body.style.userSelect = "";
+    document.body.style.pointerEvents = "";
+  }, 5000);
+
+  const cleanup = () => {
+    clearTimeout(safetyTimer);
+    document.removeEventListener("pointermove", onPointerMove);
+    document.removeEventListener("pointerup", onPointerUp);
+    document.removeEventListener("pointercancel", onPointerCancel);
+    document.body.style.userSelect = "";
+    document.body.style.pointerEvents = "";
+    el.releasePointerCapture(opts.pointerId);
+  };
+
   const onPointerMove = (ev: PointerEvent) => {
     const dx = ev.clientX - startMouse.x;
     const dy = ev.clientY - startMouse.y;
@@ -126,23 +145,8 @@ export function startResize(opts: ResizeOpts) {
     onResize(id, { width: nw, height: nh }, { x: nx, y: ny });
   };
 
-  const onPointerUp = () => {
-    document.removeEventListener("pointermove", onPointerMove);
-    document.removeEventListener("pointerup", onPointerUp);
-    document.removeEventListener("pointercancel", onPointerCancel);
-    document.body.style.userSelect = "";
-    document.body.style.pointerEvents = "";
-    el.releasePointerCapture(opts.pointerId);
-  };
-
-  const onPointerCancel = () => {
-    document.removeEventListener("pointermove", onPointerMove);
-    document.removeEventListener("pointerup", onPointerUp);
-    document.removeEventListener("pointercancel", onPointerCancel);
-    document.body.style.userSelect = "";
-    document.body.style.pointerEvents = "";
-    el.releasePointerCapture(opts.pointerId);
-  };
+  const onPointerUp = () => cleanup();
+  const onPointerCancel = () => cleanup();
 
   document.addEventListener("pointermove", onPointerMove);
   document.addEventListener("pointerup", onPointerUp);

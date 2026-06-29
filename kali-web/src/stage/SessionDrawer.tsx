@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
-import { Plus, X, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
+import { Overlay } from "../components/ui/Overlay";
 import type { SessionListItem } from "../hooks/useChat";
 
 interface Props {
@@ -73,104 +74,82 @@ export function SessionDrawer({ open, onClose, sessions, activeSessionId, onNewS
 
   return (
     <>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            className="fixed inset-0 z-40 bg-black/50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          >
-            <motion.aside
-              className="absolute left-0 top-0 h-full w-[300px] max-w-[85vw] bg-elevated border-r border-border flex flex-col"
-              initial={{ x: -320 }}
-              animate={{ x: 0 }}
-              exit={{ x: -320 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              onClick={(e) => e.stopPropagation()}
+      <Overlay
+        open={open}
+        onClose={onClose}
+        variant="sheet-left"
+        title={t("sidebar.sessions")}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          {sessions.length > 1 && (
+            <button
+              className="dock-btn w-8 h-8 text-muted hover:text-red-300 hover:bg-red-500/15 transition"
+              onClick={handleDeleteAllClick}
+              aria-label={t("sidebar.delete_all")}
+              title={t("sidebar.delete_all")}
             >
-              <div className="p-3 border-b border-border flex items-center gap-2">
-                <span className="text-xs text-muted flex-1">{t("sidebar.sessions")}</span>
-                {sessions.length > 1 && (
+              <Trash2 size={14} />
+            </button>
+          )}
+          <button
+            className="dock-btn w-8 h-8"
+            onClick={onNewSession}
+            aria-label={t("sidebar.new_chat")}
+          >
+            <Plus size={15} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto stage-scroll -mx-5 -mb-5 px-2 pb-2">
+          {sessions.length === 0 && (
+            <p className="text-muted text-sm text-center py-6">{t("sidebar.no_sessions")}</p>
+          )}
+          {sessions.map((s) => (
+            <div
+              key={s.id}
+              className={`sidebar-item ${s.id === activeSessionId ? "active" : ""}`}
+            >
+              {confirmingId === s.id ? (
+                <div ref={confirmRef} className="flex items-center gap-2 px-3 py-2">
+                  <span className="text-xs text-muted flex-1">{t("sidebar.delete_session_confirm")}</span>
                   <button
-                    className="dock-btn w-8 h-8 text-muted hover:text-red-300 hover:bg-red-500/15 transition"
-                    onClick={handleDeleteAllClick}
-                    aria-label={t("sidebar.delete_all")}
-                    title={t("sidebar.delete_all")}
+                    className="text-[11px] font-medium text-muted hover:text-fg transition px-2 py-1 rounded hover:bg-white/10"
+                    onClick={handleCancelDelete}
                   >
-                    <Trash2 size={14} />
+                    {t("common.cancel")}
                   </button>
-                )}
-                <button
-                  className="dock-btn w-8 h-8"
-                  onClick={onNewSession}
-                  aria-label={t("sidebar.new_chat")}
-                >
-                  <Plus size={15} />
-                </button>
-                <button
-                  className="dock-btn w-8 h-8"
-                  onClick={onClose}
-                  aria-label={t("common.aria_close")}
-                >
-                  <X size={15} />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto stage-scroll p-2">
-                {sessions.length === 0 && (
-                  <p className="text-muted text-sm text-center py-6">{t("sidebar.no_sessions")}</p>
-                )}
-                {sessions.map((s) => (
-                  <div
-                    key={s.id}
-                    className={`sidebar-item ${s.id === activeSessionId ? "active" : ""}`}
+                  <button
+                    className="text-[11px] font-medium text-red-300 hover:text-red-200 transition px-2 py-1 rounded hover:bg-red-500/15"
+                    onClick={() => handleConfirmDelete(s.id)}
                   >
-                    {confirmingId === s.id ? (
-                      <div ref={confirmRef} className="flex items-center gap-2 px-3 py-2">
-                        <span className="text-xs text-muted flex-1">{t("sidebar.delete_session_confirm")}</span>
-                        <button
-                          className="text-[11px] font-medium text-muted hover:text-fg transition px-2 py-1 rounded hover:bg-white/10"
-                          onClick={handleCancelDelete}
-                        >
-                          {t("common.cancel")}
-                        </button>
-                        <button
-                          className="text-[11px] font-medium text-red-300 hover:text-red-200 transition px-2 py-1 rounded hover:bg-red-500/15"
-                          onClick={() => handleConfirmDelete(s.id)}
-                        >
-                          {t("sidebar.delete_session")}
-                        </button>
-                      </div>
-                    ) : (
-                      <NavLink
-                        to={`/session/${s.id}`}
-                        onClick={onClose}
-                        className="sidebar-item-link flex items-center gap-2"
-                      >
-                        <span className="sidebar-item-title flex-1 truncate">{s.title}</span>
-                        <span className="sidebar-item-date shrink-0">{formatDate(s.updated)}</span>
-                        <button
-                          className="shrink-0 w-6 h-6 flex items-center justify-center text-muted/30 hover:text-red-300 transition-colors"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDeleteClick(s.id);
-                          }}
-                          aria-label={t("sidebar.delete_session")}
-                          title={t("sidebar.delete_session")}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </NavLink>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </motion.aside>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                    {t("sidebar.delete_session")}
+                  </button>
+                </div>
+              ) : (
+                <NavLink
+                  to={`/session/${s.id}`}
+                  onClick={onClose}
+                  className="sidebar-item-link flex items-center gap-2"
+                >
+                  <span className="sidebar-item-title flex-1 truncate">{s.title}</span>
+                  <span className="sidebar-item-date shrink-0">{formatDate(s.updated)}</span>
+                  <button
+                    className="shrink-0 w-6 h-6 flex items-center justify-center text-muted/30 hover:text-red-300 transition-colors"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteClick(s.id);
+                    }}
+                    aria-label={t("sidebar.delete_session")}
+                    title={t("sidebar.delete_session")}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </NavLink>
+              )}
+            </div>
+          ))}
+        </div>
+      </Overlay>
 
       <AnimatePresence>
         {showDeleteAllModal && (

@@ -1,0 +1,452 @@
+"""Qwen3-TTS provider — manages the C++ tts-server binary as a subprocess.
+
+This provider implements the TTSProvider Protocol by spawning the qwen-tts-cpp-server
+tts-server binary and communicating with it over HTTP (OpenAI-compatible endpoint).
+
+Supports two modes:
+  - qwen3 (0.6B CustomVoice): 9 predefined named speakers
+  - qwen3-voicedesign (1.7B VoiceDesign): text instruction + seed for voice generation
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import random
+import subprocess
+import time
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from kali_core.voice.providers.base import TTSProvider, TTSResult
+
+logger = logging.getLogger("kali_core.voice.qwen")
+
+PREDEFINED_VOICES = [
+    {"id": "serena",   "name": "Serena",   "gender": "female"},
+    {"id": "vivian",   "name": "Vivian",   "gender": "female"},
+    {"id": "ono_anna", "name": "Ono Anna", "gender": "female"},
+    {"id": "sohee",    "name": "Sohee",    "gender": "female"},
+    {"id": "aiden",    "name": "Aiden",    "gender": "male"},
+    {"id": "dylan",    "name": "Dylan",    "gender": "male"},
+    {"id": "eric",     "name": "Eric",     "gender": "male"},
+    {"id": "ryan",     "name": "Ryan",     "gender": "male"},
+    {"id": "uncle_fu", "name": "Uncle Fu", "gender": "male"},
+]
+
+VOICE_DESIGN_PRESETS = [
+    {"id": "warm-female",      "name": "Warm Female",
+     "instructions": "A young female voice, warm and gentle, moderate pacing.",          "seed": 42},
+    {"id": "deep-male",        "name": "Deep Male",
+     "instructions": "A deep male voice, calm and authoritative, slow pacing.",         "seed": 100},
+    {"id": "sad-female",       "name": "Sad Female",
+     "instructions": "A crying, deeply sad, and trembling female voice, slow pacing.",  "seed": 200},
+    {"id": "energetic-male",   "name": "Energetic Male",
+     "instructions": "An excited and energetic young male voice, fast pacing.",         "seed": 300},
+    {"id": "whisper-female",   "name": "Whisper Female",
+     "instructions": "A soft whispering female voice, mysterious and quiet.",            "seed": 400},
+    {"id": "elderly-male",     "name": "Elderly Male",
+     "instructions": "An elderly male voice, wise and slow, with a slight rasp.",         "seed": 500},
+    {"id": "cheerful-female",  "name": "Cheerful Female",
+     "instructions": "A cheerful female voice, bright and bubbly, fast pacing.",         "seed": 600},
+    {"id": "professional-male","name": "Professional Male",
+     "instructions": "A serious male voice, neutral and professional, moderate pacing.","seed": 700},
+]
+
+PREVIEW_TEXTS: dict[str, list[str]] = {
+    "en": [
+        "Hello, I am Kali, your virtual assistant. I am here to help you with whatever you need.",
+        "Hi there! I am Kali, and I am happy to be your assistant today.",
+        "Welcome! I am Kali, ready to assist you with any task.",
+        "Hello! This is Kali, your personal AI companion at your service.",
+        "Hey, I am Kali! I am here to make your day easier and more productive.",
+        "Good day! I am Kali, your trusted assistant ready to help.",
+        "Hello! I am Kali, and I will be assisting you today. How can I help?",
+        "Hi! I am Kali, your virtual assistant. What can I do for you?",
+        "Welcome! This is Kali, and I am at your service.",
+        "Hello! I am Kali, your AI assistant. I am looking forward to helping you.",
+    ],
+    "es": [
+        "Hola, soy Kali, tu asistente virtual. Estoy aquí para ayudarte en lo que necesites.",
+        "¡Hola! Soy Kali, tu asistente virtual. ¡Estoy feliz de estar aquí contigo!",
+        "Bienvenido, soy Kali. Estoy listo para ayudarte con cualquier tarea.",
+        "¡Hola! Soy Kali, tu compañero de inteligencia artificial a tu servicio.",
+        "Hey, soy Kali. Estoy aquí para hacer tu día más fácil y productivo.",
+        "¡Buen día! Soy Kali, tu asistente de confianza, listo para ayudarte.",
+        "¡Hola! Soy Kali y hoy seré tu asistente. ¿En qué puedo ayudarte?",
+        "¡Hola! Soy Kali, tu asistente virtual. ¿Qué puedo hacer por ti hoy?",
+        "¡Bienvenido! Soy Kali y estoy a tu servicio.",
+        "¡Hola! Soy Kali, tu asistente de inteligencia artificial. ¡Estoy ansioso por ayudarte!",
+    ],
+    "fr": [
+        "Bonjour, je suis Kali, votre assistant virtuel. Je suis là pour vous aider.",
+        "Salut! Je suis Kali, et je suis heureux d'être votre assistant aujourd'hui.",
+        "Bienvenue! Je suis Kali, prêt à vous aider.",
+        "Bonjour! Je suis Kali, votre compagnon IA à votre service.",
+        "Hé, je suis Kali! Je suis là pour faciliter votre journée.",
+        "Bonjour! Je suis Kali, votre assistant de confiance.",
+        "Bonjour! Je suis Kali, et je serai votre assistant aujourd'hui.",
+        "Salut! Je suis Kali, votre assistant virtuel. Que puis-je faire pour vous?",
+        "Bienvenue! Je suis Kali, à votre service.",
+        "Bonjour! Je suis Kali, votre assistant IA. J'ai hâte de vous aider!",
+    ],
+    "de": [
+        "Hallo, ich bin Kali, Ihr virtueller Assistent. Ich bin hier, um Ihnen zu helfen.",
+        "Hallo! Ich bin Kali, und ich freue mich, heute Ihr Assistent zu sein.",
+        "Willkommen! Ich bin Kali, bereit, Ihnen bei jeder Aufgabe zu helfen.",
+        "Hallo! Ich bin Kali, Ihr persönlicher KI-Begleiter zu Ihren Diensten.",
+        "Hey, ich bin Kali! Ich bin hier, um Ihren Tag zu erleichtern.",
+        "Guten Tag! Ich bin Kali, Ihr vertrauenswürdiger Assistent.",
+        "Hallo! Ich bin Kali, und ich werde Ihnen heute helfen.",
+        "Hallo! Ich bin Kali, Ihr virtueller Assistent. Was kann ich für Sie tun?",
+        "Willkommen! Ich bin Kali, zu Ihren Diensten.",
+        "Hallo! Ich bin Kali, Ihr KI-Assistent. Ich freue mich darauf, Ihnen zu helfen.",
+    ],
+    "it": [
+        "Ciao, sono Kali, il tuo assistente virtuale. Sono qui per aiutarti.",
+        "Ciao! Sono Kali, e sono felice di essere il tuo assistente oggi.",
+        "Benvenuto! Sono Kali, pronto ad aiutarti con qualsiasi compito.",
+        "Ciao! Sono Kali, il tuo compagno IA al tuo servizio.",
+        "Ehi, sono Kali! Sono qui per rendere la tua giornata più facile.",
+        "Buongiorno! Sono Kali, il tuo assistente di fiducia.",
+        "Ciao! Sono Kali, e sarò il tuo assistente oggi.",
+        "Ciao! Sono Kali, il tuo assistente virtuale. Cosa posso fare per te?",
+        "Benvenuto! Sono Kali, al tuo servizio.",
+        "Ciao! Sono Kali, il tuo assistente IA. Non vedo l'ora di aiutarti!",
+    ],
+    "pt": [
+        "Olá, eu sou Kali, sua assistente virtual. Estou aqui para ajudar você.",
+        "Olá! Eu sou Kali, e estou feliz em ser seu assistente hoje.",
+        "Bem-vindo! Eu sou Kali, pronto para ajudar com qualquer tarefa.",
+        "Olá! Eu sou Kali, seu companheiro de IA ao seu serviço.",
+        "Ei, eu sou Kali! Estou aqui para facilitar seu dia.",
+        "Bom dia! Eu sou Kali, sua assistente de confiança.",
+        "Olá! Eu sou Kali, e vou ajudá-lo hoje.",
+        "Olá! Eu sou Kali, sua assistente virtual. O que posso fazer por você?",
+        "Bem-vindo! Eu sou Kali, ao seu serviço.",
+        "Olá! Eu sou Kali, sua assistente de IA. Estou ansioso para ajudá-lo!",
+    ],
+    "zh": [
+        "你好，我是Kali，你的虚拟助手。我在这里帮助你。",
+        "你好！我是Kali，很高兴今天成为你的助手。",
+        "欢迎！我是Kali，准备好帮助你完成任务。",
+        "你好！我是Kali，你的个人AI助手为你服务。",
+        "嘿，我是Kali！我在这里让你的生活更轻松。",
+        "你好！我是Kali，你值得信赖的助手。",
+        "你好！我是Kali，今天我将为你提供帮助。",
+        "你好！我是Kali，你的虚拟助手。有什么可以帮你的？",
+        "欢迎！我是Kali，为你服务。",
+        "你好！我是Kali，你的AI助手。期待帮助你！",
+    ],
+    "ja": [
+        "こんにちは、私はKaliです。バーチャルアシスタントです。您的位置を支援します。",
+        "こんにちは！私はKaliです。今日はあなたのアシスタントになれて嬉しいです。",
+        "ようこそ！私はKaliです。どんなタスクでもお手伝いする準備ができています。",
+        "こんにちは！私はKali、あなたのパーソナルAIコンパニオンです。",
+        "ねえ、私はKaliです！あなたの日を更容易にするためにここにあります。",
+        "こんにちは！私はKali、信頼できるアシスタントです。",
+        "こんにちは！私はKali、今日はあなたをお手伝いします。",
+        "こんにちは！私はKali、バーチャルアシスタントです。何をすればいいですか？",
+        "ようこそ！私はKali为您服务。",
+        "こんにちは！私はKali、AIアシスタントです。お手伝いできるのを楽しみにしています！",
+    ],
+    "ko": [
+        "안녕하세요, 저는 Kali입니다. 가상 비서입니다. 도움을 드리겠습니다.",
+        "안녕하세요! 저는 Kali입니다. 오늘 당신의 비서가 되어 기쁩니다.",
+        "환영합니다! 저는 Kali입니다. 어떤 작업이든 도와드릴 준비가 되었습니다.",
+        "안녕하세요! 저는 Kali입니다. 당신을 위한 개인 AI 동반자입니다.",
+        "헤이, 저는 Kali입니다! 당신의 하루를 더 쉽게 만들어 드리겠습니다.",
+        "안녕하세요! 저는 Kali입니다. 신뢰할 수 있는 비서입니다.",
+        "안녕하세요! 저는 Kali입니다. 오늘 당신을 도울 것입니다.",
+        "안녕하세요! 저는 Kali입니다. 가상 비서입니다. 무엇을 도와드릴까요?",
+        "환영합니다! 저는 Kali입니다. 당신을 위해 여기 있습니다.",
+        "안녕하세요! 저는 Kali입니다. AI 비서입니다. 도움을 드리게 되어 기쁩니다!",
+    ],
+}
+
+def _normalize_language(language: str) -> str:
+    """Normalize a language code to a base supported by the C++ tts-server.
+
+    The C++ tts-server and PREVIEW_TEXTS use base codes (en, es, fr, de, ko).
+    Regional variants like 'es-CL' or 'es-MX' are mapped to their base.
+    """
+    if not language:
+        return "en"
+    base = language.split("-")[0].split("_")[0].lower()
+    if base not in PREVIEW_TEXTS:
+        return "en"
+    return base
+
+
+def get_random_preview_text(language: str = "en") -> str:
+    """Return a random preview text for the given language code."""
+    normalized = _normalize_language(language)
+    texts = PREVIEW_TEXTS.get(normalized, PREVIEW_TEXTS["en"])
+    return random.choice(texts)
+
+
+class QwenTTSProvider:
+    """Manages the qwen-tts-cpp-server C++ binary as a native subprocess."""
+
+    provider_name: str
+
+    def __init__(
+        self,
+        *,
+        binary: str | Path,
+        talker_model: str | Path,
+        codec_model: str | Path,
+        port: int = 8870,
+        backend: str = "CPU",
+        voice_design: bool = False,
+    ) -> None:
+        self._binary = Path(binary).expanduser().resolve()
+        self._talker_model = Path(talker_model).expanduser().resolve()
+        self._codec_model = Path(codec_model).expanduser().resolve()
+        self._port = port
+        self._backend = backend.upper()
+        self._voice_design = voice_design
+        self._provider_name = "qwen3-voicedesign" if voice_design else "qwen3"
+        self._instructions = ""
+        self._seed = -1
+        self._proc: subprocess.Popen[bytes] | None = None
+        self._client: httpx.AsyncClient | None = None
+        self._log_file: Path | None = None
+
+        self._validate_and_spawn()
+
+    # ── public TTSProvider interface ─────────────────────────────────
+
+    @property
+    def provider_name(self) -> str:
+        return self._provider_name
+
+    async def synthesize(
+        self,
+        text: str,
+        voice: str,
+        mode: str = "normal",
+        language: str = "auto",
+    ) -> TTSResult:
+        if self._client is None:
+            raise RuntimeError("QwenTTSProvider not started (client is None)")
+
+        normalized_lang = (
+            _normalize_language(language)
+            if language and language != "auto"
+            else "auto"
+        )
+        payload: dict[str, Any] = {
+            "input": text,
+            "voice": voice if not self._voice_design else "serena",
+            "language": normalized_lang,
+            "response_format": "wav",
+            "speed": 1.0,
+        }
+        if self._voice_design:
+            payload["instructions"] = self._instructions
+            payload["seed"] = self._seed
+
+        resp = await self._client.post("/v1/audio/speech", json=payload, timeout=60.0)
+        resp.raise_for_status()
+
+        return TTSResult(
+            audio=resp.content,
+            sample_rate=24000,
+            duration=0.0,
+            mode=mode,
+            segment=0,
+        )
+
+    async def list_voices(self) -> list[dict]:
+        if self._voice_design:
+            return [
+                {"id": p["id"], "name": p["name"],
+                 "instructions": p["instructions"], "seed": p["seed"]}
+                for p in VOICE_DESIGN_PRESETS
+            ]
+        return [
+            {"id": v["id"], "name": v["name"], "gender": v["gender"]}
+            for v in PREDEFINED_VOICES
+        ]
+
+    async def preview(
+        self,
+        voice_id: str,
+        instructions: str = "",
+        seed: int = -1,
+        text: str = "",
+        language: str = "auto",
+        mode: str = "normal",
+    ) -> bytes:
+        if self._client is None:
+            raise RuntimeError("QwenTTSProvider not started (client is None)")
+
+        if not text:
+            text = get_random_preview_text(language)
+
+        normalized_lang = (
+            _normalize_language(language)
+            if language and language != "auto"
+            else "auto"
+        )
+        payload: dict[str, Any] = {
+            "input": text,
+            "voice": voice_id if not self._voice_design else "serena",
+            "language": normalized_lang,
+            "response_format": "wav",
+            "speed": 1.0,
+        }
+        if self._voice_design:
+            payload["instructions"] = instructions
+            payload["seed"] = seed
+
+        resp = await self._client.post("/v1/audio/speech", json=payload, timeout=60.0)
+        resp.raise_for_status()
+        return resp.content
+
+    def set_voice_design(self, instructions: str, seed: int) -> None:
+        """Update the current instruction text and seed for voicedesign mode."""
+        self._instructions = instructions
+        self._seed = seed
+
+    # ── lifecycle ───────────────────────────────────────────────────
+
+    def _validate_and_spawn(self) -> None:
+        errors: list[str] = []
+
+        if not self._binary.exists():
+            errors.append(
+                f"Qwen3-TTS binary not found at: {self._binary}\n"
+                f"  Run: scripts/build-qwen-cpp.sh cpu   (or 'cuda' for GPU)"
+            )
+        elif not os.access(self._binary, os.X_OK):
+            errors.append(f"Qwen3-TTS binary is not executable: {self._binary}")
+
+        if not self._talker_model.exists():
+            model_id = "1.7b-voicedesign" if self._voice_design else "0.6b-customvoice"
+            errors.append(
+                f"Talker model not found at: {self._talker_model}\n"
+                f"  Run: scripts/download-qwen-models.sh {model_id}"
+            )
+
+        if not self._codec_model.exists():
+            errors.append(
+                f"Codec model not found at: {self._codec_model}\n"
+                f"  Run: scripts/download-qwen-models.sh   (tokenizer is included)"
+            )
+
+        if errors:
+            raise StartupError(
+                "Qwen3-TTS cannot start. Missing requirements:\n\n"
+                + "\n\n".join(errors)
+            )
+
+        self._spawn_server()
+
+    def _spawn_server(self) -> None:
+        log_path = Path("/tmp") / f"qwen-tts-{self._port}.log"
+        self._log_file = log_path
+
+        env = os.environ.copy()
+        if self._backend.startswith("CUDA"):
+            for cuda_path in ("/opt/cuda/lib64", "/usr/local/cuda/lib64", "/usr/lib/cuda/lib64"):
+                if os.path.isdir(cuda_path):
+                    env["LD_LIBRARY_PATH"] = f"{cuda_path}:{env.get('LD_LIBRARY_PATH', '')}"
+                    break
+            env["GGML_BACKEND"] = self._backend
+
+        logger.info(
+            "Spawning qwen-tts-server: binary=%s talker=%s codec=%s port=%s backend=%s",
+            self._binary, self._talker_model, self._codec_model, self._port, self._backend,
+        )
+
+        self._proc = subprocess.Popen(
+            [
+                str(self._binary),
+                "--model", str(self._talker_model),
+                "--codec", str(self._codec_model),
+                "--host", "127.0.0.1",
+                "--port", str(self._port),
+            ],
+            stdout=open(log_path, "w"),
+            stderr=subprocess.STDOUT,
+            env=env,
+        )
+
+        self._wait_for_health()
+
+        base_url = f"http://127.0.0.1:{self._port}"
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=30.0)
+        logger.info("QwenTTSProvider ready at %s", base_url)
+
+    def _wait_for_health(self) -> None:
+        timeout = 60.0 if self._backend.startswith("CUDA") else 30.0
+        step = 1.0
+        elapsed = 0.0
+        log_detail = ""
+
+        while elapsed < timeout:
+            if self._proc is None or self._proc.poll() is not None:
+                if self._log_file:
+                    try:
+                        log_detail = self._log_file.read_text()[-2000:]
+                    except Exception:
+                        log_detail = "(could not read log)"
+                raise StartupError(
+                    f"qwen-tts-server exited during startup (code={self._proc.poll() if self._proc else 'N/A'}).\n"
+                    f"Last lines of log ({self._log_file}):\n{log_detail}"
+                )
+            try:
+                import urllib.request
+                req = urllib.request.Request(f"http://127.0.0.1:{self._port}/health")
+                with urllib.request.urlopen(req, timeout=2) as resp:
+                    if resp.status == 200:
+                        logger.info("qwen-tts-server health check passed (%.1fs)", elapsed)
+                        return
+            except Exception:
+                pass
+            time.sleep(step)
+            elapsed += step
+
+        if self._log_file:
+            try:
+                log_detail = self._log_file.read_text()[-2000:]
+            except Exception:
+                log_detail = "(could not read log)"
+
+        if self._proc and self._proc.poll() is not None:
+            raise StartupError(
+                f"qwen-tts-server exited during startup (code={self._proc.poll()}).\n"
+                f"Log ({self._log_file}):\n{log_detail}"
+            )
+
+        raise StartupError(
+            f"qwen-tts-server did not respond after {timeout}s.\n"
+            f"Log ({self._log_file}):\n{log_detail}"
+        )
+
+    def shutdown(self) -> None:
+        logger.info("Shutting down qwen-tts-server (port %s)", self._port)
+        if self._client:
+            try:
+                self._client.aclose()
+            except Exception:
+                pass
+            self._client = None
+
+        if self._proc:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.wait()
+            self._proc = None
+
+
+class StartupError(Exception):
+    """Raised when a required component is missing at startup."""

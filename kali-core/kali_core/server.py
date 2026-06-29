@@ -31,6 +31,7 @@ import base64
 import json
 import logging
 import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from kali_core.claws.base import available_tools, register
@@ -65,25 +67,36 @@ from kali_core.claws.web import WebFetchTool, WebSearchTool
 from kali_core.collar.consent import ConsentManager as ConsentMgr
 from kali_core.collar.gateway import PermissionGateway
 from kali_core.config import settings
-from kali_core.ear.manager import STTManager, WakeWordDetector
-from kali_core.lang_map import normalize
+from kali_core.ear.manager import WakeWordDetector
+from kali_core.ear.providers import get_stt_provider
+from kali_core.user_config import UserConfig, load_or_default as load_user_config, save as save_user_config
 from kali_core.game.gsi import gsi_state
 from kali_core.gaze import GazeClient
+from kali_core.lang_map import normalize
 from kali_core.mind.ai_config import AIConfig
 from kali_core.mind.ai_config import load as load_ai_config
 from kali_core.mind.ai_config import save as save_ai_config
+from kali_core.mind.cloud_providers import CLOUD_PROVIDERS
+from kali_core.mind.console_requester import ConsoleRequester
+from kali_core.mind.connections_store import Connection as SavedConnection
+from kali_core.mind.connections_store import ConnectionsStore
 from kali_core.mind.executor import Executor
 from kali_core.mind.jobs import JobManager
-from kali_core.mind.console_requester import ConsoleRequester
 from kali_core.mind.llm.direct import DirectLLMProvider
 from kali_core.mind.llm.nanobot import NanobotLLMProvider
 from kali_core.mind.llm.provider import LLMProvider, ToolDef
+from kali_core.mind.llm.scanner import probe_endpoint, verify_api_key
 from kali_core.mind.runtime import AgentRuntime
 from kali_core.nest.job_store import JobStore
 from kali_core.nest.store import SessionStore
 from kali_core.voice.pipeline import TTSPipeline
 from kali_core.voice.providers.http import HTTPTTSProvider
 from kali_core.voice.providers.inproc import InProcTTSProvider
+from kali_core.voice.providers.qwen import (
+    PREDEFINED_VOICES,
+    QwenTTSProvider,
+    get_random_preview_text,
+)
 from kali_core.voice.voice_config import VoiceConfigManager
 
 logger = logging.getLogger("kali_core.server")
@@ -112,7 +125,33 @@ def _build_llm_provider() -> LLMProvider:
 def _build_tts_provider():
     if settings.tts_provider == "http":
         return HTTPTTSProvider()
+    if settings.tts_provider in ("qwen3", "qwen3-voicedesign"):
+        voice_design = settings.tts_provider == "qwen3-voicedesign"
+        talker_model = (
+            settings.qwen_voicedesign_model
+            if voice_design
+            else settings.qwen_talker_model
+        )
+        return QwenTTSProvider(
+            binary=settings.qwen_binary,
+            talker_model=talker_model,
+            codec_model=settings.qwen_codec_model,
+            port=settings.qwen_port,
+            backend=settings.qwen_backend,
+            voice_design=voice_design,
+        )
     return InProcTTSProvider()
+
+
+def _build_stt_provider():
+    provider = get_stt_provider(settings.stt_provider)
+    if settings.stt_provider == "qwen3":
+        if hasattr(provider, "configure"):
+            provider.configure(models_dir=settings.qwen_asr_models_dir)
+        provider.set_streaming(settings.qwen_asr_streaming)
+    else:
+        provider.load_model(settings.stt_model)
+    return provider
 
 
 def _register_tools() -> None:
@@ -175,10 +214,19 @@ class Server:
         # Shared components.
         self.llm_provider = _build_llm_provider()
         self.tts_provider = _build_tts_provider()
+        self.stt_provider = _build_stt_provider()
         self.agent = AgentRuntime(self.llm_provider)
+        # For qwen3 providers, glados-es (the Piper default) is not a valid
+        # voice. Fall back to "serena" (first predefined voice) so the UI and
+        # the pipeline start in a consistent state.
+        default_voice = settings.tts_voice
+        if self.tts_provider.provider_name in ("qwen3", "qwen3-voicedesign"):
+            qwen_voice_ids = {v["id"] for v in PREDEFINED_VOICES}
+            if default_voice not in qwen_voice_ids:
+                default_voice = "serena"
         self.tts_pipeline = TTSPipeline(
             self.tts_provider,
-            voice=settings.tts_voice,
+            voice=default_voice,
             mode=settings.tts_mode,
             auto_tts=settings.tts_enabled,
         )
@@ -213,7 +261,114 @@ class Server:
         self.agent.set_executor(self.executor)
         self.agent.set_tools(self.tool_defs)
         self.agent.set_session_store(self.session_store)
+        self._connections: list[Connection] = []
+        self.connections_store = ConnectionsStore()
+        # Config warnings collected on startup replay (setting_key → message).
+        # Surfaced to the frontend via the `config_warnings` status field so
+        # the UI can show a banner about settings that couldn't be restored.
+        self._config_warnings: dict[str, str] = {}
+        self._apply_server_level_user_config()
         self._register_routes()
+
+    async def broadcast(self, payload: dict[str, Any]) -> None:
+        for conn in list(self._connections):
+            try:
+                await conn.send(payload)
+            except Exception:
+                pass
+
+    async def broadcast_status(self) -> None:
+        """Send a full, per-connection status to all connected clients."""
+        for conn in list(self._connections):
+            try:
+                await conn._emit_status()
+            except Exception:
+                pass
+
+    def _build_status_payload(self) -> dict[str, Any]:
+        try:
+            cfg = load_ai_config()
+        except Exception:
+            cfg = AIConfig()
+        try:
+            conns = self.connections_store.list()
+        except Exception:
+            conns = []
+        summaries = []
+        for c in conns:
+            try:
+                summaries.append({
+                    "id": c.id,
+                    "name": c.name,
+                    "kind": c.kind,
+                    "api_url": c.api_url,
+                    "api_format": c.api_format,
+                    "vendor_detected": c.vendor_detected,
+                    "model_count": len(c.models),
+                    "is_active": cfg.connection_id == c.id,
+                    "active_model": (
+                        getattr(self.llm_provider, "_model", None)
+                        if cfg.connection_id == c.id
+                        else None
+                    ),
+                })
+            except Exception:
+                continue
+        return {
+            "event": "status",
+            "llm_provider": self.llm_provider.provider_name,
+            "llm_api_url": getattr(self.llm_provider, "_api_url", settings.llm_api_url),
+            "llm_api_key_set": bool(getattr(self.llm_provider, "_api_key", "")),
+            "llm_model": getattr(self.llm_provider, "_model", settings.llm_model),
+            "llm_max_tokens": getattr(self.llm_provider, "_max_tokens", settings.llm_max_tokens),
+            "llm_connection_id": cfg.connection_id,
+            "llm_connection_name": next(
+                (c.name for c in conns if c.id == cfg.connection_id), None
+            ),
+            "connections": summaries,
+            "tts_provider": self.tts_provider.provider_name,
+            "voice": self.tts_pipeline.voice,
+            "tts_mode": self.tts_pipeline.mode,
+            "auto_tts": self.tts_pipeline.auto_tts,
+            "capture_backend": "mss" if self.gaze_client.connected else "none",
+            "profile": self.executor.profile,
+            "stt_provider": self.stt_provider.provider_name,
+            "stt_model": self.stt_provider.loaded_model,
+            "stt_device": self.stt_provider.device,
+            "stt_loaded": self.stt_provider.is_loaded,
+            "stt_streaming": getattr(self.stt_provider, "_streaming", True),
+            "stt_models_dir": str(getattr(self.stt_provider, "_models_dir", "")),
+        }
+        if self._config_warnings:
+            payload["config_warnings"] = list(self._config_warnings.values())
+        return payload
+
+    async def _activate_connection(self, conn: SavedConnection, model: str) -> None:
+        """Hot-swap the live LLM provider to a saved connection + model."""
+        cfg = load_ai_config()
+        cfg.connection_id = conn.id
+        cfg.api_url = conn.api_url
+        cfg.api_key = conn.api_key
+        cfg.model = model
+        cfg.provider = "direct"
+        save_ai_config(cfg)
+        if hasattr(self.llm_provider, "reconfigure"):
+            self.llm_provider.reconfigure(
+                api_url=conn.api_url,
+                api_key=conn.api_key,
+                model=model,
+            )
+        else:
+            # Nanobot-style provider without reconfigure(): mutate attrs.
+            if hasattr(self.llm_provider, "_api_url"):
+                self.llm_provider._api_url = conn.api_url
+            if hasattr(self.llm_provider, "_api_key"):
+                self.llm_provider._api_key = conn.api_key
+            if hasattr(self.llm_provider, "_model"):
+                self.llm_provider._model = model
+        logger.info(
+            "Connection activated: id=%s name=%s model=%s", conn.id, conn.name, model
+        )
 
     def _register_routes(self) -> None:
         # Static file serving for cached images.
@@ -292,12 +447,15 @@ class Server:
         async def ws_endpoint(ws: WebSocket) -> None:
             await ws.accept()
             conn = Connection(ws, self)
+            self._connections.append(conn)
             try:
                 await conn.run()
             except WebSocketDisconnect:
                 logger.info("frontend disconnected")
             except Exception:
                 logger.exception("connection error")
+            finally:
+                self._connections.remove(conn)
 
         @self.app.get("/health")
         async def health() -> dict[str, Any]:
@@ -305,7 +463,89 @@ class Server:
 
         @self.app.get("/voices")
         async def voices() -> dict[str, Any]:
+            if hasattr(self.tts_provider, "list_voices"):
+                return {"voices": await self.tts_provider.list_voices()}
             return {"voices": self.voice_configs.list_voices()}
+
+        @self.app.get("/voices/custom")
+        async def list_custom_voices(provider: str | None = None) -> dict[str, Any]:
+            return {"voices": await self.session_store.list_custom_voices(provider)}
+
+        @self.app.post("/voices/custom")
+        async def create_custom_voice(request: Request) -> dict[str, Any]:
+            body = await request.json()
+            name = body.get("name", "").strip()
+            provider = body.get("provider", "qwen3-voicedesign")
+            instructions = body.get("instructions", "").strip()
+            seed = int(body.get("seed", -1))
+            if not name:
+                return JSONResponse(content={"error": "name is required"}, status_code=400)
+            if not instructions:
+                return JSONResponse(content={"error": "instructions is required"}, status_code=400)
+            voice = await self.session_store.create_custom_voice(name, provider, instructions, seed)
+            return {"voice": voice}
+
+        @self.app.put("/voices/custom/{voice_id}")
+        async def update_custom_voice(request: Request, voice_id: str) -> dict[str, Any]:
+            body = await request.json()
+            voice = await self.session_store.update_custom_voice(
+                voice_id,
+                name=body.get("name"),
+                instructions=body.get("instructions"),
+                seed=body.get("seed"),
+            )
+            if not voice:
+                return JSONResponse(content={"error": "Voice not found"}, status_code=404)
+            return {"voice": voice}
+
+        @self.app.delete("/voices/custom/{voice_id}")
+        async def delete_custom_voice(voice_id: str) -> dict[str, Any]:
+            deleted = await self.session_store.delete_custom_voice(voice_id)
+            if not deleted:
+                return JSONResponse(content={"error": "Voice not found"}, status_code=404)
+            return {"success": True}
+
+        @self.app.post("/api/tts/preview")
+        async def tts_preview(request: Request) -> Any:
+            body = await request.json()
+            voice_id = body.get("voice_id", "")
+            language = body.get("language", "en")
+            mode = body.get("mode", "normal")
+            text = body.get("text", "") or get_random_preview_text(language)
+            if not hasattr(self.tts_provider, "preview"):
+                return JSONResponse(content={"error": "Preview not supported by current TTS provider"}, status_code=400)
+            try:
+                audio = await self.tts_provider.preview(
+                    voice_id=voice_id, text=text, language=language, mode=mode
+                )
+            except Exception as exc:
+                logger.error("tts preview failed: %s", exc)
+                return JSONResponse(content={"error": f"TTS engine error: {exc}"}, status_code=500)
+            return Response(content=audio, media_type="audio/wav")
+
+        @self.app.post("/api/tts/voice-design")
+        async def tts_voice_design(request: Request) -> Any:
+            body = await request.json()
+            instructions = body.get("instructions", "")
+            seed = int(body.get("seed", -1))
+            language = body.get("language", "en")
+            text = body.get("text", "") or get_random_preview_text(language)
+            if not instructions or not instructions.strip():
+                return JSONResponse(content={"error": "instructions field is required and cannot be empty"}, status_code=400)
+            if not hasattr(self.tts_provider, "preview"):
+                return JSONResponse(content={"error": "Voice design not supported by current TTS provider"}, status_code=400)
+            try:
+                audio = await self.tts_provider.preview(
+                    voice_id=instructions,
+                    instructions=instructions,
+                    seed=seed,
+                    text=text,
+                    language=language,
+                )
+            except Exception as exc:
+                logger.error("voice-design preview failed: %s", exc)
+                return JSONResponse(content={"error": f"TTS engine error: {exc}"}, status_code=500)
+            return Response(content=audio, media_type="audio/wav")
 
         @self.app.get("/profiles")
         async def profiles() -> dict[str, Any]:
@@ -358,6 +598,258 @@ class Server:
             models = await list_models(api_url=api_url, api_key=api_key)
             return {"models": models}
 
+        # ── Saved connections (LLM provider CRUD) ───────────────
+
+        def _connection_summary(c: SavedConnection, active_id: str | None) -> dict[str, Any]:
+            return {
+                "id": c.id,
+                "name": c.name,
+                "kind": c.kind,
+                "api_url": c.api_url,
+                "api_format": c.api_format,
+                "vendor_detected": c.vendor_detected,
+                "model_count": len(c.models),
+                "is_active": active_id == c.id,
+                "active_model": (
+                    getattr(self.llm_provider, "_model", None)
+                    if active_id == c.id
+                    else None
+                ),
+            }
+
+        def _summaries() -> list[dict[str, Any]]:
+            cfg = load_ai_config()
+            return [_connection_summary(c, cfg.connection_id) for c in self.connections_store.list()]
+
+        @self.app.get("/llm/connections")
+        async def llm_connections_list() -> dict[str, Any]:
+            return {"connections": _summaries()}
+
+        @self.app.post("/llm/connections")
+        async def llm_connections_create(request: Request) -> dict[str, Any]:
+            body = await request.json()
+            try:
+                conn = self.connections_store.create(
+                    name=str(body.get("name", "")),
+                    kind=str(body.get("kind", "local")),
+                    api_url=str(body.get("api_url", "")),
+                    api_format=str(body.get("api_format", "openai")),
+                    api_key=str(body.get("api_key", "")),
+                    vendor_detected=str(body.get("vendor_detected", "")),
+                    models=list(body.get("models", []) or []),
+                )
+            except ValueError as exc:
+                return JSONResponse(content={"error": str(exc)}, status_code=400)
+            await self.broadcast_status()
+            return _connection_summary(conn, load_ai_config().connection_id)
+
+        @self.app.put("/llm/connections/{conn_id}")
+        async def llm_connections_update(conn_id: str, request: Request) -> dict[str, Any]:
+            body = await request.json()
+            patch = {k: v for k, v in body.items() if k != "id"}
+            updated = self.connections_store.update(conn_id, patch)
+            if not updated:
+                return JSONResponse(content={"error": "not found"}, status_code=404)
+            await self.broadcast_status()
+            return _connection_summary(updated, load_ai_config().connection_id)
+
+        @self.app.delete("/llm/connections/{conn_id}")
+        async def llm_connections_delete(conn_id: str) -> dict[str, Any]:
+            ok = self.connections_store.delete(conn_id)
+            if not ok:
+                return JSONResponse(content={"error": "not found"}, status_code=404)
+            cfg = load_ai_config()
+            if cfg.connection_id == conn_id:
+                cfg.connection_id = None
+                save_ai_config(cfg)
+            await self.broadcast_status()
+            return {"ok": True}
+
+        @self.app.post("/llm/connections/test")
+        async def llm_connections_test(request: Request) -> dict[str, Any]:
+            body = await request.json()
+            api_url = str(body.get("api_url", "")).strip()
+            api_key = str(body.get("api_key", ""))
+            if not api_url:
+                return JSONResponse(content={"error": "api_url is required"}, status_code=400)
+            probe = await probe_endpoint(api_url=api_url, api_key=api_key)
+            return {
+                "ok": probe.ok,
+                "vendor": probe.vendor,
+                "models": probe.models,
+                "detail": probe.detail,
+            }
+
+        @self.app.post("/llm/connections/verify-key")
+        async def llm_connections_verify_key(request: Request) -> dict[str, Any]:
+            body = await request.json()
+            api_url = str(body.get("api_url", "")).strip()
+            api_key = str(body.get("api_key", ""))
+            if not api_url:
+                return JSONResponse(content={"error": "api_url is required"}, status_code=400)
+            if not api_key:
+                return JSONResponse(content={"error": "api_key is required"}, status_code=400)
+            ok, detail = await verify_api_key(api_url=api_url, api_key=api_key)
+            return {"ok": ok, "detail": detail}
+
+        @self.app.post("/llm/connections/{conn_id}/activate")
+        async def llm_connections_activate(conn_id: str, request: Request) -> dict[str, Any]:
+            body = await request.json()
+            model = str(body.get("model", "")).strip()
+            if not model:
+                return JSONResponse(content={"error": "model is required"}, status_code=400)
+            conn = self.connections_store.get(conn_id)
+            if not conn:
+                return JSONResponse(content={"error": "connection not found"}, status_code=404)
+            try:
+                await self._activate_connection(conn, model)
+            except Exception as exc:
+                logger.exception("Activate connection failed")
+                return JSONResponse(content={"error": str(exc)}, status_code=500)
+            await self.broadcast_status()
+            return {"ok": True}
+
+        @self.app.get("/llm/cloud-providers")
+        async def llm_cloud_providers() -> dict[str, Any]:
+            return {
+                "providers": [
+                    {
+                        "id": p.id,
+                        "name": p.name,
+                        "api_url": p.api_url,
+                        "docs_url": p.docs_url,
+                        "notes": p.notes,
+                    }
+                    for p in CLOUD_PROVIDERS
+                ]
+            }
+
+        # ── STT management ──────────────────────────────────────
+
+        @self.app.get("/stt/providers")
+        async def stt_providers() -> dict[str, Any]:
+            from kali_core.ear.providers import list_stt_providers
+            return {"providers": list_stt_providers()}
+
+        @self.app.get("/stt/models")
+        async def stt_models(provider: str | None = None) -> dict[str, Any]:
+            import dataclasses
+            if provider and provider != self.stt_provider.provider_name:
+                from kali_core.ear.providers import get_stt_provider
+                temp = get_stt_provider(provider)
+                return {
+                    "models": [
+                        dataclasses.asdict(m) for m in temp.list_models()
+                    ]
+                }
+            return {
+                "models": [
+                    dataclasses.asdict(m) for m in self.stt_provider.list_models()
+                ]
+            }
+
+        @self.app.get("/stt/devices")
+        async def stt_devices() -> dict[str, Any]:
+            devices: list[dict] = []
+            try:
+                import torch
+                for i in range(torch.cuda.device_count()):
+                    props = torch.cuda.get_device_properties(i)
+                    free, total = torch.cuda.mem_get_info(i)
+                    devices.append({
+                        "id": f"cuda:{i}",
+                        "name": props.name,
+                        "vram_total_mb": round(total / 1024**2),
+                        "vram_free_mb": round(free / 1024**2),
+                    })
+            except ImportError:
+                try:
+                    result = subprocess.run(
+                        ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.free",
+                         "--format=csv,noheader,nounits"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    for line in result.stdout.strip().split("\n"):
+                        if not line.strip():
+                            continue
+                        idx, name, total, free = [p.strip() for p in line.split(",")]
+                        devices.append({
+                            "id": f"cuda:{idx}",
+                            "name": name,
+                            "vram_total_mb": int(total),
+                            "vram_free_mb": int(free),
+                        })
+                except Exception:
+                    pass
+            try:
+                import psutil
+                mem = psutil.virtual_memory()
+                devices.append({
+                    "id": "cpu",
+                    "name": "CPU",
+                    "ram_total_mb": round(mem.total / 1024**2),
+                    "ram_free_mb": round(mem.available / 1024**2),
+                })
+            except ImportError:
+                devices.append({"id": "cpu", "name": "CPU"})
+            return {"devices": devices}
+
+        @self.app.post("/stt/models/{model_id}/load")
+        async def stt_load_model(
+            model_id: str, device: str = "cpu", provider: str | None = None
+        ) -> dict[str, Any]:
+            if any(c._stt_session_active for c in self._connections):
+                return JSONResponse(
+                    content={"error": "Cannot load model during active recording"},
+                    status_code=400,
+                )
+            from kali_core.ear.providers import get_stt_provider
+            stt = get_stt_provider(provider) if provider else self.stt_provider
+            loop = asyncio.get_event_loop()
+            try:
+                await loop.run_in_executor(
+                    None, stt.load_model, model_id, device
+                )
+                await self.broadcast_status()
+                return {"status": "ready", "model": model_id, "device": device}
+            except Exception as exc:
+                logger.exception("STT model load failed")
+                return JSONResponse(
+                    content={"error": str(exc)}, status_code=500
+                )
+
+        @self.app.post("/stt/models/unload")
+        async def stt_unload_model(provider: str | None = None) -> dict[str, Any]:
+            if any(c._stt_session_active for c in self._connections):
+                return JSONResponse(
+                    content={"error": "Cannot unload model during active recording"},
+                    status_code=400,
+                )
+            target_name = provider or self.stt_provider.provider_name
+            if target_name == self.stt_provider.provider_name:
+                return JSONResponse(
+                    content={"error": "Cannot unload the active STT provider's model. Switch to another provider first."},
+                    status_code=400,
+                )
+            from kali_core.ear.providers import get_stt_provider
+            stt = get_stt_provider(provider) if provider else self.stt_provider
+            stt.unload_model()
+            await self.broadcast_status()
+            return {"status": "unloaded"}
+
+        @self.app.get("/stt/status")
+        async def stt_status() -> dict[str, Any]:
+            return {
+                "provider": self.stt_provider.provider_name,
+                "model": self.stt_provider.loaded_model,
+                "device": self.stt_provider.device,
+                "loaded": self.stt_provider.is_loaded,
+                "streaming": getattr(self.stt_provider, "_streaming", True),
+                "models_dir": str(
+                    getattr(self.stt_provider, "_models_dir", "")
+                ),
+            }
+
     async def run(self) -> None:
         config = uvicorn.Config(
             self.app,
@@ -369,6 +861,126 @@ class Server:
         server = uvicorn.Server(config)
         await server.serve()
 
+    # ── User config replay ──────────────────────────────────
+
+    _SERVER_LEVEL_KEYS = (
+        "voice",
+        "tts_mode",
+        "auto_tts",
+        "stt_provider",
+        "stt_model",
+        "stt_device",
+        "stt_streaming",
+        "stt_models_dir",
+        "profile",
+        "artifact_diff_preview",
+    )
+
+    def _get_fallback(self, key: str):
+        """Return the env-var default for a setting key, or None."""
+        mapping = {
+            "voice": settings.tts_voice,
+            "tts_mode": settings.tts_mode,
+            "auto_tts": settings.tts_enabled,
+            "stt_provider": settings.stt_provider,
+            "stt_model": settings.stt_model,
+            "stt_device": "cpu",
+            "stt_streaming": settings.qwen_asr_streaming,
+            "stt_models_dir": settings.qwen_asr_models_dir,
+            "profile": settings.active_profile,
+            "artifact_diff_preview": settings.artifact_diff_preview,
+            "stt_language": settings.stt_language,
+            "stt_vad_enabled": settings.stt_vad_enabled,
+            "stt_vad_mode": settings.stt_vad_mode,
+            "stt_vad_silence_timeout": settings.stt_vad_silence_timeout,
+            "stt_vad_auto_calibrate": settings.stt_vad_auto_calibrate,
+            "stt_vad_rms_threshold": settings.stt_vad_rms_threshold,
+            "wake_word_enabled": settings.stt_wake_word_enabled,
+            "input_mode": settings.input_mode,
+            "feedback_mode": "minimal",
+            "plan_mode": False,
+            "voice_instructions": "",
+            "voice_seed": -1,
+        }
+        return mapping.get(key)
+
+    def _apply_server_level_user_config(self) -> None:
+        """Replay server-level user config on startup, collecting warnings.
+
+        Each setting is applied in its own try/except.  On failure, a warning
+        is recorded and the env-var fallback is applied instead (without
+        recursing on a second failure).
+        """
+        cfg = load_user_config()
+        for key in self._SERVER_LEVEL_KEYS:
+            value = getattr(cfg, key, None)
+            if value is None:
+                continue
+            self._apply_server_setting(key, value, _is_fallback=False)
+
+    def _apply_server_setting(self, key: str, value: Any, _is_fallback: bool = False) -> None:
+        """Apply a single server-level setting with try/except + fallback."""
+        try:
+            if key == "voice":
+                self.tts_pipeline.set_voice(voice=value)
+            elif key == "tts_mode":
+                self.tts_pipeline.set_voice(mode=value)
+            elif key == "auto_tts":
+                self.tts_pipeline.set_auto_tts(bool(value))
+            elif key == "stt_provider":
+                if value != self.stt_provider.provider_name:
+                    self.stt_provider = get_stt_provider(value)
+                    if value == "qwen3" and hasattr(self.stt_provider, "configure"):
+                        self.stt_provider.configure(models_dir=settings.qwen_asr_models_dir)
+            elif key == "stt_model":
+                self.stt_provider.load_model(value, "cpu")
+            elif key == "stt_device":
+                # Validate CUDA availability before applying.
+                if isinstance(value, str) and (value == "cuda" or value.startswith("cuda:")):
+                    try:
+                        import torch
+                        if not torch.cuda.is_available():
+                            raise RuntimeError(f"CUDA not available, requested device '{value}'")
+                        if ":" in value:
+                            idx = int(value.split(":")[1])
+                            if idx >= torch.cuda.device_count():
+                                raise RuntimeError(f"Device '{value}' not available (only {torch.cuda.device_count()} GPU(s))")
+                    except ImportError:
+                        pass  # no torch — skip validation
+                if self.stt_provider.is_loaded:
+                    current_model = self.stt_provider.loaded_model
+                    self.stt_provider.unload_model()
+                    self.stt_provider.load_model(current_model, value)
+            elif key == "stt_streaming":
+                self.stt_provider.set_streaming(bool(value))
+            elif key == "stt_models_dir":
+                if hasattr(self.stt_provider, "configure"):
+                    was_loaded = self.stt_provider.is_loaded
+                    current_model = self.stt_provider.loaded_model
+                    current_device = self.stt_provider.device
+                    if was_loaded:
+                        self.stt_provider.unload_model()
+                    self.stt_provider.configure(models_dir=value)
+                    if was_loaded and current_model:
+                        self.stt_provider.load_model(current_model, current_device or "cpu")
+            elif key == "profile":
+                self.executor.profile = value
+            elif key == "artifact_diff_preview":
+                settings.artifact_diff_preview = bool(value)
+            else:
+                return
+            # Success — clear any previous warning for this key.
+            self._config_warnings.pop(key, None)
+        except Exception as exc:
+            if _is_fallback:
+                logger.warning("Fallback for '%s' also failed: %s", key, exc)
+                return
+            logger.warning("User config '%s' could not be applied (%s) — using default", key, exc)
+            self._config_warnings[key] = str(exc)
+            fallback = self._get_fallback(key)
+            if fallback is not None and fallback != value:
+                self._apply_server_setting(key, fallback, _is_fallback=True)
+
 
 class Connection:
     """One frontend session. Dispatches events and streams responses."""
@@ -378,13 +990,58 @@ class Connection:
         self.server = server
         self.session_id: str | None = None
         self._current_task: asyncio.Task | None = None
-        self._stt_manager: STTManager | None = None
+        self._stt_session_active: bool = False
         self._wake_word: WakeWordDetector | None = None
         self._stt_language: str = normalize(settings.stt_language)
         self._wake_word_enabled: bool = settings.stt_wake_word_enabled
         self._input_mode: str = settings.input_mode
         self._feedback_mode: str = "minimal"
         self._plan_mode: bool = False
+        self._voice_instructions: str = ""
+        self._voice_seed: int = -1
+        # VAD (Voice Activity Detection) — silence-based auto-end in wake word mode.
+        # NOTE: Auto-end is now handled by the frontend (RMS-based gate). The
+        # backend VAD is kept only for optional state reporting; the silence
+        # timeout logic below has been removed.
+        self._stt_vad_enabled: bool = settings.stt_vad_enabled
+        self._stt_vad_mode: int = settings.stt_vad_mode
+        self._stt_vad_silence_timeout: float = settings.stt_vad_silence_timeout
+        self._stt_vad_auto_calibrate: bool = settings.stt_vad_auto_calibrate
+        self._stt_vad_rms_threshold: float = settings.stt_vad_rms_threshold
+        self._vad: Any = None  # webrtcvad.Vad — lazy init
+        self._vad_buffer = bytearray()
+        self._vad_silence_frames = 0
+        self._last_vad_is_speech: bool = False
+        self._recording_start_time: float | None = None
+        self._max_recording_duration: float = 180.0  # safety timeout (seconds)
+        self._pending_final_text: str | None = None  # PTT: provider internal final held until audio_end
+        self._recording_origin: str | None = None  # manual / wake_word / continuous
+        # Replay per-connection user config (overrides env defaults above).
+        cfg = load_user_config()
+        if cfg.stt_language is not None:
+            self._stt_language = normalize(cfg.stt_language)
+        if cfg.stt_vad_enabled is not None:
+            self._stt_vad_enabled = bool(cfg.stt_vad_enabled)
+        if cfg.stt_vad_mode is not None:
+            self._stt_vad_mode = int(cfg.stt_vad_mode)
+        if cfg.stt_vad_silence_timeout is not None:
+            self._stt_vad_silence_timeout = float(cfg.stt_vad_silence_timeout)
+        if cfg.stt_vad_auto_calibrate is not None:
+            self._stt_vad_auto_calibrate = bool(cfg.stt_vad_auto_calibrate)
+        if cfg.stt_vad_rms_threshold is not None:
+            self._stt_vad_rms_threshold = float(cfg.stt_vad_rms_threshold)
+        if cfg.wake_word_enabled is not None:
+            self._wake_word_enabled = bool(cfg.wake_word_enabled)
+        if cfg.input_mode is not None:
+            self._input_mode = str(cfg.input_mode)
+        if cfg.feedback_mode is not None:
+            self._feedback_mode = str(cfg.feedback_mode)
+        if cfg.plan_mode is not None:
+            self._plan_mode = bool(cfg.plan_mode)
+        if cfg.voice_instructions is not None:
+            self._voice_instructions = str(cfg.voice_instructions)
+        if cfg.voice_seed is not None:
+            self._voice_seed = int(cfg.voice_seed)
 
     async def run(self) -> None:
         while True:
@@ -536,6 +1193,60 @@ class Connection:
         elif kind == "settings":
             await self._apply_settings(event)
 
+        elif kind == "create_connection":
+            try:
+                self.server.connections_store.create(
+                    name=str(event.get("name", "")),
+                    kind=str(event.get("kind", "local")),
+                    api_url=str(event.get("api_url", "")),
+                    api_format=str(event.get("api_format", "openai")),
+                    api_key=str(event.get("api_key", "")),
+                    vendor_detected=str(event.get("vendor_detected", "")),
+                    models=list(event.get("models", []) or []),
+                )
+            except ValueError as exc:
+                await self.send({"event": "error", "detail": str(exc)})
+                return
+            await self.server.broadcast_status()
+
+        elif kind == "update_connection":
+            cid = str(event.get("id", ""))
+            patch = event.get("patch") or {}
+            patch = {k: v for k, v in patch.items() if k != "id"}
+            if not cid or not self.server.connections_store.update(cid, patch):
+                await self.send({"event": "error", "detail": "connection not found"})
+                return
+            await self.server.broadcast_status()
+
+        elif kind == "delete_connection":
+            cid = str(event.get("id", ""))
+            if not cid or not self.server.connections_store.delete(cid):
+                await self.send({"event": "error", "detail": "connection not found"})
+                return
+            cfg = load_ai_config()
+            if cfg.connection_id == cid:
+                cfg.connection_id = None
+                save_ai_config(cfg)
+            await self.server.broadcast_status()
+
+        elif kind == "activate_connection":
+            cid = str(event.get("id", ""))
+            model = str(event.get("model", "")).strip()
+            conn = self.server.connections_store.get(cid) if cid else None
+            if not conn:
+                await self.send({"event": "error", "detail": "connection not found"})
+                return
+            if not model:
+                await self.send({"event": "error", "detail": "model is required"})
+                return
+            try:
+                await self.server._activate_connection(conn, model)
+            except Exception as exc:
+                logger.exception("activate_connection failed")
+                await self.send({"event": "error", "detail": str(exc)})
+                return
+            await self.server.broadcast_status()
+
         elif kind == "audio_start":
             await self._handle_audio_start(event)
 
@@ -608,13 +1319,43 @@ class Connection:
 
     async def _handle_audio_start(self, event: dict[str, Any]) -> None:
         """Start a new STT session."""
+        if not self.server.stt_provider.is_loaded:
+            await self.send(
+                {
+                    "event": "error",
+                    "detail": (
+                        "STT provider not loaded. "
+                        "Load a model first in Settings > Speech to Text."
+                    ),
+                }
+            )
+            return
         language = normalize(event.get("language", self._stt_language))
-        if self._stt_manager is None:
-            self._stt_manager = STTManager(language)
+        self.server.stt_provider.start_session(language)
+        self._stt_session_active = True
+        self._recording_origin = event.get("origin", "manual")
+        logger.debug("STT session started (lang=%s, origin=%s)", language, self._recording_origin)
+
+        # Reset VAD state for new session.
+        self._vad_buffer = bytearray()
+        self._vad_silence_frames = 0
+        self._last_vad_is_speech = False
+        self._recording_start_time = time.monotonic()
+        self._pending_final_text = None
+        if self._stt_vad_enabled:
+            logger.info(
+                "STT session started with VAD (mode=%d, silence_timeout=%.1fs, input_mode=%s, origin=%s)",
+                self._stt_vad_mode,
+                self._stt_vad_silence_timeout,
+                self._input_mode,
+                self._recording_origin,
+            )
         else:
-            self._stt_manager.set_language(language)
-        self._stt_manager.start_session()
-        logger.debug("STT session started (lang=%s)", language)
+            logger.info(
+                "STT session started without VAD (input_mode=%s, origin=%s)",
+                self._input_mode,
+                self._recording_origin,
+            )
 
         # Pause wake word while recording (avoids feedback).
         if self._wake_word is not None:
@@ -633,45 +1374,116 @@ class Connection:
                 )
 
         # Feed the main STT session if active.
-        if self._stt_manager is not None:
-            stt = self._stt_manager.current()
-            if stt is not None and stt.active:
-                result = stt.accept(chunk)
-                if result is not None:
-                    if "partial" in result:
-                        partial = result.get("partial", "")
-                        if partial:
+        stt_returned_final = False
+        if self._stt_session_active:
+            result = self.server.stt_provider.accept(chunk)
+            if result is not None:
+                if "partial" in result:
+                    partial = result.get("partial", "")
+                    if partial:
+                        await self.send(
+                            {"event": "stt_partial", "text": partial}
+                        )
+                elif "text" in result:
+                    text = result.get("text", "")
+                    if text:
+                        # Apply STT correction.
+                        corrected, _changes = correct_stt_text(text)
+                        if self._input_mode == "ptt":
+                            # In PTT (manual or wake-word triggered), never auto-finalize on
+                            # provider-internal silence detection. Hold the final text until
+                            # the user explicitly sends audio_end (manual) or VAD auto-ends
+                            # (wake word origin).
+                            self._pending_final_text = corrected
                             await self.send(
-                                {"event": "stt_partial", "text": partial}
+                                {"event": "stt_partial", "text": corrected}
                             )
-                    elif "text" in result:
-                        text = result.get("text", "")
-                        if text:
-                            # Apply STT correction.
-                            corrected, _changes = correct_stt_text(text)
+                        else:
+                            stt_returned_final = True
                             await self.send(
-                                {"event": "stt_final", "text": corrected}
+                                {"event": "stt_final", "text": corrected, "provider": self.server.stt_provider.provider_name}
                             )
+
+        # VAD processing: optional state reporting only. Auto-end is handled
+        # by the frontend (RMS-based gate) — the backend no longer auto-ends
+        # on silence. This block is kept for optional vad_state events if a
+        # future mode wants backend-driven VAD.
+        if self._stt_session_active and not stt_returned_final and self._stt_vad_enabled:
+            await self._run_vad(chunk)
+
+        # Safety timeout: never let a recording exceed max duration.
+        if self._stt_session_active and self._recording_start_time is not None:
+            elapsed = time.monotonic() - self._recording_start_time
+            if elapsed >= self._max_recording_duration:
+                logger.warning("Recording safety timeout reached (%.1fs), auto-ending session", elapsed)
+                await self._handle_audio_end()
 
     async def _handle_audio_end(self) -> None:
         """End the STT session and emit the final transcript."""
-        if self._stt_manager is not None:
-            stt = self._stt_manager.current()
-            if stt is not None:
-                result = stt.finish()
+        if self._stt_session_active:
+            try:
+                result = self.server.stt_provider.finish()
                 text = result.get("text", "").strip()
+                # If provider.finish() is empty but we held a PTT internal final, use it.
+                if not text and self._pending_final_text:
+                    text = self._pending_final_text
+                self._pending_final_text = None
                 # Apply STT correction (fuzzy matching against game terms).
                 corrected, changes = correct_stt_text(text)
                 if changes:
                     logger.info("STT corrected: %s → %s (changes: %s)", text, corrected, changes)
                     await self.send({"event": "stt_uncorrected", "text": text})
                 text = corrected
-                await self.send({"event": "stt_final", "text": text})
-            self._stt_manager.end_session()
+                await self.send({"event": "stt_final", "text": text, "provider": self.server.stt_provider.provider_name})
+            except Exception:
+                logger.exception("STT finish failed")
+                await self.send({"event": "error", "detail": "STT transcription failed. Model may have been unloaded."})
+            finally:
+                self._stt_session_active = False
 
-        # Resume wake word if enabled.
-        if self._wake_word_enabled and self._wake_word is not None:
+        # Resume wake word if enabled and not already running.
+        if self._input_mode == "ptt" and self._wake_word_enabled and self._wake_word is not None and not self._wake_word.running:
             self._wake_word.start()
+
+        # Reset VAD state at the end (new session will re-arm if needed).
+        self._vad_buffer = bytearray()
+        self._vad_silence_frames = 0
+        self._last_vad_is_speech = False
+        self._recording_start_time = None
+        self._recording_origin = None
+
+    async def _run_vad(self, chunk: bytes) -> None:
+        """Run webrtcvad over the chunk for optional state reporting only.
+
+        Auto-end on silence is now handled by the frontend (RMS-based gate).
+        This method is kept for optional vad_state events; the silence timeout
+        auto-end logic has been removed.
+        """
+        import webrtcvad
+        if self._vad is None:
+            self._vad = webrtcvad.Vad(self._stt_vad_mode)
+            logger.info("VAD initialized (mode=%d)", self._stt_vad_mode)
+
+        self._vad_buffer.extend(chunk)
+        frame_size = 320  # 10ms @ 16kHz 16-bit mono
+        any_speech_this_chunk = False
+
+        while len(self._vad_buffer) >= frame_size:
+            frame = bytes(self._vad_buffer[:frame_size])
+            self._vad_buffer = self._vad_buffer[frame_size:]
+
+            if self._vad.is_speech(frame, 16000):
+                self._vad_silence_frames = 0
+                any_speech_this_chunk = True
+            else:
+                self._vad_silence_frames += 1
+
+        # Report speech/silence state to the frontend on transitions.
+        is_speech = any_speech_this_chunk
+        if self._last_vad_is_speech != is_speech:
+            self._last_vad_is_speech = is_speech
+            logger.debug("VAD state transition: is_speech=%s", is_speech)
+            await self.send({"event": "vad_state", "is_speech": is_speech})
 
     # ── Wake word ──────────────────────────────────────────
 
@@ -908,51 +1720,179 @@ class Connection:
             save_ai_config(cfg)
         if "stt_language" in event:
             self._stt_language = normalize(event["stt_language"])
-            if self._stt_manager is not None:
-                self._stt_manager.set_language(self._stt_language)
+        if "stt_provider" in event:
+            if self._stt_session_active:
+                await self.send(
+                    {"event": "error", "detail": "Cannot change STT provider during active recording"}
+                )
+            else:
+                new_provider = event["stt_provider"]
+                if new_provider != self.server.stt_provider.provider_name:
+                    self.server.stt_provider = get_stt_provider(new_provider)
+                    if new_provider == "qwen3" and hasattr(self.server.stt_provider, "configure"):
+                        self.server.stt_provider.configure(
+                            models_dir=event.get("stt_models_dir", settings.qwen_asr_models_dir)
+                        )
+                    await self.server.broadcast_status()
+        if "stt_model" in event:
+            if self._stt_session_active:
+                await self.send(
+                    {"event": "error", "detail": "Cannot change STT model during active recording"}
+                )
+            else:
+                device = event.get("stt_device", "cpu")
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, self.server.stt_provider.load_model, event["stt_model"], device
+                )
+        if "stt_device" in event:
+            if self._stt_session_active:
+                await self.send(
+                    {"event": "error", "detail": "Cannot change STT device during active recording"}
+                )
+            elif self.server.stt_provider.is_loaded:
+                current_model = self.server.stt_provider.loaded_model
+                self.server.stt_provider.unload_model()
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, self.server.stt_provider.load_model, current_model, event["stt_device"]
+                )
+        if "stt_streaming" in event:
+            self.server.stt_provider.set_streaming(bool(event["stt_streaming"]))
+        if "stt_models_dir" in event:
+            if self._stt_session_active:
+                await self.send(
+                    {"event": "error", "detail": "Cannot change models directory during active recording"}
+                )
+            elif hasattr(self.server.stt_provider, "configure"):
+                was_loaded = self.server.stt_provider.is_loaded
+                current_model = self.server.stt_provider.loaded_model
+                current_device = self.server.stt_provider.device
+                if was_loaded:
+                    self.server.stt_provider.unload_model()
+                self.server.stt_provider.configure(models_dir=event["stt_models_dir"])
+                if was_loaded and current_model:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None, self.server.stt_provider.load_model, current_model, current_device or "cpu"
+                    )
+        if "stt_vad_mode" in event:
+            self._stt_vad_mode = int(event["stt_vad_mode"])
+            if self._vad is not None:
+                self._vad.set_mode(self._stt_vad_mode)
+        if "stt_vad_silence_timeout" in event:
+            self._stt_vad_silence_timeout = float(event["stt_vad_silence_timeout"])
+        if "input_mode" in event:
+            new_mode = event["input_mode"]
+            # If an active recording exists, end it cleanly before switching modes.
+            if self._stt_session_active:
+                await self._handle_audio_end()
+            self._input_mode = new_mode
+            # Wake word only makes sense in PTT mode.
+            if self._input_mode != "ptt" and self._wake_word_enabled:
+                self._wake_word_enabled = False
+                await self._stop_wake_word()
         if "wake_word_enabled" in event:
             self._wake_word_enabled = bool(event["wake_word_enabled"])
+            # Wake word is only allowed in PTT mode; silently ignore ON in other modes.
+            if self._input_mode != "ptt":
+                self._wake_word_enabled = False
             if self._wake_word_enabled:
+                # VAD is mandatory when wake word is active (auto-end relies on it).
+                self._stt_vad_enabled = True
                 await self._start_wake_word()
             else:
                 await self._stop_wake_word()
         if "profile" in event:
             self.server.executor.profile = event["profile"]
-        if "input_mode" in event:
-            self._input_mode = event["input_mode"]
+        if "stt_vad_enabled" in event:
+            # Prevent disabling VAD while wake word is active.
+            if self._input_mode == "ptt" and self._wake_word_enabled and not bool(event["stt_vad_enabled"]):
+                logger.info("Ignoring stt_vad_enabled=false while wake word is active")
+            else:
+                self._stt_vad_enabled = bool(event["stt_vad_enabled"])
+        if "stt_vad_auto_calibrate" in event:
+            self._stt_vad_auto_calibrate = bool(event["stt_vad_auto_calibrate"])
+        if "stt_vad_rms_threshold" in event:
+            self._stt_vad_rms_threshold = float(event["stt_vad_rms_threshold"])
         if "feedback_mode" in event:
             self._feedback_mode = event["feedback_mode"]
         if "plan_mode" in event:
             self._plan_mode = bool(event["plan_mode"])
         if "artifact_diff_preview" in event:
             settings.artifact_diff_preview = bool(event["artifact_diff_preview"])
+        # Qwen3 VoiceDesign settings
+        if "voice_instructions" in event:
+            self._voice_instructions = event["voice_instructions"]
+        if "voice_seed" in event:
+            self._voice_seed = int(event["voice_seed"])
+        # Propagate voice design params to the provider
+        if self.server.tts_provider.provider_name in ("qwen3", "qwen3-voicedesign"):
+            if hasattr(self.server.tts_provider, "set_voice_design"):
+                self.server.tts_provider.set_voice_design(
+                    self._voice_instructions, self._voice_seed
+                )
+        # Clear resolved config warnings for any keys in this event.
+        for key in event:
+            if key == "event":
+                continue
+            self.server._config_warnings.pop(key, None)
+        # Persist full user config snapshot to disk.
+        self._save_user_config_snapshot()
         await self._emit_status()
 
-    async def _emit_status(self) -> None:
-        await self.send(
-            {
-                "event": "status",
-                "llm_provider": self.server.llm_provider.provider_name,
-                "llm_api_url": getattr(self.server.llm_provider, "_api_url", settings.llm_api_url),
-                "llm_api_key_set": bool(getattr(self.server.llm_provider, "_api_key", "")),
-                "llm_model": getattr(self.server.llm_provider, "_model", settings.llm_model),
-                "llm_max_tokens": getattr(self.server.llm_provider, "_max_tokens", settings.llm_max_tokens),
-                "tts_provider": self.server.tts_provider.provider_name,
-                "voice": self.server.tts_pipeline.voice,
-                "tts_mode": self.server.tts_pipeline.mode,
-                "auto_tts": self.server.tts_pipeline.auto_tts,
-                "capture_backend": "mss" if self.server.gaze_client.connected else "none",
-                "profile": self.server.executor.profile,
-                "stt_language": self._stt_language,
-                "wake_word_enabled": self._wake_word_enabled,
-                "input_mode": self._input_mode,
-                "feedback_mode": self._feedback_mode,
-                "plan_mode": self._plan_mode,
-                "artifact_diff_preview": settings.artifact_diff_preview,
-                "tools": [t.name for t in available_tools()],
-                "available_profiles": [p["id"] for p in self.server.gateway.list_profiles()],
-            }
+    def _save_user_config_snapshot(self) -> None:
+        """Collect all current runtime values and persist them to user_config.json."""
+        sp = self.server.stt_provider
+        cfg = UserConfig(
+            # Server-level
+            voice=self.server.tts_pipeline.voice,
+            tts_mode=self.server.tts_pipeline.mode,
+            auto_tts=self.server.tts_pipeline.auto_tts,
+            stt_provider=sp.provider_name,
+            stt_model=sp.loaded_model,
+            stt_device=sp.device,
+            stt_streaming=getattr(sp, "_streaming", True),
+            stt_models_dir=str(getattr(sp, "_models_dir", "")) or None,
+            profile=self.server.executor.profile,
+            artifact_diff_preview=settings.artifact_diff_preview,
+            # Per-connection
+            stt_language=self._stt_language,
+            stt_vad_enabled=self._stt_vad_enabled,
+            stt_vad_mode=self._stt_vad_mode,
+            stt_vad_silence_timeout=self._stt_vad_silence_timeout,
+            stt_vad_auto_calibrate=self._stt_vad_auto_calibrate,
+            stt_vad_rms_threshold=self._stt_vad_rms_threshold,
+            wake_word_enabled=self._wake_word_enabled,
+            input_mode=self._input_mode,
+            feedback_mode=self._feedback_mode,
+            plan_mode=self._plan_mode,
+            voice_instructions=self._voice_instructions or "",
+            voice_seed=self._voice_seed,
         )
+        try:
+            save_user_config(cfg)
+        except Exception as exc:
+            logger.warning("Failed to persist user config: %s", exc)
+
+    async def _emit_status(self) -> None:
+        payload = self.server._build_status_payload()
+        payload.update({
+            "stt_language": self._stt_language,
+            "wake_word_enabled": self._wake_word_enabled,
+            "input_mode": self._input_mode,
+            "feedback_mode": self._feedback_mode,
+            "plan_mode": self._plan_mode,
+            "artifact_diff_preview": settings.artifact_diff_preview,
+            "tools": [t.name for t in available_tools()],
+            "available_profiles": [p["id"] for p in self.server.gateway.list_profiles()],
+            "stt_vad_enabled": self._stt_vad_enabled,
+            "stt_vad_mode": self._stt_vad_mode,
+            "stt_vad_silence_timeout": self._stt_vad_silence_timeout,
+            "stt_vad_auto_calibrate": self._stt_vad_auto_calibrate,
+            "stt_vad_rms_threshold": self._stt_vad_rms_threshold,
+        })
+        await self.send(payload)
 
     async def send(self, payload: dict[str, Any]) -> None:
         try:

@@ -53,9 +53,30 @@ echo "Starting kali-core on 0.0.0.0:8900…"
 "$VENV/bin/python" -m kali_core &
 CORE_PID=$!
 
-echo "Starting kali-web on 0.0.0.0:5173 (HTTPS, /ws → core:8900)"
-echo "  → Local:   https://localhost:5173"
-echo "  → Network: https://$(hostname -I 2>/dev/null | awk '{print $1}'):5173"
+# Wait for kali-core to be ready before starting Vite. Otherwise the
+# browser loads the frontend before the core is listening, producing
+# spurious CORS/connection-refused errors on /voices and /ws that
+# only disappear after a manual refresh.
+CORE_URL="http://127.0.0.1:8900/health"
+echo "Waiting for kali-core ($CORE_URL)…"
+for i in $(seq 1 60); do
+  if curl -sf "$CORE_URL" >/dev/null 2>&1; then
+    echo "  kali-core ready (after ${i}s)"
+    break
+  fi
+  if ! kill -0 "$CORE_PID" 2>/dev/null; then
+    echo "ERROR: kali-core exited before becoming ready."
+    exit 1
+  fi
+  sleep 1
+done
+if ! curl -sf "$CORE_URL" >/dev/null 2>&1; then
+  echo "WARNING: kali-core not ready after 60s, starting Vite anyway."
+fi
+
+echo "Starting kali-web on 0.0.0.0:5173 (HTTP, /ws → core:8900)"
+echo "  → Local:   http://localhost:5173"
+echo "  → Network: http://$(hostname -I 2>/dev/null | awk '{print $1}'):5173"
 npm --prefix "$WEB_DIR" run dev &
 WEB_PID=$!
 

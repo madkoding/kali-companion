@@ -75,6 +75,17 @@ class SessionStore:
                     cached_at TEXT NOT NULL
                 )
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS custom_voices (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    provider TEXT NOT NULL DEFAULT 'qwen3-voicedesign',
+                    instructions TEXT NOT NULL,
+                    seed INTEGER NOT NULL DEFAULT -1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
             await db.commit()
 
     async def create_session(self, title: str = "New chat") -> dict:
@@ -300,3 +311,108 @@ class SessionStore:
             await db.execute("DELETE FROM artifacts")
             await db.execute("DELETE FROM sessions")
             await db.commit()
+
+    # ── Custom Voices ───────────────────────────────────────
+
+    async def list_custom_voices(self, provider: str | None = None) -> list[dict]:
+        """Return all custom voices, optionally filtered by provider."""
+        await self._ensure_db()
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            if provider:
+                cursor = await db.execute(
+                    "SELECT * FROM custom_voices WHERE provider = ? ORDER BY created_at DESC",
+                    (provider,),
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT * FROM custom_voices ORDER BY created_at DESC"
+                )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def create_custom_voice(
+        self,
+        name: str,
+        provider: str,
+        instructions: str,
+        seed: int = -1,
+    ) -> dict:
+        """Create a new custom voice."""
+        await self._ensure_db()
+        vid = f"cv_{uuid.uuid4().hex[:8]}"
+        now = datetime.now(UTC).isoformat()
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                """INSERT INTO custom_voices
+                   (id, name, provider, instructions, seed, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (vid, name, provider, instructions, seed, now, now),
+            )
+            await db.commit()
+        return {
+            "id": vid,
+            "name": name,
+            "provider": provider,
+            "instructions": instructions,
+            "seed": seed,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    async def get_custom_voice(self, voice_id: str) -> dict | None:
+        """Return a single custom voice by id."""
+        await self._ensure_db()
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM custom_voices WHERE id = ?",
+                (voice_id,),
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def update_custom_voice(
+        self,
+        voice_id: str,
+        name: str | None = None,
+        instructions: str | None = None,
+        seed: int | None = None,
+    ) -> dict | None:
+        """Update an existing custom voice. Only provided fields are updated."""
+        await self._ensure_db()
+        now = datetime.now(UTC).isoformat()
+        async with aiosqlite.connect(self._db_path) as db:
+            existing = await db.execute(
+                "SELECT * FROM custom_voices WHERE id = ?",
+                (voice_id,),
+            )
+            row = await existing.fetchone()
+            if not row:
+                return None
+            current = dict(row)
+            await db.execute(
+                """UPDATE custom_voices
+                   SET name = ?, instructions = ?, seed = ?, updated_at = ?
+                   WHERE id = ?""",
+                (
+                    name if name is not None else current["name"],
+                    instructions if instructions is not None else current["instructions"],
+                    seed if seed is not None else current["seed"],
+                    now,
+                    voice_id,
+                ),
+            )
+            await db.commit()
+        return await self.get_custom_voice(voice_id)
+
+    async def delete_custom_voice(self, voice_id: str) -> bool:
+        """Delete a custom voice. Returns True if deleted, False if not found."""
+        await self._ensure_db()
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "DELETE FROM custom_voices WHERE id = ?",
+                (voice_id,),
+            )
+            await db.commit()
+            return cursor.rowcount > 0

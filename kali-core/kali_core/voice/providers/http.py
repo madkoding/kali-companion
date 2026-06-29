@@ -54,3 +54,7 @@ class HTTPTTSProvider:
         except Exception:
             logger.exception("list_voices failed")
             return []
+
+    async def preview(self, voice_id: str, text: str, language: str = "en", mode: str = "normal") -> bytes:
+        result = await self.synthesize(text, voice_id, mode=mode)
+        return result.audio
