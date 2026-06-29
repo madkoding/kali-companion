@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from kali_core.voice.providers.base import TTSProvider, TTSResult
+from kali_core.voice.providers.base import StartupError, TTSProvider, TTSResult
 
 logger = logging.getLogger("kali_core.voice.qwen")
 
@@ -446,7 +446,3 @@ class QwenTTSProvider:
                 self._proc.kill()
                 self._proc.wait()
             self._proc = None
-
-
-class StartupError(Exception):
-    """Raised when a required component is missing at startup."""
