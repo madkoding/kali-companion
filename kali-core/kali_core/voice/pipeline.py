@@ -31,18 +31,22 @@ class TTSPipeline:
         mode: str = "robotic",
         auto_tts: bool = True,
         max_chunk: int = 500,
+        language: str = "auto",
     ) -> None:
         self.provider = provider
         self.voice = voice
         self.mode = mode
         self.auto_tts = auto_tts
         self.max_chunk = max_chunk
+        self.language = language
 
-    def set_voice(self, voice: str | None = None, mode: str | None = None) -> None:
+    def set_voice(self, voice: str | None = None, mode: str | None = None, language: str | None = None) -> None:
         if voice is not None:
             self.voice = voice
         if mode is not None:
             self.mode = mode
+        if language is not None:
+            self.language = language
 
     def set_auto_tts(self, enabled: bool) -> None:
         self.auto_tts = enabled
@@ -71,6 +75,7 @@ class TTSPipeline:
                     segment,
                     voice=self.voice,
                     mode=self.mode,
+                    language=self.language,
                 )
                 result.segment = i
                 yield result

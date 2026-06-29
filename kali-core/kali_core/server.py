@@ -102,6 +102,26 @@ from kali_core.voice.voice_config import VoiceConfigManager
 logger = logging.getLogger("kali_core.server")
 
 
+def _validate_voice_for_provider(voice: str, provider) -> str:
+    """Return *voice* if valid for *provider*, else a safe default.
+
+    Raises ValueError if the provider is qwen3 and the voice is not a known
+    qwen voice id — used by _apply_server_setting to trigger the warning
+    + fallback path.
+    """
+    name = getattr(provider, "provider_name", "")
+    if name == "qwen3":
+        from kali_core.voice.providers.qwen import PREDEFINED_VOICES, VOICE_DESIGN_PRESETS
+        valid = {v["id"] for v in PREDEFINED_VOICES} | {p["id"] for p in VOICE_DESIGN_PRESETS}
+        if voice in valid:
+            return voice
+        raise ValueError(
+            f"Voice '{voice}' is not valid for qwen3 provider. "
+            f"Valid voices: {sorted(valid)}. Falling back to 'serena'."
+        )
+    return voice
+
+
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -948,6 +968,69 @@ class Server:
                 ),
             }
 
+        # ── TTS management ───────────────────────────────────────
+
+        @self.app.get("/tts/providers")
+        async def tts_providers() -> dict[str, Any]:
+            from kali_core.voice.providers import list_tts_providers
+            return {"providers": list_tts_providers()}
+
+        @self.app.get("/tts/models")
+        async def tts_models(provider: str | None = None) -> dict[str, Any]:
+            import dataclasses
+            if provider and provider != self.tts_provider.provider_name:
+                from kali_core.voice.providers import get_tts_provider
+                temp = get_tts_provider(provider)
+                return {"models": [dataclasses.asdict(m) for m in temp.list_models()]}
+            return {"models": [dataclasses.asdict(m) for m in self.tts_provider.list_models()]}
+
+        @self.app.get("/tts/devices")
+        async def tts_devices() -> dict[str, Any]:
+            return await stt_devices()
+
+        @self.app.post("/tts/models/{model_id}/load")
+        async def tts_load_model(
+            model_id: str, device: str = "cpu", provider: str | None = None
+        ) -> dict[str, Any]:
+            from kali_core.voice.providers import get_tts_provider
+            target = get_tts_provider(provider) if provider else self.tts_provider
+            loop = asyncio.get_event_loop()
+            try:
+                await loop.run_in_executor(None, target.load_model, model_id, device)
+                self.tts_available = getattr(target, "is_available", True)
+                self.tts_error = getattr(target, "last_error", None)
+                await self.broadcast_status()
+                return {"status": "ready", "model": model_id, "device": device}
+            except Exception as exc:
+                logger.exception("TTS model load failed")
+                return JSONResponse(content={"error": str(exc)}, status_code=500)
+
+        @self.app.post("/tts/models/unload")
+        async def tts_unload_model(provider: str | None = None) -> dict[str, Any]:
+            target_name = provider or self.tts_provider.provider_name
+            if target_name == self.tts_provider.provider_name:
+                return JSONResponse(
+                    content={"error": "Cannot unload the active TTS provider's model. Switch to another provider first."},
+                    status_code=400,
+                )
+            from kali_core.voice.providers import get_tts_provider
+            target = get_tts_provider(provider) if provider else self.tts_provider
+            target.unload_model()
+            await self.broadcast_status()
+            return {"status": "unloaded"}
+
+        @self.app.get("/tts/status")
+        async def tts_status() -> dict[str, Any]:
+            return {
+                "provider": self.tts_provider.provider_name,
+                "model": getattr(self.tts_provider, "loaded_model", None),
+                "device": getattr(self.tts_provider, "device", None),
+                "loaded": getattr(self.tts_provider, "is_loaded", False),
+                "available": self.tts_available,
+                "error": self.tts_error,
+                "variant": getattr(self.tts_provider, "tts_variant", None),
+            }
+
     async def run(self) -> None:
         config = uvicorn.Config(
             self.app,
@@ -962,6 +1045,9 @@ class Server:
     # ── User config replay ──────────────────────────────────
 
     _SERVER_LEVEL_KEYS = (
+        "tts_provider",
+        "tts_model",
+        "tts_device",
         "voice",
         "tts_mode",
         "auto_tts",
@@ -977,6 +1063,9 @@ class Server:
     def _get_fallback(self, key: str):
         """Return the env-var default for a setting key, or None."""
         mapping = {
+            "tts_provider": settings.tts_provider,
+            "tts_model": None,
+            "tts_device": "cpu",
             "voice": settings.tts_voice,
             "tts_mode": settings.tts_mode,
             "auto_tts": settings.tts_enabled,
@@ -1019,8 +1108,34 @@ class Server:
     def _apply_server_setting(self, key: str, value: Any, _is_fallback: bool = False) -> None:
         """Apply a single server-level setting with try/except + fallback."""
         try:
-            if key == "voice":
-                self.tts_pipeline.set_voice(voice=value)
+            if key == "tts_provider":
+                from kali_core.voice.providers import get_tts_provider
+                new_provider = get_tts_provider(value)
+                if new_provider.provider_name != self.tts_provider.provider_name:
+                    if hasattr(self.tts_provider, "shutdown"):
+                        self.tts_provider.shutdown()
+                    self.tts_provider = new_provider
+                    self.tts_pipeline = TTSPipeline(
+                        self.tts_provider,
+                        voice=self.tts_pipeline.voice,
+                        mode=self.tts_pipeline.mode,
+                        auto_tts=self.tts_pipeline.auto_tts,
+                    )
+                    self.tts_available = getattr(new_provider, "is_available", True)
+                    self.tts_error = getattr(new_provider, "last_error", None)
+            elif key == "tts_model":
+                if hasattr(self.tts_provider, "load_model"):
+                    self.tts_provider.load_model(value, self.tts_provider.device or "cpu")
+                    self.tts_available = getattr(self.tts_provider, "is_available", True)
+                    self.tts_error = getattr(self.tts_provider, "last_error", None)
+            elif key == "tts_device":
+                if hasattr(self.tts_provider, "is_loaded") and self.tts_provider.is_loaded:
+                    current = self.tts_provider.loaded_model
+                    self.tts_provider.unload_model()
+                    self.tts_provider.load_model(current, value)
+            elif key == "voice":
+                sanitized = _validate_voice_for_provider(value, self.tts_provider)
+                self.tts_pipeline.set_voice(voice=sanitized)
             elif key == "tts_mode":
                 self.tts_pipeline.set_voice(mode=value)
             elif key == "auto_tts":
@@ -1786,8 +1901,54 @@ class Connection:
     async def _apply_settings(self, event: dict[str, Any]) -> None:
         """Apply user settings from the frontend."""
         ai_cfg_changed = False
+        if "tts_provider" in event:
+            new_id = event["tts_provider"]
+            if new_id != self.server.tts_provider.provider_name:
+                old_provider = self.server.tts_provider
+                try:
+                    from kali_core.voice.providers import get_tts_provider
+                    new_provider = get_tts_provider(new_id)
+                    if hasattr(old_provider, "shutdown"):
+                        old_provider.shutdown()
+                    self.server.tts_provider = new_provider
+                    self.server.tts_pipeline = TTSPipeline(
+                        new_provider,
+                        voice=self.server.tts_pipeline.voice,
+                        mode=self.server.tts_pipeline.mode,
+                        auto_tts=self.server.tts_pipeline.auto_tts,
+                    )
+                    self.server.tts_available = getattr(new_provider, "is_available", True)
+                    self.server.tts_error = getattr(new_provider, "last_error", None)
+                    await self.server.broadcast_status()
+                except Exception as exc:
+                    self.server.tts_provider = old_provider
+                    await self.send({"event": "error", "detail": f"Failed to switch TTS provider to {new_id}: {exc}"})
+        if "tts_model" in event:
+            try:
+                device = event.get("tts_device", getattr(self.server.tts_provider, "device", None) or "cpu")
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self.server.tts_provider.load_model, event["tts_model"], device)
+                self.server.tts_available = getattr(self.server.tts_provider, "is_available", True)
+                self.server.tts_error = getattr(self.server.tts_provider, "last_error", None)
+                await self.server.broadcast_status()
+            except Exception as exc:
+                await self.send({"event": "error", "detail": f"Failed to load TTS model: {exc}"})
+        if "tts_device" in event:
+            try:
+                if getattr(self.server.tts_provider, "is_loaded", False):
+                    current = self.server.tts_provider.loaded_model
+                    self.server.tts_provider.unload_model()
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, self.server.tts_provider.load_model, current, event["tts_device"])
+                    await self.server.broadcast_status()
+            except Exception as exc:
+                await self.send({"event": "error", "detail": f"Failed to switch TTS device: {exc}"})
         if "voice" in event:
-            self.server.tts_pipeline.set_voice(voice=event["voice"])
+            try:
+                sanitized = _validate_voice_for_provider(event["voice"], self.server.tts_provider)
+                self.server.tts_pipeline.set_voice(voice=sanitized)
+            except ValueError as exc:
+                await self.send({"event": "error", "detail": str(exc)})
         if "tts_mode" in event:
             self.server.tts_pipeline.set_voice(mode=event["tts_mode"])
         if "auto_tts" in event:
