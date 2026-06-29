@@ -22,7 +22,7 @@ export function VoiceDesignControls({
   onSeedChange = () => {},
   customVoices = [],
   sttLanguage = "en",
-  ttsProvider = "qwen3-voicedesign",
+  ttsProvider = "qwen3",
   onCustomVoicesChange = () => {},
 }: {
   presets: VoiceDesignPreset[];

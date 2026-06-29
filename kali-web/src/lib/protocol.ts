@@ -130,7 +130,7 @@ export interface TtsSpeakEvent {
   text: string;
 }
 
-// Qwen3-TTS voice design preset (returned by /voices when provider is qwen3-voicedesign)
+// Qwen3-TTS voice design preset (returned by /voices when tts_variant is voicedesign)
 export interface VoiceDesignPreset {
   id: string;
   name: string;

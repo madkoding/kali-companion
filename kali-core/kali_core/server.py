@@ -156,6 +156,7 @@ def _build_tts_provider():
             backend=settings.qwen_backend,
             voice_design=voice_design,
         )
+    # "piper", "inproc", and any other value -> PiperTTSProvider (via compat shim)
     return InProcTTSProvider()
 
 
@@ -173,6 +174,9 @@ def _build_tts_provider_with_fallback(configured_id: str | None = None):
     if configured_id == "qwen3-voicedesign":
         configured_id = "qwen3"
         desired_model = "qwen3-tts-1.7b-voicedesign"
+    elif configured_id == "inproc":
+        configured_id = "piper"
+        desired_model = None
     else:
         desired_model = None
 
@@ -187,7 +191,18 @@ def _build_tts_provider_with_fallback(configured_id: str | None = None):
     fell_back = False
     for pid in chain:
         try:
-            provider = get_tts_provider(pid)
+            if pid == "qwen3":
+                from kali_core.voice.providers.qwen import QwenTTSProvider
+                provider = QwenTTSProvider(
+                    binary=settings.qwen_binary,
+                    talker_models_dir=Path(settings.qwen_talker_model).parent,
+                    codec_model=settings.qwen_codec_model,
+                    port=settings.qwen_port,
+                    backend=settings.qwen_backend,
+                    spawn=True,
+                )
+            else:
+                provider = get_tts_provider(pid)
             if desired_model and hasattr(provider, "load_model"):
                 provider.load_model(desired_model)
             return provider, (last_error if fell_back else None)
@@ -332,7 +347,7 @@ class Server:
         # voice. Fall back to "serena" (first predefined voice) so the UI and
         # the pipeline start in a consistent state.
         default_voice = settings.tts_voice
-        if self.tts_provider.provider_name in ("qwen3", "qwen3-voicedesign"):
+        if self.tts_provider.provider_name == "qwen3":
             qwen_voice_ids = {v["id"] for v in PREDEFINED_VOICES}
             if default_voice not in qwen_voice_ids:
                 default_voice = "serena"
@@ -593,7 +608,7 @@ class Server:
         async def create_custom_voice(request: Request) -> dict[str, Any]:
             body = await request.json()
             name = body.get("name", "").strip()
-            provider = body.get("provider", "qwen3-voicedesign")
+            provider = body.get("provider", "qwen3")
             instructions = body.get("instructions", "").strip()
             seed = int(body.get("seed", -1))
             if not name:
@@ -1109,8 +1124,20 @@ class Server:
         """Apply a single server-level setting with try/except + fallback."""
         try:
             if key == "tts_provider":
-                from kali_core.voice.providers import get_tts_provider
-                new_provider = get_tts_provider(value)
+                if value == "qwen3":
+                    from kali_core.voice.providers.qwen import QwenTTSProvider
+                    new_provider = QwenTTSProvider(
+                        binary=settings.qwen_binary,
+                        talker_models_dir=Path(settings.qwen_talker_model).parent,
+                        codec_model=settings.qwen_codec_model,
+                        port=settings.qwen_port,
+                        backend=settings.qwen_backend,
+                        spawn=True,
+                    )
+                else:
+                    from kali_core.voice.providers import get_tts_provider
+                    mapped = "piper" if value == "inproc" else ("qwen3" if value == "qwen3-voicedesign" else value)
+                    new_provider = get_tts_provider(mapped)
                 if new_provider.provider_name != self.tts_provider.provider_name:
                     if hasattr(self.tts_provider, "shutdown"):
                         self.tts_provider.shutdown()
@@ -1906,8 +1933,19 @@ class Connection:
             if new_id != self.server.tts_provider.provider_name:
                 old_provider = self.server.tts_provider
                 try:
-                    from kali_core.voice.providers import get_tts_provider
-                    new_provider = get_tts_provider(new_id)
+                    if new_id == "qwen3":
+                        from kali_core.voice.providers.qwen import QwenTTSProvider
+                        new_provider = QwenTTSProvider(
+                            binary=settings.qwen_binary,
+                            talker_models_dir=Path(settings.qwen_talker_model).parent,
+                            codec_model=settings.qwen_codec_model,
+                            port=settings.qwen_port,
+                            backend=settings.qwen_backend,
+                            spawn=True,
+                        )
+                    else:
+                        from kali_core.voice.providers import get_tts_provider
+                        new_provider = get_tts_provider(new_id)
                     if hasattr(old_provider, "shutdown"):
                         old_provider.shutdown()
                     self.server.tts_provider = new_provider
@@ -2086,7 +2124,7 @@ class Connection:
         if "voice_seed" in event:
             self._voice_seed = int(event["voice_seed"])
         # Propagate voice design params to the provider
-        if self.server.tts_provider.provider_name in ("qwen3", "qwen3-voicedesign"):
+        if self.server.tts_provider.provider_name == "qwen3":
             if hasattr(self.server.tts_provider, "set_voice_design"):
                 self.server.tts_provider.set_voice_design(
                     self._voice_instructions, self._voice_seed

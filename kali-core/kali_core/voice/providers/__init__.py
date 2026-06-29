@@ -39,7 +39,16 @@ def get_tts_provider(provider_id: str) -> "TTSProvider":
         _providers[provider_id] = PiperTTSProvider()
     elif provider_id == "qwen3":
         from .qwen import QwenTTSProvider
-        _providers[provider_id] = QwenTTSProvider()
+        from kali_core.config import settings
+        from pathlib import Path
+        _providers[provider_id] = QwenTTSProvider(
+            binary=settings.qwen_binary,
+            talker_models_dir=Path(settings.qwen_talker_model).parent,
+            codec_model=settings.qwen_codec_model,
+            port=settings.qwen_port,
+            backend=settings.qwen_backend,
+            spawn=False,
+        )
     elif provider_id == "http":
         from .http import HTTPTTSProvider
         _providers[provider_id] = HTTPTTSProvider()

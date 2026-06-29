@@ -306,8 +306,8 @@ nanobot_api_url: str = os.getenv("KALI_NANOBOT_API_URL", "http://127.0.0.1:8765"
 nanobot_token: str = os.getenv("KALI_NANOBOT_TOKEN", "")
 
 # ── TTS (kali-voice) ───────────────────────────────────────
-tts_provider: Literal["inproc", "http", "qwen3", "qwen3-voicedesign"] = os.getenv(
-    "KALI_TTS_PROVIDER", "inproc"
+tts_provider: Literal["piper", "inproc", "http", "qwen3", "qwen3-voicedesign"] = os.getenv(
+    "KALI_TTS_PROVIDER", "piper"
 )
 tts_voice: str = os.getenv("KALI_TTS_VOICE", "glados-es")
 tts_mode: str = os.getenv("KALI_TTS_MODE", "normal")

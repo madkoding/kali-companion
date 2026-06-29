@@ -223,6 +223,7 @@ class QwenTTSProvider:
         port: int = 8870,
         backend: str = "CPU",
         voice_design: bool = False,
+        spawn: bool = True,
     ) -> None:
         self._binary = Path(binary).expanduser().resolve()
         self._talker_models_dir = Path(talker_models_dir).expanduser().resolve()
@@ -241,7 +242,8 @@ class QwenTTSProvider:
         self._available_models: dict[str, Path] = {}
         self._discover_talker_models()
         self._select_initial_model(voice_design)
-        self._validate_and_spawn()
+        if spawn:
+            self._validate_and_spawn()
 
     # ── public TTSProvider interface ─────────────────────────────────
 
