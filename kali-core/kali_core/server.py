@@ -139,6 +139,84 @@ def _build_tts_provider():
     return InProcTTSProvider()
 
 
+def _build_tts_provider_with_fallback(configured_id: str | None = None):
+    """Build the configured TTS provider, falling back through the chain on failure.
+
+    Returns (provider, error_or_none). On failure of the configured id, tries
+    the fallback chain (qwen3->piper->unavailable). The error string is surfaced
+    to the UI via config_warnings. The qwen3-voicedesign env id maps to qwen3
+    with an immediate load_model("1.7b-voicedesign") call for backward compat.
+    """
+    from kali_core.voice.providers import get_tts_provider, get_tts_fallback
+
+    configured_id = configured_id or settings.tts_provider
+    if configured_id == "qwen3-voicedesign":
+        configured_id = "qwen3"
+        desired_model = "qwen3-tts-1.7b-voicedesign"
+    else:
+        desired_model = None
+
+    chain = [configured_id]
+    nxt = get_tts_fallback(configured_id)
+    while nxt != chain[-1] and nxt != "unavailable":
+        chain.append(nxt)
+        nxt = get_tts_fallback(nxt)
+    chain.append("unavailable")
+
+    last_error = None
+    fell_back = False
+    for pid in chain:
+        try:
+            provider = get_tts_provider(pid)
+            if desired_model and hasattr(provider, "load_model"):
+                provider.load_model(desired_model)
+            return provider, (last_error if fell_back else None)
+        except Exception as exc:
+            last_error = f"{pid}: {exc}"
+            fell_back = True
+            logger.warning("TTS provider '%s' failed to start: %s — trying fallback", pid, exc)
+    null_provider = get_tts_provider("unavailable")
+    null_provider._error = last_error or "all TTS providers failed"
+    return null_provider, last_error
+
+
+def _build_stt_provider_with_fallback(configured_id: str | None = None):
+    """Build the configured STT provider, falling back on failure.
+
+    Returns (provider, error_or_none). Chain: configured -> vosk -> unavailable.
+    """
+    from kali_core.ear.providers import get_stt_provider
+    from kali_core.voice.providers.null import NullTTSProvider
+
+    configured_id = configured_id or settings.stt_provider
+    chain = [configured_id]
+    if configured_id != "vosk":
+        chain.append("vosk")
+    chain.append("unavailable")
+
+    last_error = None
+    fell_back = False
+    for pid in chain:
+        if pid == "unavailable":
+            null = NullTTSProvider(error=last_error or "all STT providers failed")
+            return null, last_error
+        try:
+            provider = get_stt_provider(pid)
+            if pid == settings.stt_provider and pid != "qwen3":
+                provider.load_model(settings.stt_model)
+            elif pid == "qwen3":
+                if hasattr(provider, "configure"):
+                    provider.configure(models_dir=settings.qwen_asr_models_dir)
+                provider.set_streaming(settings.qwen_asr_streaming)
+            return provider, (last_error if fell_back else None)
+        except Exception as exc:
+            last_error = f"{pid}: {exc}"
+            fell_back = True
+            logger.warning("STT provider '%s' failed to start: %s — trying fallback", pid, exc)
+    null = NullTTSProvider(error=last_error or "all STT providers failed")
+    return null, last_error
+
+
 def _build_stt_provider():
     provider = get_stt_provider(settings.stt_provider)
     if settings.stt_provider == "qwen3":
@@ -207,10 +285,28 @@ class Server:
             allow_methods=["*"],
             allow_headers=["*"],
         )
-        # Shared components.
+        # Shared components — built with fallback chains so a failing
+        # provider degrades gracefully instead of crashing the whole server.
+        self._config_warnings: dict[str, str] = {}
         self.llm_provider = _build_llm_provider()
-        self.tts_provider = _build_tts_provider()
-        self.stt_provider = _build_stt_provider()
+        self.tts_provider, tts_err = _build_tts_provider_with_fallback()
+        if tts_err:
+            self._config_warnings["tts_provider"] = (
+                f"TTS provider could not be loaded ({tts_err}). "
+                f"Fell back to '{self.tts_provider.provider_name}'. "
+                f"Check the model/binary paths in Settings."
+            )
+        self.tts_available = getattr(self.tts_provider, "is_available", True)
+        self.tts_error = getattr(self.tts_provider, "last_error", None)
+        self.stt_provider, stt_err = _build_stt_provider_with_fallback()
+        if stt_err:
+            self._config_warnings["stt_provider"] = (
+                f"STT provider could not be loaded ({stt_err}). "
+                f"Fell back to '{self.stt_provider.provider_name}'. "
+                f"Check the model paths in Settings."
+            )
+        self.stt_available = getattr(self.stt_provider, "is_available", True)
+        self.stt_error = getattr(self.stt_provider, "last_error", None)
         self.agent = AgentRuntime(self.llm_provider)
         # For qwen3 providers, glados-es (the Piper default) is not a valid
         # voice. Fall back to "serena" (first predefined voice) so the UI and
@@ -326,6 +422,12 @@ class Server:
             "voice": self.tts_pipeline.voice,
             "tts_mode": self.tts_pipeline.mode,
             "auto_tts": self.tts_pipeline.auto_tts,
+            "tts_loaded": getattr(self.tts_provider, "is_loaded", False),
+            "tts_model": getattr(self.tts_provider, "loaded_model", None),
+            "tts_device": getattr(self.tts_provider, "device", None),
+            "tts_available": self.tts_available,
+            "tts_error": self.tts_error,
+            "tts_variant": getattr(self.tts_provider, "tts_variant", None),
             "capture_backend": "mss" if self.gaze_client.connected else "none",
             "profile": self.executor.profile,
             "stt_provider": self.stt_provider.provider_name,

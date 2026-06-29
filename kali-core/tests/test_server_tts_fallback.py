@@ -1,0 +1,55 @@
+"""Tests for TTS/STT startup fallback chain and config_warnings surfacing."""
+
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+
+def test_tts_fallback_to_piper_when_qwen3_fails():
+    from kali_core.voice.providers import reset_registry
+    reset_registry()
+    with patch("kali_core.voice.providers.qwen.QwenTTSProvider.__init__") as mock_qwen_init, \
+         patch("kali_core.voice.providers.piper.PiperTTSProvider.__init__", return_value=None):
+        mock_qwen_init.side_effect = Exception("binary not found")
+        from kali_core.server import _build_tts_provider_with_fallback
+        provider, error = _build_tts_provider_with_fallback(configured_id="qwen3")
+        assert provider.provider_name == "piper"
+        assert error is not None
+        assert "binary not found" in error
+    reset_registry()
+
+
+def test_tts_fallback_to_null_when_both_fail():
+    from kali_core.voice.providers import reset_registry
+    reset_registry()
+    with patch("kali_core.voice.providers.qwen.QwenTTSProvider.__init__", side_effect=Exception("no qwen")), \
+         patch("kali_core.voice.providers.piper.PiperTTSProvider.__init__", side_effect=Exception("no piper")):
+        from kali_core.server import _build_tts_provider_with_fallback
+        provider, error = _build_tts_provider_with_fallback(configured_id="qwen3")
+        assert provider.provider_name == "unavailable"
+        assert error is not None
+    reset_registry()
+
+
+def test_stt_fallback_to_null_when_vosk_model_missing():
+    from kali_core.voice.providers import reset_registry
+    reset_registry()
+    with patch("kali_core.ear.providers.vosk.VoskSTTProvider.load_model", side_effect=FileNotFoundError("no model")):
+        from kali_core.server import _build_stt_provider_with_fallback
+        provider, error = _build_stt_provider_with_fallback(configured_id="vosk")
+        assert provider.provider_name == "unavailable"
+        assert error is not None
+    reset_registry()
+
+
+def test_qwen3_voicedesign_env_maps_to_qwen3_provider():
+    from kali_core.voice.providers import reset_registry
+    reset_registry()
+    with patch("kali_core.voice.providers.qwen.QwenTTSProvider.__init__", return_value=None), \
+         patch("kali_core.voice.providers.qwen.QwenTTSProvider.load_model") as mock_load:
+        from kali_core.server import _build_tts_provider_with_fallback
+        provider, error = _build_tts_provider_with_fallback(configured_id="qwen3-voicedesign")
+        assert error is None
+        mock_load.assert_called_with("qwen3-tts-1.7b-voicedesign")
+    reset_registry()
