@@ -53,3 +53,15 @@ def test_qwen3_voicedesign_env_maps_to_qwen3_provider():
         assert error is None
         mock_load.assert_called_with("qwen3-tts-1.7b-voicedesign")
     reset_registry()
+
+
+def test_user_config_has_tts_provider_model_device_fields():
+    from kali_core.user_config import UserConfig
+    cfg = UserConfig()
+    assert cfg.tts_provider is None
+    assert cfg.tts_model is None
+    assert cfg.tts_device is None
+    cfg = UserConfig(tts_provider="qwen3", tts_model="qwen3-tts-0.6b-customvoice", tts_device="cpu")
+    assert cfg.tts_provider == "qwen3"
+    assert cfg.tts_model == "qwen3-tts-0.6b-customvoice"
+    assert cfg.tts_device == "cpu"

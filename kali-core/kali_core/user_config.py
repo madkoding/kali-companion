@@ -26,6 +26,9 @@ class UserConfig:
     """All non-LLM user-settable keys.  None = not set (use env defaults)."""
 
     # ── Server-level (applied once on startup, shared across connections) ──
+    tts_provider: str | None = None
+    tts_model: str | None = None
+    tts_device: str | None = None
     voice: str | None = None
     tts_mode: str | None = None
     auto_tts: bool | None = None

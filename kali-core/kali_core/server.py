@@ -2143,6 +2143,9 @@ class Connection:
         sp = self.server.stt_provider
         cfg = UserConfig(
             # Server-level
+            tts_provider=self.server.tts_provider.provider_name,
+            tts_model=getattr(self.server.tts_provider, "loaded_model", None),
+            tts_device=getattr(self.server.tts_provider, "device", None),
             voice=self.server.tts_pipeline.voice,
             tts_mode=self.server.tts_pipeline.mode,
             auto_tts=self.server.tts_pipeline.auto_tts,
