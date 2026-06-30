@@ -62,9 +62,9 @@ services:
 
       # ── LLM ──
       - KALI_LLM_PROVIDER=${KALI_LLM_PROVIDER:-direct}
-      - KALI_LLM_API_URL=${KALI_LLM_API_URL:-http://host.docker.internal:11434/v1}
+      - KALI_LLM_API_URL=${KALI_LLM_API_URL:-}
       - KALI_LLM_API_KEY=${KALI_LLM_API_KEY:-}
-      - KALI_LLM_MODEL=${KALI_LLM_MODEL:-glm-5.1}
+      - KALI_LLM_MODEL=${KALI_LLM_MODEL:-}
 
       # ── Permissions ──
       - KALI_PROFILE=${KALI_PROFILE:-dev}

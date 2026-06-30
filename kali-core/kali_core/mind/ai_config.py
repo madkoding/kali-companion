@@ -22,9 +22,9 @@ _CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "ai_config.json"
 @dataclass
 class AIConfig:
     provider: str = "direct"
-    api_url: str = "http://localhost:11434/v1"
+    api_url: str = ""
     api_key: str = ""
-    model: str = "glm-5.1"
+    model: str = ""
     system_prompt_override: str | None = None
     max_tokens: int = 16384
     connection_id: str | None = None

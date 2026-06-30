@@ -135,8 +135,11 @@ def _artifact_preview(content: str, limit: int = 200) -> str:
     return text
 
 
-def _build_llm_provider() -> LLMProvider:
+def _build_llm_provider() -> LLMProvider | None:
     cfg = load_ai_config()
+    if not cfg.api_url:
+        logger.warning("No LLM API URL configured — LLM features disabled")
+        return None
     if cfg.provider == "nanobot":
         return NanobotLLMProvider()
     return DirectLLMProvider(api_url=cfg.api_url, api_key=cfg.api_key, model=cfg.model, max_tokens=cfg.max_tokens)
@@ -339,6 +342,11 @@ class Server:
             )
         self.stt_available = getattr(self.stt_provider, "is_available", True)
         self.stt_error = getattr(self.stt_provider, "last_error", None)
+        if self.llm_provider is None:
+            self._config_warnings["llm_provider"] = (
+                "No LLM provider configured. "
+                "Set KALI_LLM_API_URL in your .env to enable AI responses."
+            )
         self.agent = AgentRuntime(self.llm_provider)
         # For qwen3 providers, glados-es (the Piper default) is not a valid
         # voice. Fall back to "serena" (first predefined voice) so the UI and
