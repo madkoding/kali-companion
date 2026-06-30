@@ -149,7 +149,6 @@ def _build_tts_provider():
         voice_design = settings.tts_provider == "qwen3-voicedesign"
         talker_models_dir = Path(settings.qwen_talker_model).parent
         return QwenTTSProvider(
-            binary=settings.qwen_binary,
             talker_models_dir=talker_models_dir,
             codec_model=settings.qwen_codec_model,
             port=settings.qwen_port,
@@ -1017,7 +1016,49 @@ class Server:
 
         @self.app.get("/tts/devices")
         async def tts_devices() -> dict[str, Any]:
-            return await stt_devices()
+            devices: list[dict] = []
+            try:
+                import torch
+                for i in range(torch.cuda.device_count()):
+                    props = torch.cuda.get_device_properties(i)
+                    free, total = torch.cuda.mem_get_info(i)
+                    devices.append({
+                        "id": f"cuda{i}",
+                        "name": props.name,
+                        "vram_total_mb": round(total / 1024**2),
+                        "vram_free_mb": round(free / 1024**2),
+                    })
+            except ImportError:
+                try:
+                    result = subprocess.run(
+                        ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.free",
+                         "--format=csv,noheader,nounits"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    for line in result.stdout.strip().split("\n"):
+                        if not line.strip():
+                            continue
+                        idx, name, total, free = [p.strip() for p in line.split(",")]
+                        devices.append({
+                            "id": f"cuda{idx}",
+                            "name": name,
+                            "vram_total_mb": int(total),
+                            "vram_free_mb": int(free),
+                        })
+                except Exception:
+                    pass
+            try:
+                import psutil
+                mem = psutil.virtual_memory()
+                devices.append({
+                    "id": "cpu",
+                    "name": "CPU",
+                    "ram_total_mb": round(mem.total / 1024**2),
+                    "ram_free_mb": round(mem.available / 1024**2),
+                })
+            except ImportError:
+                devices.append({"id": "cpu", "name": "CPU"})
+            return {"devices": devices}
 
         @self.app.post("/tts/models/{model_id}/load")
         async def tts_load_model(

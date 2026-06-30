@@ -350,3 +350,20 @@ async def test_tts_speak(server: Server):
         server_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, SystemExit):
             await server_task
+
+
+def test_tts_devices_ids_have_no_colons(server: Server):
+    """/tts/devices returns ids in the 'cpu'/'cuda0' scheme (no 'cuda:0')."""
+    client = TestClient(server.app)
+    resp = client.get("/tts/devices")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "devices" in data
+    ids = [d["id"] for d in data["devices"]]
+    # CPU is always present
+    assert "cpu" in ids
+    # Any cuda ids must be 'cudaN' (no colon)
+    for dev_id in ids:
+        assert ":" not in dev_id, f"device id '{dev_id}' contains a colon"
+        if dev_id.startswith("cuda"):
+            assert dev_id[4:].isdigit(), f"device id '{dev_id}' not in cudaN form"

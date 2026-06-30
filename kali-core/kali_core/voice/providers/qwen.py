@@ -14,6 +14,7 @@ import asyncio
 import logging
 import os
 import random
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -24,6 +25,67 @@ import httpx
 from kali_core.voice.providers.base import StartupError, TTSProvider, TTSResult
 
 logger = logging.getLogger("kali_core.voice.qwen")
+
+# ── Fixed binary locations ──────────────────────────────────────────────
+# Binaries are NOT configurable via env vars. The C++ build scripts emit
+# them under voice/qwen_cpp/{build => CPU, build-gpu => CUDA}. If the
+# requested backend's binary is missing, Qwen falls back to CPU; if the
+# CPU binary is also missing, loading is cancelled with a clear error.
+_QWEN_CPP_DIR = Path(__file__).resolve().parent.parent / "qwen_cpp"
+_QWEN_BINARY_CPU = _QWEN_CPP_DIR / "build" / "tts-server"
+_QWEN_BINARY_GPU = _QWEN_CPP_DIR / "build-gpu" / "tts-server"
+
+
+def _normalize_backend(device: str) -> str:
+    """Map a UI/endpoint device string to the GGML backend name.
+
+    Accepts (case-insensitive):
+      - "cpu"           -> "CPU"
+      - "cuda:0","cuda0","CUDA0","cuda:1" -> "CUDA0","CUDA1", ...
+    Anything else raises ValueError; only CPU and CUDA are supported.
+    """
+    if not device:
+        return "CPU"
+    s = device.strip()
+    low = s.lower()
+    if low == "cpu":
+        return "CPU"
+    m = re.match(r"^cuda[:_\-]?(\d+)$", low)
+    if m:
+        return f"CUDA{m.group(1)}"
+    raise ValueError(
+        f"Unsupported Qwen3-TTS device '{device}'. Supported: 'cpu', 'cuda0', 'cuda1', ..."
+    )
+
+
+def _backend_to_ui(backend: str) -> str:
+    """Inverse of _normalize_backend: 'CPU' -> 'cpu', 'CUDA0' -> 'cuda0'."""
+    if not backend:
+        return "cpu"
+    low = backend.lower()
+    if low == "cpu":
+        return "cpu"
+    m = re.match(r"^cuda(\d+)$", low)
+    if m:
+        return f"cuda{m.group(1)}"
+    return low
+
+
+def _resolve_binary(backend: str) -> Path:
+    """Return the fixed tts-server path for a normalized backend name."""
+    return _QWEN_BINARY_GPU if backend.startswith("CUDA") else _QWEN_BINARY_CPU
+
+
+def _nvidia_smi_available() -> bool:
+    try:
+        subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, timeout=5,
+        )
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
 
 QWEN_MODELS: dict[str, dict] = {
     "qwen3-tts-0.6b-customvoice": {
@@ -217,7 +279,6 @@ class QwenTTSProvider:
     def __init__(
         self,
         *,
-        binary: str | Path,
         talker_models_dir: str | Path,
         codec_model: str | Path,
         port: int = 8870,
@@ -225,11 +286,14 @@ class QwenTTSProvider:
         voice_design: bool = False,
         spawn: bool = False,
     ) -> None:
-        self._binary = Path(binary).expanduser().resolve()
         self._talker_models_dir = Path(talker_models_dir).expanduser().resolve()
         self._codec_model = Path(codec_model).expanduser().resolve()
         self._port = port
-        self._backend = backend.upper()
+        # Normalize the startup backend and resolve the matching fixed binary.
+        # If the requested backend's binary is unavailable, fall back to CPU
+        # (with a warning) so the server can still come up.
+        self._backend = _normalize_backend(backend)
+        self._binary = self._resolve_startup_binary()
         self._voice_design = voice_design
         self._instructions = ""
         self._seed = -1
@@ -244,6 +308,32 @@ class QwenTTSProvider:
         self._select_initial_model(voice_design)
         if spawn:
             self._validate_and_spawn()
+
+    def _resolve_startup_binary(self) -> Path:
+        """Pick the binary for self._backend, falling back to CPU when missing.
+
+        Only used at construction time. load_model() re-resolves on every
+        device change so a runtime GPU->CPU or CPU->GPU switch swaps the
+        binary in the same subprocess lifecycle.
+        """
+        wanted = _resolve_binary(self._backend)
+        if wanted.exists():
+            return wanted
+        if self._backend != "CPU":
+            logger.warning(
+                "Qwen3-TTS: %s backend requested but binary not found at %s; "
+                "falling back to CPU binary. Run: scripts/build-qwen-cpp.sh cuda",
+                self._backend, wanted,
+            )
+            self._backend = "CPU"
+        cpu = _resolve_binary("CPU")
+        if cpu.exists():
+            return cpu
+        logger.error(
+            "Qwen3-TTS: no CPU binary found at %s. Run: scripts/build-qwen-cpp.sh cpu",
+            cpu,
+        )
+        return cpu  # let _validate_and_spawn report the missing file
 
     # ── public TTSProvider interface ─────────────────────────────────
 
@@ -261,7 +351,7 @@ class QwenTTSProvider:
 
     @property
     def device(self) -> str | None:
-        return self._backend if self.is_loaded else None
+        return _backend_to_ui(self._backend) if self.is_loaded else None
 
     @property
     def loaded_model(self) -> str | None:
@@ -478,7 +568,7 @@ class QwenTTSProvider:
                 estimated_vram_mb=cfg["estimated_vram_mb"],
                 available=path.exists(),
                 loaded=is_loaded,
-                device=self._backend if is_loaded else None,
+                device=_backend_to_ui(self._backend) if is_loaded else None,
                 supported_languages=["en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko"],
                 voices=voices,
                 variant=cfg["variant"],
@@ -488,7 +578,13 @@ class QwenTTSProvider:
     def load_model(self, model_id: str, device: str = "cpu") -> None:
         if model_id not in QWEN_MODELS:
             raise ValueError(f"Unknown Qwen3-TTS model: {model_id}")
-        if model_id == self._loaded_model_id and self.is_loaded:
+        new_backend = _normalize_backend(device)
+        # No-op only when the same model AND same backend are already loaded.
+        if (
+            model_id == self._loaded_model_id
+            and new_backend == self._backend
+            and self.is_loaded
+        ):
             return
         new_path = self._talker_models_dir / QWEN_MODELS[model_id]["filename"]
         if not new_path.exists():
@@ -496,14 +592,35 @@ class QwenTTSProvider:
                 f"Talker model not found: {new_path}\n"
                 f"  Run: scripts/download-qwen-models.sh {QWEN_MODELS[model_id]['variant']}"
             )
+
+        # Resolve the binary for the requested backend. If a GPU backend is
+        # requested but its binary (or nvidia-smi) is unavailable, fall back
+        # to CPU with a warning so the model still loads. If the CPU binary
+        # is missing too, _validate_and_spawn below raises StartupError.
+        effective_backend = new_backend
+        effective_binary = _resolve_binary(new_backend)
+        if new_backend.startswith("CUDA"):
+            if not effective_binary.exists() or not _nvidia_smi_available():
+                logger.warning(
+                    "Qwen3-TTS: GPU backend '%s' requested but %s; "
+                    "falling back to CPU. Run: scripts/build-qwen-cpp.sh cuda",
+                    new_backend,
+                    "binary not found" if not effective_binary.exists()
+                    else "nvidia-smi not available",
+                )
+                effective_backend = "CPU"
+                effective_binary = _resolve_binary("CPU")
+
         old_talker_model = self._talker_model
         old_voice_design = self._voice_design
         old_backend = self._backend
+        old_binary = self._binary
         old_loaded_model_id = self._loaded_model_id
         self.shutdown()
         self._talker_model = new_path
         self._voice_design = QWEN_MODELS[model_id]["variant"] == "voicedesign"
-        self._backend = device.upper() if device else self._backend
+        self._backend = effective_backend
+        self._binary = effective_binary
         self._last_error = None
         try:
             self._validate_and_spawn()
@@ -512,6 +629,7 @@ class QwenTTSProvider:
             self._talker_model = old_talker_model
             self._voice_design = old_voice_design
             self._backend = old_backend
+            self._binary = old_binary
             self._loaded_model_id = old_loaded_model_id
             self._last_error = str(exc)
             raise
@@ -528,12 +646,24 @@ class QwenTTSProvider:
         errors: list[str] = []
 
         if not self._binary.exists():
+            build_target = "cuda" if self._backend.startswith("CUDA") else "cpu"
             errors.append(
                 f"Qwen3-TTS binary not found at: {self._binary}\n"
-                f"  Run: scripts/build-qwen-cpp.sh cpu   (or 'cuda' for GPU)"
+                f"  Run: scripts/build-qwen-cpp.sh {build_target}"
             )
         elif not os.access(self._binary, os.X_OK):
             errors.append(f"Qwen3-TTS binary is not executable: {self._binary}")
+
+        # Defensive: the runtime fallback in load_model() should already have
+        # demoted a CUDA request to CPU when nvidia-smi is missing, but if we
+        # get here with a CUDA backend (e.g. startup with KALI_QWEN_BACKEND
+        # set to CUDA0) surface a clear error instead of letting the C++
+        # binary fail opaquely.
+        if self._backend.startswith("CUDA") and not _nvidia_smi_available():
+            errors.append(
+                "Qwen3-TTS CUDA backend requested but nvidia-smi is not available. "
+                "Install the NVIDIA driver or use CPU."
+            )
 
         if self._talker_model is None or not self._talker_model.exists():
             model_id = "1.7b-voicedesign" if self._voice_design else "0.6b-customvoice"
@@ -567,7 +697,10 @@ class QwenTTSProvider:
                 if os.path.isdir(cuda_path):
                     env["LD_LIBRARY_PATH"] = f"{cuda_path}:{env.get('LD_LIBRARY_PATH', '')}"
                     break
-            env["GGML_BACKEND"] = self._backend
+        # Always export GGML_BACKEND so the C++ binary picks the right device
+        # (CPU or CUDA0/CUDA1). Without this, the C++ auto-selects the best
+        # backend which may not match the user's choice.
+        env["GGML_BACKEND"] = self._backend
 
         logger.info(
             "Spawning qwen-tts-server: binary=%s talker=%s codec=%s port=%s backend=%s",

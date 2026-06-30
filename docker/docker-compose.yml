@@ -59,7 +59,6 @@ services:
       # ── Qwen3-TTS (solo si KALI_TTS_PROVIDER=qwen3*) ──
       - KALI_QWEN_BACKEND=${KALI_QWEN_BACKEND:-CPU}
       - KALI_QWEN_PORT=${KALI_QWEN_PORT:-8870}
-      - KALI_QWEN_BINARY=${KALI_QWEN_BINARY:-/app/qwen-cpp/build/tts-server}
       - KALI_QWEN_TALKER_MODEL=${KALI_QWEN_TALKER_MODEL:-/app/models/qwen-talker-0.6b-customvoice-Q4_K_M.gguf}
       - KALI_QWEN_VOICEDESIGN_MODEL=${KALI_QWEN_VOICEDESIGN_MODEL:-/app/models/qwen-talker-1.7b-voicedesign-Q4_K_M.gguf}
       - KALI_QWEN_CODEC_MODEL=${KALI_QWEN_CODEC_MODEL:-/app/models/qwen-tokenizer-12hz-Q4_K_M.gguf}
