@@ -45,7 +45,7 @@ services:
       - KALI_TTS_PROVIDER=${KALI_TTS_PROVIDER:-inproc}
       - KALI_TTS_VOICE=${KALI_TTS_VOICE:-glados-es}
       - KALI_TTS_MODE=${KALI_TTS_MODE:-normal}
-      - KALI_TTS_ENABLED=${KALI_TTS_ENABLED:-true}
+      - KALI_TTS_ENABLED=${KALI_TTS_ENABLED:-false}
       - KALI_TTS_MODELS_DIR=/app/models
 
       # ── STT Engine ──

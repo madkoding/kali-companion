@@ -552,7 +552,15 @@ class Server:
         cfg.model = model
         cfg.provider = "direct"
         save_ai_config(cfg)
-        if hasattr(self.llm_provider, "reconfigure"):
+        if self.llm_provider is None:
+            self.llm_provider = DirectLLMProvider(
+                api_url=conn.api_url,
+                api_key=conn.api_key,
+                model=model,
+            )
+            self.agent.llm = self.llm_provider
+            self._config_warnings.pop("llm_provider", None)
+        elif hasattr(self.llm_provider, "reconfigure"):
             self.llm_provider.reconfigure(
                 api_url=conn.api_url,
                 api_key=conn.api_key,
