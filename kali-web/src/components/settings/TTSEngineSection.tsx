@@ -100,9 +100,15 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
 
   useEffect(() => { setSelectedDevice(systemStatus?.tts_device ?? "cpu"); }, [systemStatus?.tts_device]);
 
+  // Refetch models only when a download completes (progress map goes non-empty → empty).
+  const prevDownloadCount = useRef(0);
   useEffect(() => {
-    void fetchModels(tab);
-  }, [downloadProgress]);
+    const count = Object.keys(downloadProgress).length;
+    if (prevDownloadCount.current > 0 && count === 0) {
+      void fetchModels(tab);
+    }
+    prevDownloadCount.current = count;
+  }, [downloadProgress, fetchModels, tab]);
 
   const handleLoadModel = async (modelId: string) => {
     setLoadingAction(true);
