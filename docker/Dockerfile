@@ -94,11 +94,6 @@ RUN useradd --create-home --uid 1000 --shell /bin/bash kali
 RUN mkdir -p /app/kali-core /app/kali-web /app/models /app/data \
     && chown -R kali:kali /app
 
-# Nginx temp directories (needed when running as non-root)
-RUN mkdir -p /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi \
-             /var/lib/nginx/uwsgi /var/lib/nginx/scgi \
-    && chown -R kali:kali /var/lib/nginx
-
 # Set HOME so Path.home() resolves to /home/kali.
 # The entrypoint symlinks ~/.local/share/kali → /app/data for persistence.
 ENV HOME=/home/kali
@@ -128,7 +123,8 @@ RUN pip install --no-cache-dir \
     scipy \
     vosk
 
-# Copy and configure nginx
+# Copy and configure nginx (non-root: logs to stdout/stderr, pid+temps to /tmp)
+COPY docker/nginx-main.conf /etc/nginx/nginx.conf
 COPY docker/nginx.conf /etc/nginx/sites-available/default
 RUN rm -f /etc/nginx/sites-enabled/default \
     && ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
