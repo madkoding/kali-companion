@@ -27,9 +27,9 @@ host: str = os.getenv("KALI_HOST", "0.0.0.0")
 llm_provider: Literal["direct", "nanobot"] = os.getenv(
     "KALI_LLM_PROVIDER", "direct"
 )
-llm_api_url: str = os.getenv("KALI_LLM_API_URL", "http://localhost:11434/v1")
+llm_api_url: str = os.getenv("KALI_LLM_API_URL", "")
 llm_api_key: str = os.getenv("KALI_LLM_API_KEY", "")
-llm_model: str = os.getenv("KALI_LLM_MODEL", "glm-5.1")
+llm_model: str = os.getenv("KALI_LLM_MODEL", "")
 llm_max_tokens: int = int(os.getenv("KALI_LLM_MAX_TOKENS", "16384"))
 llm_system_prompt: str = os.getenv(
     "KALI_LLM_SYSTEM_PROMPT",
@@ -313,7 +313,7 @@ tts_voice: str = os.getenv("KALI_TTS_VOICE", "glados-es")
 tts_mode: str = os.getenv("KALI_TTS_MODE", "normal")
 tts_max_length: int = int(os.getenv("KALI_TTS_MAX_LENGTH", "2000"))
 tts_http_url: str = os.getenv("KALI_TTS_HTTP_URL", "http://localhost:3000")
-tts_enabled: bool = _env_bool("KALI_TTS_ENABLED", True)
+tts_enabled: bool = _env_bool("KALI_TTS_ENABLED", False)
 
 # ── STT (kali-ear) ────────────────────────────────────────
 stt_provider: Literal["vosk", "qwen3"] = os.getenv("KALI_STT_PROVIDER", "vosk")
@@ -360,25 +360,24 @@ db_path: str = str(data_dir / "kali.db")
 images_dir: str = str(data_dir / "images")
 snapshots_dir: str = str(data_dir / "snapshots")
 base_dir = Path(__file__).resolve().parent
-voices_dir = base_dir / "voice" / "voices"
+
+# Unified models base: ~/.local/share/kali/models (neutral for native + Docker bind mount)
+_models_base = Path(os.getenv("KALI_MODELS_DIR", str(Path.home() / ".local" / "share" / "kali" / "models")))
+
+# Vosk STT models → ~/.local/share/kali/models/vosk/
+stt_models_dir: str = os.getenv("KALI_STT_MODELS_DIR", str(_models_base / "vosk"))
+
+# Piper TTS voices → ~/.local/share/kali/models/piper-voices/
+voices_dir: str = os.getenv("KALI_VOICES_DIR", str(_models_base / "piper-voices"))
 voice_configs_dir = base_dir / "voice" / "voice_configs"
-stt_models_dir = base_dir / "ear" / "models"
 profiles_dir = base_dir / "collar" / "profiles"
 
 # ── Qwen3-TTS (only used when KALI_TTS_PROVIDER is "qwen3" or "qwen3-voicedesign")
-_qwen_base = base_dir / "voice" / "qwen_cpp"
-_qwen_models = base_dir / "voice" / "qwen_models"
-qwen_talker_model: str = os.getenv(
-    "KALI_QWEN_TALKER_MODEL",
-    str(_qwen_models / "qwen-talker-0.6b-customvoice-Q4_K_M.gguf"),
-)
-qwen_voicedesign_model: str = os.getenv(
-    "KALI_QWEN_VOICEDESIGN_MODEL",
-    str(_qwen_models / "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf"),
-)
-qwen_codec_model: str = os.getenv(
-    "KALI_QWEN_CODEC_MODEL",
-    str(_qwen_models / "qwen-tokenizer-12hz-Q4_K_M.gguf"),
+# Neutral models dir: works natively (XDG) and inside Docker when bind-mounted.
+# Model files are discovered by scanning tts_models_dir for qwen-talker-*.gguf
+# and qwen-tokenizer-12hz-*.gguf — no hardcoded paths needed.
+tts_models_dir: str = os.getenv(
+    "KALI_TTS_MODELS_DIR", str(Path.home() / ".local" / "share" / "kali" / "models")
 )
 qwen_port: int = int(os.getenv("KALI_QWEN_PORT", "8870"))
 qwen_backend: str = os.getenv("KALI_QWEN_BACKEND", "CPU")
@@ -408,9 +407,7 @@ class _Settings:
     tts_http_url = tts_http_url
     tts_enabled = tts_enabled
 
-    qwen_talker_model = qwen_talker_model
-    qwen_voicedesign_model = qwen_voicedesign_model
-    qwen_codec_model = qwen_codec_model
+    tts_models_dir = tts_models_dir
     qwen_port = qwen_port
     qwen_backend = qwen_backend
 
@@ -449,6 +446,7 @@ class _Settings:
     voices_dir = voices_dir
     voice_configs_dir = voice_configs_dir
     stt_models_dir = stt_models_dir
+    tts_models_dir = tts_models_dir
     profiles_dir = profiles_dir
 
 

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { StatusEvent } from "../../lib/protocol";
-import { SelectField, ToggleField } from "./fields";
+import { SelectField } from "./fields";
 import { VoicePreviewButton } from "./VoicePreviewButton";
 import { useStage } from "../../stage/StageProvider";
 
@@ -23,7 +23,6 @@ export function PiperVoiceControls({ systemStatus, voices, onUpdate }: Props) {
 
   const currentVoice = systemStatus?.voice ?? "glados-es";
   const currentMode = systemStatus?.tts_mode ?? "normal";
-  const autoTts = systemStatus?.auto_tts ?? true;
 
   return (
     <div className="flex flex-col gap-4">
@@ -31,12 +30,13 @@ export function PiperVoiceControls({ systemStatus, voices, onUpdate }: Props) {
         <label className="text-xs text-muted">{t("settings.voice")}</label>
         <div className="flex items-center gap-2">
           <select
-            className="flex-1 bg-surface text-foreground border border-border rounded-md px-2.5 py-2 text-sm outline-none focus:border-accent-dim"
+            className="flex-1 bg-surface text-foreground border border-border rounded-md px-2.5 py-2 text-sm outline-none focus:border-accent-dim disabled:opacity-50"
             value={currentVoice}
             onChange={(e) => onUpdate({ voice: e.target.value })}
+            disabled={voices.length === 0}
           >
             {voices.length === 0 ? (
-              <option value={currentVoice}>{currentVoice}</option>
+              <option value="">{t("tts.status.not_loaded")}</option>
             ) : (
               voices.map((v) => {
                 const voiceId = (v.voice_id ?? v.id) as string;
@@ -63,12 +63,6 @@ export function PiperVoiceControls({ systemStatus, voices, onUpdate }: Props) {
           </option>
         ))}
       </SelectField>
-
-      <ToggleField
-        label={t("settings.tts_enabled")}
-        checked={autoTts}
-        onChange={(v) => onUpdate({ auto_tts: v })}
-      />
 
       <SelectField
         label={t("settings.tts_language")}

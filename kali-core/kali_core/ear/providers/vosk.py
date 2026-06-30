@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 
+from pathlib import Path
 from kali_core.ear.manager import STTManager, model_for_language
 from kali_core.ear.vosk_engine import DEFAULT_MODEL_DIR, get_model
 from kali_core.lang_map import normalize
@@ -19,33 +20,33 @@ from .base import ModelInfo
 
 logger = logging.getLogger("kali_core.ear.vosk_provider")
 
-VOSK_LANG_MAP: dict[str, str] = {
-    "es": "vosk-model-small-es-0.42",
-    "en": "vosk-model-small-en-us-0.15",
-}
+_INTERNAL_MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
 
 def _discover_vosk_models() -> list[str]:
     """Scan the models directory for Vosk model folders."""
-    found: list[str] = []
-    if not os.path.isdir(DEFAULT_MODEL_DIR):
-        return found
-    for entry in os.listdir(DEFAULT_MODEL_DIR):
-        path = os.path.join(DEFAULT_MODEL_DIR, entry)
-        if not os.path.isdir(path):
+    found: set[str] = set()
+    
+    dirs_to_scan = [Path(DEFAULT_MODEL_DIR)]
+    if _INTERNAL_MODELS_DIR.exists():
+        dirs_to_scan.append(_INTERNAL_MODELS_DIR)
+
+    for base_dir in dirs_to_scan:
+        if not base_dir.is_dir():
             continue
-        am_path = os.path.join(path, "am", "final.mdl")
-        if os.path.exists(am_path):
-            found.append(entry)
-            continue
-        for sub in os.listdir(path):
-            sub_path = os.path.join(path, sub)
-            if os.path.isdir(sub_path) and os.path.exists(
-                os.path.join(sub_path, "am", "final.mdl")
-            ):
-                found.append(entry)
-                break
-    return found
+        for entry in base_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            am_path = entry / "am" / "final.mdl"
+            if am_path.exists():
+                found.add(entry.name)
+                continue
+            # Some models are nested
+            for sub in entry.iterdir():
+                if sub.is_dir() and (sub / "am" / "final.mdl").exists():
+                    found.add(entry.name)
+                    break
+    return sorted(list(found))
 
 
 def _guess_language(model_name: str) -> list[str]:
@@ -95,6 +96,18 @@ class VoskSTTProvider:
 
     def unload_model(self) -> None:
         self._loaded_model_id = None
+
+    def delete_model(self, model_id: str) -> None:
+        """Unload and delete model files from disk."""
+        if self._loaded_model_id == model_id:
+            self.unload_model()
+        
+        import shutil
+        for base in (Path(DEFAULT_MODEL_DIR), _INTERNAL_MODELS_DIR):
+            path = base / model_id
+            if path.is_dir():
+                shutil.rmtree(path)
+                logger.info("Vosk model deleted: %s from %s", model_id, path)
 
     # ── state ─────────────────────────────────────────────────
 

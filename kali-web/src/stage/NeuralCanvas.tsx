@@ -405,6 +405,10 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
         onUIScaleChange={onUIScaleChange}
         currentLanguage={i18n.language}
         onLanguageChange={onLanguageChange}
+        downloadTtsModel={chat.downloadTtsModel}
+        downloadSttModel={chat.downloadSttModel}
+        downloadProgress={chat.downloadProgress}
+        downloadError={chat.downloadError}
       />
 
       <ConsentModal request={chat.consentRequest} onRespond={chat.respondConsent} />

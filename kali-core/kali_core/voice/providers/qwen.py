@@ -518,6 +518,36 @@ class QwenTTSProvider:
 
     # ── model management ───────────────────────────────────────────
 
+    def configure(self, *, models_dir: str | Path | None = None) -> None:
+        """Re-point the provider to a different models directory.
+
+        Used when the user changes `tts_models_dir` from the UI.  Rescans
+        available models and, if a model is currently loaded, reloads the
+        same one from the new directory so the new path takes effect
+        immediately.
+        """
+        if models_dir is None:
+            return
+        was_loaded = self.is_loaded
+        current_id = self._loaded_model_id
+        if was_loaded:
+            self.shutdown()
+        self._talker_models_dir = Path(models_dir).expanduser().resolve()
+        # Discover the codec/tokenizer file in the new dir instead of
+        # hardcoding the quantization suffix.
+        codec_files = list(self._talker_models_dir.glob("qwen-tokenizer-12hz-*.gguf"))
+        if codec_files:
+            self._codec_model = codec_files[0]
+        self._discover_talker_models()
+        if current_id is not None and current_id in self._available_models:
+            self._talker_model = self._available_models[current_id]
+            self._loaded_model_id = current_id
+            self._voice_design = QWEN_MODELS[current_id]["variant"] == "voicedesign"
+            if was_loaded:
+                self._validate_and_spawn()
+        else:
+            self._select_initial_model(self._voice_design)
+
     def _discover_talker_models(self) -> dict[str, Path]:
         result: dict[str, Path] = {}
         for mid, cfg in QWEN_MODELS.items():
@@ -639,6 +669,28 @@ class QwenTTSProvider:
         self._loaded_model_id = None
         self._client = None
         self._proc = None
+
+    def delete_model(self, model_id: str) -> None:
+        """Unload and delete model files from disk."""
+        if self._loaded_model_id == model_id:
+            self.unload_model()
+        
+        if model_id in QWEN_MODELS:
+            filename = QWEN_MODELS[model_id]["filename"]
+            
+            # 1. Delete from current models dir
+            path = self._talker_models_dir / filename
+            if path.exists():
+                path.unlink()
+            
+            # 2. Delete from fallback common dir
+            common_dir = Path.home() / ".local" / "share" / "kali" / "models"
+            common_path = common_dir / filename
+            if common_path.exists():
+                common_path.unlink()
+            
+            logger.info("Qwen3 model deleted: %s", model_id)
+            self._discover_talker_models()
 
     # ── lifecycle ───────────────────────────────────────────────────
 

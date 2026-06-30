@@ -37,10 +37,12 @@ class UserConfig:
     stt_device: str | None = None
     stt_streaming: bool | None = None
     stt_models_dir: str | None = None
+    tts_models_dir: str | None = None
     profile: str | None = None
     artifact_diff_preview: bool | None = None
 
     # ── Per-connection (applied on every new Connection, override env defaults) ──
+    stt_enabled: bool | None = None
     stt_language: str | None = None
     stt_vad_enabled: bool | None = None
     stt_vad_mode: int | None = None

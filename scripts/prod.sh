@@ -107,12 +107,6 @@ if ! "$VENV/bin/python" -c "import kali_core; print('  venv OK')" 2>/dev/null; t
   exit 1
 fi
 
-# ── STT models ────────────────────────────────────────────
-if [ ! -d "$CORE_DIR/kali_core/ear/models/vosk-model-small-es-0.42" ]; then
-  echo "  Downloading STT models…"
-  bash "$ROOT/scripts/download-stt-models.sh"
-fi
-
 # ── kali-web: ensure node_modules ──────────────────────────
 if [ ! -d "$WEB_DIR/node_modules" ]; then
   echo "  Installing kali-web deps…"

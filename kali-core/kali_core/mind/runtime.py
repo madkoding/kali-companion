@@ -153,7 +153,7 @@ def _gen_tool_call_id() -> str:
 class AgentRuntime:
     """Receives a message and produces a streaming response."""
 
-    def __init__(self, llm: LLMProvider) -> None:
+    def __init__(self, llm: LLMProvider | None) -> None:
         self.llm = llm
         # session_id → list of {"role": ..., "content": ...}
         self._histories: dict[str, list[dict]] = {}
@@ -252,6 +252,19 @@ class AgentRuntime:
     ) -> AsyncIterator[StreamEvent]:
         """Stream the agent's response to a user message."""
         language = normalize(language)
+
+        # ── No LLM configured → localized guidance ──────────────────────
+        if self.llm is None:
+            msg = (
+                "Todavía no tengo un proveedor de IA configurado. "
+                "Ve a Ajustes → Proveedor IA para conectar uno, y así podré ayudarte."
+                if language == "es"
+                else
+                "I don't have an AI provider configured yet. "
+                "Go to Settings → AI Provider to connect one, and I'll be ready to help you."
+            )
+            yield StreamEvent(kind="delta", text=msg)
+            return
         history = self._get_history(session_id)
         history.append({"role": "user", "content": user_message})
 

@@ -33,6 +33,14 @@ import type {
   TurnStatsEvent,
   IncomingEvent,
   ConnectionsListEvent,
+  DownloadTtsModelStartedEvent,
+  DownloadTtsModelProgressEvent,
+  DownloadTtsModelCompleteEvent,
+  DownloadTtsModelErrorEvent,
+  DownloadSttModelStartedEvent,
+  DownloadSttModelProgressEvent,
+  DownloadSttModelCompleteEvent,
+  DownloadSttModelErrorEvent,
 } from "../lib/protocol";
 
 export interface ChatMessage {
@@ -106,6 +114,10 @@ export interface ChatState {
   cancelJob: (id: string) => void;
   getJobLogs: (id: string) => void;
   requestImage: (key: string) => void;
+  downloadTtsModel: (modelId: string, provider?: "qwen3" | "piper") => void;
+  downloadSttModel: (modelId: string) => void;
+  downloadProgress: Record<string, number>;
+  downloadError: string | null;
   /** Release the full content of an artifact from memory (close → metadata-only). */
   markArtifactClosed: (artifactId: string) => void;
   /** Store full content for an artifact (after a REST fetch on reopen). */
@@ -162,6 +174,8 @@ export function useChat(): ChatState {
   const [currentStep, setCurrentStep] = useState(0);
   const [stopped, setStopped] = useState(false);
   const [turnStats, setTurnStats] = useState<TurnStatsEvent | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const clientRef = useRef<WSClient | null>(null);
   const ttsListeners = useRef<Array<(e: TtsAudioEvent) => void>>([]);
@@ -527,6 +541,70 @@ export function useChat(): ChatState {
         }
       });
 
+      // ── TTS model download events ────────────────────────
+
+      client.on("download_tts_model_started", (p) => {
+        const ev = p as DownloadTtsModelStartedEvent;
+        setDownloadError(null);
+        setDownloadProgress((prev) => ({ ...prev, [ev.model_id]: 0 }));
+      });
+
+      client.on("download_tts_model_progress", (p) => {
+        const ev = p as DownloadTtsModelProgressEvent;
+        setDownloadProgress((prev) => ({ ...prev, [ev.model_id]: ev.progress }));
+      });
+
+      client.on("download_tts_model_complete", (p) => {
+        const ev = p as DownloadTtsModelCompleteEvent;
+        setDownloadProgress((prev) => {
+          const next = { ...prev };
+          delete next[ev.model_id];
+          return next;
+        });
+      });
+
+      client.on("download_tts_model_error", (p) => {
+        const ev = p as DownloadTtsModelErrorEvent;
+        setDownloadProgress((prev) => {
+          const next = { ...prev };
+          delete next[ev.model_id];
+          return next;
+        });
+        setDownloadError(ev.detail);
+      });
+
+      // ── STT model download events ────────────────────────
+
+      client.on("download_stt_model_started", (p) => {
+        const ev = p as DownloadSttModelStartedEvent;
+        setDownloadError(null);
+        setDownloadProgress((prev) => ({ ...prev, [ev.model_id]: 0 }));
+      });
+
+      client.on("download_stt_model_progress", (p) => {
+        const ev = p as DownloadSttModelProgressEvent;
+        setDownloadProgress((prev) => ({ ...prev, [ev.model_id]: ev.progress }));
+      });
+
+      client.on("download_stt_model_complete", (p) => {
+        const ev = p as DownloadSttModelCompleteEvent;
+        setDownloadProgress((prev) => {
+          const next = { ...prev };
+          delete next[ev.model_id];
+          return next;
+        });
+      });
+
+      client.on("download_stt_model_error", (p) => {
+        const ev = p as DownloadSttModelErrorEvent;
+        setDownloadProgress((prev) => {
+          const next = { ...prev };
+          delete next[ev.model_id];
+          return next;
+        });
+        setDownloadError(ev.detail);
+      });
+
       client.connect();
     }
 
@@ -637,6 +715,16 @@ export function useChat(): ChatState {
     clientRef.current?.send({ event: "request_image", key });
   }, []);
 
+  const downloadTtsModel = useCallback((modelId: string, provider?: "qwen3" | "piper") => {
+    setDownloadError(null);
+    clientRef.current?.send({ event: "download_tts_model", model_id: modelId, provider: provider ?? "qwen3" });
+  }, []);
+
+  const downloadSttModel = useCallback((modelId: string) => {
+    setDownloadError(null);
+    clientRef.current?.send({ event: "download_stt_model", model_id: modelId });
+  }, []);
+
   /** Release the full content of an artifact, keeping only metadata + preview. */
   const markArtifactClosed = useCallback((artifactId: string) => {
     setArtifacts((prev) => {
@@ -721,6 +809,10 @@ export function useChat(): ChatState {
     cancelJob,
     getJobLogs,
     requestImage,
+    downloadTtsModel,
+    downloadSttModel,
+    downloadProgress,
+    downloadError,
     markArtifactClosed,
     setArtifactContent,
     registerConsoleProvider,

@@ -41,9 +41,13 @@ def get_tts_provider(provider_id: str) -> "TTSProvider":
         from .qwen import QwenTTSProvider
         from kali_core.config import settings
         from pathlib import Path
+        # Discover codec/tokenizer in the models dir.
+        models_dir = Path(settings.tts_models_dir)
+        codec_files = list(models_dir.glob("qwen-tokenizer-12hz-*.gguf")) if models_dir.exists() else []
+        codec_model = str(codec_files[0]) if codec_files else str(models_dir / "qwen-tokenizer-12hz-Q4_K_M.gguf")
         _providers[provider_id] = QwenTTSProvider(
-            talker_models_dir=Path(settings.qwen_talker_model).parent,
-            codec_model=settings.qwen_codec_model,
+            talker_models_dir=settings.tts_models_dir,
+            codec_model=codec_model,
             port=settings.qwen_port,
             backend=settings.qwen_backend,
             spawn=False,

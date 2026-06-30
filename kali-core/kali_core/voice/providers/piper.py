@@ -39,7 +39,7 @@ class PiperTTSProvider:
         voices_dir: Path | None = None,
         voice_configs_dir: Path | None = None,
     ) -> None:
-        self.voices_dir = voices_dir or settings.voices_dir
+        self.voices_dir = Path(voices_dir or settings.voices_dir)
         self.voice_configs_dir = voice_configs_dir or settings.voice_configs_dir
         self._engine = PiperEngine(self.voices_dir)
         self._config_manager = VoiceConfigManager(self.voice_configs_dir)
@@ -89,13 +89,21 @@ class PiperTTSProvider:
     def list_models(self) -> list[TTSModelInfo]:
         if not self.voices_dir.exists():
             return []
+        
+        from kali_core.model_catalog import get_piper_voices
+        catalog = get_piper_voices()
+        
         configs_by_model = self._group_voice_configs_by_model()
         models: list[TTSModelInfo] = []
         for onnx_file in sorted(self.voices_dir.glob("*.onnx")):
             stem = onnx_file.stem
             meta = self._read_onnx_json(stem)
-            num_speakers = meta.get("num_speakers", 1)
             speaker_map: dict = meta.get("speaker_id_map", {})
+            
+            # Get friendly model name from catalog if possible
+            catalog_info = catalog.get(stem, {})
+            friendly_model = catalog_info.get("name", stem)
+            
             lang_code = meta.get("language", {}).get("family") or meta.get("espeak", {}).get("voice", "")
             languages = [lang_code] if lang_code else []
             voices: list[TTSModelVoice] = []
@@ -113,13 +121,14 @@ class PiperTTSProvider:
                 ))
             models.append(TTSModelInfo(
                 id=stem,
-                display_name=stem,
+                display_name=friendly_model,
                 estimated_vram_mb=0,
                 available=True,
                 loaded=(stem == self._loaded_model_id),
                 device="cpu" if stem == self._loaded_model_id else None,
                 supported_languages=languages,
                 voices=voices,
+                variant=stem,
             ))
         return models
 
@@ -135,17 +144,45 @@ class PiperTTSProvider:
             self._engine.unload_voice(self._loaded_model_id)
             self._loaded_model_id = None
 
+    def delete_model(self, model_id: str) -> None:
+        """Unload and delete model files from disk."""
+        if self._loaded_model_id == model_id:
+            self.unload_model()
+        
+        onnx = self.voices_dir / f"{model_id}.onnx"
+        js = self.voices_dir / f"{model_id}.onnx.json"
+        
+        if onnx.exists():
+            onnx.unlink()
+        if js.exists():
+            js.unlink()
+        
+        logger.info("Piper model deleted: %s", model_id)
+
     async def synthesize(self, text: str, voice: str, mode: str = "normal", language: str = "auto") -> TTSResult:
+        # Check for config-based voice first
         config = self._config_manager.get_voice(voice)
-        if config is None:
-            raise ValueError(
-                f"Voice config '{voice}' not found. "
-                f"Available: {[v['voice_id'] for v in self._config_manager.list_voices()]}"
-            )
-        model = config["model"]
-        params = self._config_manager.get_params(voice)
-        active_mode = mode or config.get("default_mode", "normal")
-        effects = self._config_manager.get_effects_for_mode(voice, active_mode)
+        speaker_id = None
+        
+        if config:
+            model = config["model"]
+            params = self._config_manager.get_params(voice)
+            active_mode = mode or config.get("default_mode", "normal")
+            effects = self._config_manager.get_effects_for_mode(voice, active_mode)
+        else:
+            # Dynamic voice discovery (model::speaker or just model)
+            if "::" in voice:
+                model, speaker_name = voice.split("::", 1)
+                # Try to resolve speaker name to ID
+                meta = self._read_onnx_json(model)
+                speaker_id = meta.get("speaker_id_map", {}).get(speaker_name)
+            else:
+                model = voice
+            
+            params = {"length_scale": 1.0, "noise_scale": 0.667, "noise_w_scale": 0.8}
+            active_mode = mode or "normal"
+            effects = []
+
         wav_bytes = await asyncio.to_thread(
             self._engine.synthesize,
             model,
@@ -153,6 +190,7 @@ class PiperTTSProvider:
             length_scale=params.get("length_scale", 1.0),
             noise_scale=params.get("noise_scale", 0.667),
             noise_w_scale=params.get("noise_w_scale", 0.8),
+            speaker_id=speaker_id,
         )
         if effects:
             audio_np, sr = wav_bytes_to_numpy(wav_bytes)
@@ -163,11 +201,53 @@ class PiperTTSProvider:
             audio=wav_bytes,
             sample_rate=22050,
             duration=duration,
-            mode=mode or config.get("default_mode", "normal"),
+            mode=active_mode,
         )
 
     async def list_voices(self) -> list[dict]:
-        return self._config_manager.list_voices()
+        """List available voices for the CURRENTLY LOADED model."""
+        if not self._loaded_model_id:
+            return []
+
+        from kali_core.model_catalog import get_piper_voices
+        catalog = get_piper_voices()
+        
+        # 1. Get voices from config manager that match the loaded model
+        all_configs = self._config_manager.list_voices(include_inactive=True)
+        voices = [v for v in all_configs if v.get("model") == self._loaded_model_id]
+        seen_voice_ids = {v["voice_id"] for v in voices}
+        
+        # 2. Discover speakers from the loaded model on disk
+        model_id = self._loaded_model_id
+        meta = self._read_onnx_json(model_id)
+        speaker_map = meta.get("speaker_id_map", {})
+        
+        # Get friendly model name from catalog if possible
+        catalog_info = catalog.get(model_id, {})
+        friendly_model = catalog_info.get("name", model_id)
+        
+        if not speaker_map:
+            # Single speaker model
+            if model_id not in seen_voice_ids:
+                voices.append({
+                    "voice_id": model_id,
+                    "name": f"{friendly_model} (Piper)",
+                    "model": model_id,
+                    "active": True,
+                })
+        else:
+            # Multi-speaker model: add each speaker
+            for spk_name in speaker_map:
+                vid = f"{model_id}::{spk_name}"
+                if vid not in seen_voice_ids:
+                    voices.append({
+                        "voice_id": vid,
+                        "name": f"{friendly_model} ({spk_name})",
+                        "model": model_id,
+                        "active": True,
+                    })
+        
+        return voices
 
     async def preview(self, voice_id: str, text: str, language: str = "en", mode: str = "normal") -> bytes:
         result = await self.synthesize(text, voice_id, mode=mode)

@@ -144,15 +144,31 @@ class Qwen3STTProvider:
         cfg = MODEL_CONFIGS[model_id]
         logger.info("Loading %s (%s) on %s...", cfg["display_name"], cfg["hf_id"], device)
 
-        self._processor = AutoProcessor.from_pretrained(
-            cfg["hf_id"], cache_dir=str(self._models_dir)
-        )
-        self._model = AutoModelForMultimodalLM.from_pretrained(
-            cfg["hf_id"],
-            dtype=getattr(torch, DTYPE),
-            attn_implementation="sdpa",
-            cache_dir=str(self._models_dir),
-        )
+        kwargs: dict = dict(cache_dir=str(self._models_dir))
+        try:
+            self._processor = AutoProcessor.from_pretrained(
+                cfg["hf_id"], **kwargs, local_files_only=True
+            )
+            self._model = AutoModelForMultimodalLM.from_pretrained(
+                cfg["hf_id"],
+                dtype=getattr(torch, DTYPE),
+                attn_implementation="sdpa",
+                **kwargs,
+                local_files_only=True,
+            )
+        except OSError:
+            logger.warning(
+                "%s not found in cache, attempting download...", cfg["display_name"]
+            )
+            self._processor = AutoProcessor.from_pretrained(
+                cfg["hf_id"], **kwargs
+            )
+            self._model = AutoModelForMultimodalLM.from_pretrained(
+                cfg["hf_id"],
+                dtype=getattr(torch, DTYPE),
+                attn_implementation="sdpa",
+                **kwargs,
+            )
         self._model = self._model.to(device)
         self._model.eval()
         self._device = device
@@ -181,6 +197,26 @@ class Qwen3STTProvider:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         logger.info("Qwen3-ASR model unloaded")
+
+    def delete_model(self, model_id: str) -> None:
+        """Unload and delete model files from disk."""
+        if self._loaded_model_id == model_id:
+            self.unload_model()
+        
+        cfg = MODEL_CONFIGS.get(model_id)
+        if not cfg:
+            return
+        
+        try:
+            import shutil
+            repo_id = cfg["hf_id"]
+            folder_name = f"models--{repo_id.replace('/', '--')}"
+            repo_path = self._models_dir / folder_name
+            if repo_path.exists():
+                shutil.rmtree(repo_path, ignore_errors=True)
+                logger.info("Deleted Qwen3-ASR model directory: %s", repo_path)
+        except Exception as e:
+            logger.error("Error deleting Qwen3-ASR model %s: %s", model_id, e)
 
     # ── state ─────────────────────────────────────────────────
 

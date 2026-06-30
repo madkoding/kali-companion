@@ -40,11 +40,6 @@ def piper_provider(tmp_path):
         "params": {"length_scale": 1.0, "noise_scale": 0.667, "noise_w_scale": 0.8},
         "modes": {"normal": {"effects": []}},
     }))
-    (configs_dir / "robot-es.json").write_text(json.dumps({
-        "voice_id": "robot-es", "name": "Robot ES", "model": "es_ES-glados-medium",
-        "params": {"length_scale": 1.0, "noise_scale": 0.667, "noise_w_scale": 0.8},
-        "modes": {"robotic": {"effects": ["robotic"]}},
-    }))
 
     with patch("kali_core.voice.providers.piper.PiperEngine") as mock_engine:
         mock_engine.return_value.load_voice.return_value = object()
@@ -68,7 +63,6 @@ def test_piper_list_models_includes_voice_configs(piper_provider):
     glados = models["es_ES-glados-medium"]
     voice_ids = [v.id for v in glados.voices]
     assert "glados-es" in voice_ids
-    assert "robot-es" in voice_ids
 
 
 def test_piper_list_models_includes_internal_speakers_for_multi(piper_provider):

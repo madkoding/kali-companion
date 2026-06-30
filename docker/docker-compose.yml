@@ -27,8 +27,8 @@ services:
       - "${KALI_WEB_PORT:-8080}:8080"  # nginx (kali-web frontend)
 
     volumes:
-      # Modelos (Piper .onnx, Vosk, Qwen3 .gguf) — se descargan en el primer arranque
-      - kali-models:/app/models
+      # Modelos (Piper .onnx, Vosk, Qwen3 .gguf) — carpeta del host para persistencia
+      - ${HOME}/.local/share/kali/models:/app/models
 
       # Datos persistentes (SQLite sessions, ai_config.json, snapshots, imágenes)
       - kali-data:/app/data
@@ -45,26 +45,26 @@ services:
       - KALI_TTS_PROVIDER=${KALI_TTS_PROVIDER:-inproc}
       - KALI_TTS_VOICE=${KALI_TTS_VOICE:-glados-es}
       - KALI_TTS_MODE=${KALI_TTS_MODE:-normal}
-      - KALI_TTS_ENABLED=${KALI_TTS_ENABLED:-true}
+      - KALI_TTS_ENABLED=${KALI_TTS_ENABLED:-false}
+      - KALI_TTS_MODELS_DIR=/app/models
 
       # ── STT Engine ──
       - KALI_STT_PROVIDER=${KALI_STT_PROVIDER:-vosk}
       - KALI_STT_MODEL=${KALI_STT_MODEL:-vosk-model-small-es-0.42}
       - KALI_STT_MODEL_EN=${KALI_STT_MODEL_EN:-vosk-model-small-en-us-0.15}
       - KALI_STT_LANGUAGE=${KALI_STT_LANGUAGE:-es}
+      - KALI_STT_MODELS_DIR=/app/models/vosk
+      - KALI_VOICES_DIR=/app/models/piper-voices
 
       # ── Qwen3-TTS (solo si KALI_TTS_PROVIDER=qwen3*) ──
       - KALI_QWEN_BACKEND=${KALI_QWEN_BACKEND:-CPU}
       - KALI_QWEN_PORT=${KALI_QWEN_PORT:-8870}
-      - KALI_QWEN_TALKER_MODEL=${KALI_QWEN_TALKER_MODEL:-/app/models/qwen-talker-0.6b-customvoice-Q4_K_M.gguf}
-      - KALI_QWEN_VOICEDESIGN_MODEL=${KALI_QWEN_VOICEDESIGN_MODEL:-/app/models/qwen-talker-1.7b-voicedesign-Q4_K_M.gguf}
-      - KALI_QWEN_CODEC_MODEL=${KALI_QWEN_CODEC_MODEL:-/app/models/qwen-tokenizer-12hz-Q4_K_M.gguf}
 
       # ── LLM ──
       - KALI_LLM_PROVIDER=${KALI_LLM_PROVIDER:-direct}
-      - KALI_LLM_API_URL=${KALI_LLM_API_URL:-http://host.docker.internal:11434/v1}
+      - KALI_LLM_API_URL=${KALI_LLM_API_URL:-}
       - KALI_LLM_API_KEY=${KALI_LLM_API_KEY:-}
-      - KALI_LLM_MODEL=${KALI_LLM_MODEL:-glm-5.1}
+      - KALI_LLM_MODEL=${KALI_LLM_MODEL:-}
 
       # ── Permissions ──
       - KALI_PROFILE=${KALI_PROFILE:-dev}
@@ -81,7 +81,5 @@ services:
       - "host.docker.internal:host-gateway"
 
 volumes:
-  kali-models:
-    name: kali-models
   kali-data:
     name: kali-data
