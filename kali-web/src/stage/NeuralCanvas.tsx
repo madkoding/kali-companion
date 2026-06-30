@@ -228,9 +228,9 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
 
   return (
     <div className="relative h-full w-full overflow-hidden stage-surface stage-grain">
-      {/* Avatar zone — Always centered in available space */}
+      {/* Avatar zone — centered, grows when customizer opens */}
       <div
-        className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none transition-all duration-500"
+        className="absolute inset-0 flex items-center justify-center pointer-events-none transition-all duration-500"
         style={{
           zIndex: customizerOpen ? 60 : 10,
           paddingRight: customizerOpen && !isMobile ? "calc(360px * var(--mul-density))" : "0",
@@ -268,9 +268,21 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
             />
           </div>
         </div>
-        {/* Ambient welcome text — only when no assistant messages */}
+      </div>
+
+      {/* Welcome + transcript — fixed at bottom, NOT affected by avatar growth */}
+      <div
+        className="absolute inset-x-0 flex flex-col items-center pointer-events-none"
+        style={{
+          zIndex: customizerOpen ? 60 : 10,
+          paddingRight: customizerOpen && !isMobile ? "calc(360px * var(--mul-density))" : "0",
+          bottom: "25%",
+          opacity: customizerOpen ? 0 : 1,
+          pointerEvents: customizerOpen ? "none" : "auto",
+          transition: "opacity 0.3s ease, padding-right 0.5s ease",
+        }}
+      >
         <WelcomeText messages={chat.messages} />
-        {/* Floating transcript — in the flow, below avatar */}
         <FloatingTranscript messages={chat.messages} />
       </div>
 
