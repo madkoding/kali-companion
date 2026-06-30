@@ -6,6 +6,7 @@ import numpy as np
 
 from kali_core.ear.manager import STTManager, WakeWordDetector, model_for_language
 from kali_core.ear.vosk_engine import StreamingSTT
+from kali_core.lang_map import normalize
 
 
 def _silence_pcm(duration_s: float = 1.0) -> bytes:
@@ -22,8 +23,32 @@ def test_model_for_language_en():
     assert model_for_language("en") == "vosk-model-small-en-us-0.15"
 
 
-def test_model_for_language_unknown_defaults_es():
-    assert model_for_language("fr") == "vosk-model-small-es-0.42"
+def test_model_for_language_unknown_defaults_en():
+    assert model_for_language("fr") == "vosk-model-small-en-us-0.15"
+
+
+def test_model_for_language_regional_es():
+    assert model_for_language("es-CL") == "vosk-model-small-es-0.42"
+    assert model_for_language("es-ES") == "vosk-model-small-es-0.42"
+    assert model_for_language("es-MX") == "vosk-model-small-es-0.42"
+
+
+def test_model_for_language_regional_en():
+    assert model_for_language("en-US") == "vosk-model-small-en-us-0.15"
+    assert model_for_language("en-GB") == "vosk-model-small-en-us-0.15"
+
+
+def test_normalize():
+    assert normalize("es-CL") == "es"
+    assert normalize("es-ES") == "es"
+    assert normalize("es-MX") == "es"
+    assert normalize("es-US") == "es"
+    assert normalize("en-US") == "en"
+    assert normalize("en-GB") == "en"
+    assert normalize("es") == "es"
+    assert normalize("en") == "en"
+    assert normalize("fr") == "en"
+    assert normalize("") == "en"
 
 
 def test_streaming_stt_start_accept_finish():
@@ -84,15 +109,22 @@ def test_wake_word_detector_full_vocab():
 
 
 def test_contains_trigger():
-    assert WakeWordDetector._contains_trigger("hey kali")
+    assert WakeWordDetector._contains_trigger("ok kali")
     assert WakeWordDetector._contains_trigger("ok cali")
-    assert WakeWordDetector._contains_trigger("oye Kali")
-    assert WakeWordDetector._contains_trigger("kali!")
-    assert WakeWordDetector._contains_trigger("hi cali")
+    assert WakeWordDetector._contains_trigger("okay kali")
+    assert WakeWordDetector._contains_trigger("okey cali")
+    assert WakeWordDetector._contains_trigger("okei kali")
+    assert WakeWordDetector._contains_trigger("OK Kali")
+    assert not WakeWordDetector._contains_trigger("hey kali")
+    assert not WakeWordDetector._contains_trigger("oye Kali")
+    assert not WakeWordDetector._contains_trigger("kali!")
+    assert not WakeWordDetector._contains_trigger("hi cali")
     assert not WakeWordDetector._contains_trigger("hello world")
     assert not WakeWordDetector._contains_trigger("")
     assert not WakeWordDetector._contains_trigger("california")
-    assert WakeWordDetector._contains_trigger("Kali está aquí")
+    assert not WakeWordDetector._contains_trigger("Kali está aquí")
+    assert not WakeWordDetector._contains_trigger("kali")
+    assert not WakeWordDetector._contains_trigger("cali")
 
 
 def test_extract_text():

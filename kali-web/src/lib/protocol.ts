@@ -37,23 +37,65 @@ export interface SettingsEvent {
   voice?: string;
   tts_mode?: string;
   auto_tts?: boolean;
+  tts_provider?: TtsProvider;
+  tts_model?: string;
+  tts_device?: string;
+  tts_models_dir?: string;
   llm_model?: string;
   llm_provider?: string;
   llm_api_url?: string;
   llm_api_key?: string;
+  llm_max_tokens?: number;
   profile?: string;
   language?: string;
+  stt_enabled?: boolean;
   stt_language?: string;
+  stt_provider?: string;
+  stt_model?: string;
+  stt_device?: string;
+  stt_streaming?: boolean;
+  stt_models_dir?: string;
+  stt_vad_enabled?: boolean;
+  stt_vad_mode?: number;
+  stt_vad_silence_timeout?: number;
+  stt_vad_auto_calibrate?: boolean;
+  stt_vad_rms_threshold?: number;
   wake_word_enabled?: boolean;
   input_mode?: string;
   feedback_mode?: string;
   plan_mode?: boolean;
+  artifact_diff_preview?: boolean;
+  // Qwen3 VoiceDesign fields
+  voice_instructions?: string;
+  voice_seed?: number;
 }
 
 export interface ConsentResponseEvent {
   event: "consent_response";
   id: string;
   decision: "allow" | "no_capture" | "cancel";
+}
+
+/** A single console log entry from an HTML artifact's iframe. */
+export interface ConsoleLogEntry {
+  level: "log" | "warn" | "error" | "info" | "debug";
+  message: string;
+  timestamp: number;
+}
+
+/** Backend → frontend: the agent requests console logs for an artifact. */
+export interface ConsoleRequestEvent {
+  event: "console_request";
+  id: string;
+  artifact_id: string;
+  limit: number;
+}
+
+/** Frontend → backend: the frontend responds with the artifact's console logs. */
+export interface ConsoleResponseEvent {
+  event: "console_response";
+  id: string;
+  logs: ConsoleLogEntry[] | null;
 }
 
 export interface ListJobsEvent {
@@ -78,6 +120,7 @@ export interface RequestImageEvent {
 export interface AudioStartEvent {
   event: "audio_start";
   language?: string;
+  origin?: "manual" | "wake_word" | "continuous";
 }
 
 export interface AudioEndEvent {
@@ -89,7 +132,62 @@ export interface TtsSpeakEvent {
   text: string;
 }
 
-// ── Outgoing (core → web) ────────────────────────────────
+// Qwen3-TTS voice design preset (returned by /voices when tts_variant is voicedesign)
+export interface VoiceDesignPreset {
+  id: string;
+  name: string;
+  instructions: string;
+  seed: number;
+}
+
+// Custom voice created by the user (stored in SQLite)
+export interface CustomVoice {
+  id: string;
+  name: string;
+  provider: string;
+  instructions: string;
+  seed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Qwen3-TTS predefined voice (returned by /voices when provider is qwen3)
+export interface QwenVoice {
+  id: string;
+  name: string;
+  gender: string;
+}
+
+export interface TtsModelVoice {
+  id: string;
+  name: string;
+  gender?: string | null;
+  source: "config" | "speaker" | "preset";
+}
+
+export interface TtsModelInfo {
+  id: string;
+  display_name: string;
+  estimated_vram_mb: number;
+  available: boolean;
+  loaded: boolean;
+  device: string | null;
+  supported_languages: string[];
+  voices: TtsModelVoice[];
+  variant: string | null;
+}
+
+export interface TtsDeviceInfo {
+  id: string;
+  name: string;
+  vram_total_mb?: number;
+  vram_free_mb?: number;
+  ram_total_mb?: number;
+  ram_free_mb?: number;
+}
+
+export type TtsProvider = "piper" | "qwen3" | "http" | "unavailable";
+export type SttProvider = "vosk" | "qwen3";
 
 export interface ReadyEvent {
   event: "ready";
@@ -135,6 +233,12 @@ export interface SttPartialEvent {
 export interface SttFinalEvent {
   event: "stt_final";
   text: string;
+  provider?: string;
+}
+
+export interface VadStateEvent {
+  event: "vad_state";
+  is_speech: boolean;
 }
 
 export interface WakeWordEvent {
@@ -165,9 +269,18 @@ export interface ArtifactEvent {
   type: "html" | "markdown" | "diff" | "widget";
   windowType: string;
   title: string;
-  content: string;
+  /**
+   * Full payload during live streaming / updates.
+   * `null` on metadata-only replays (session reattach): the frontend keeps
+   * only the `preview` in memory and fetches the full content on demand via
+   * `fetchArtifact` when the user reopens a closed artifact.
+   */
+  content: string | null;
   update: "create" | "update" | "close";
   phase?: "streaming" | "complete";
+  language?: string;
+  /** Short text preview (HTML stripped). Present on metadata-only replays. */
+  preview?: string;
 }
 
 export interface TurnStartEvent {
@@ -205,24 +318,123 @@ export interface SessionListEvent {
   sessions: Array<{ id: string; title: string; updated: string }>;
 }
 
+// ── AI provider connections (saved LLM endpoints) ────────────
+
+export type ConnectionKind = "local" | "cloud";
+export type ApiFormat = "openai" | "ollama" | "llamacpp" | "lmstudio" | "vllm" | "custom";
+
+export interface ConnectionSummary {
+  id: string;
+  name: string;
+  kind: ConnectionKind;
+  api_url: string;
+  api_format: ApiFormat;
+  vendor_detected: string;
+  model_count: number;
+  is_active: boolean;
+  active_model: string | null;
+}
+
+export interface CloudProviderInfo {
+  id: string;
+  name: string;
+  api_url: string;
+  docs_url: string;
+  notes: string;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  vendor: string;
+  models: string[];
+  detail: string;
+}
+
+export interface CreateConnectionRequest {
+  event: "create_connection";
+  name: string;
+  kind: ConnectionKind;
+  api_url: string;
+  api_format: ApiFormat;
+  api_key?: string;
+  vendor_detected?: string;
+  models?: string[];
+}
+
+export interface UpdateConnectionRequest {
+  event: "update_connection";
+  id: string;
+  patch: {
+    name?: string;
+    api_url?: string;
+    api_format?: ApiFormat;
+    api_key?: string;
+    vendor_detected?: string;
+    models?: string[];
+  };
+}
+
+export interface DeleteConnectionRequest {
+  event: "delete_connection";
+  id: string;
+}
+
+export interface ActivateConnectionRequest {
+  event: "activate_connection";
+  id: string;
+  model: string;
+}
+
+// Backend → frontend: full connections snapshot
+export interface ConnectionsListEvent {
+  event: "connections_list";
+  connections: ConnectionSummary[];
+  active_id: string | null;
+}
+
 export interface StatusEvent {
   event: "status";
   llm_provider: string;
   llm_api_url: string;
   llm_api_key_set: boolean;
   llm_model: string;
-  tts_provider: string;
+  llm_max_tokens?: number;
+  llm_connection_id?: string | null;
+  llm_connection_name?: string | null;
+  connections?: ConnectionSummary[];
+  tts_provider: TtsProvider;
   voice: string;
   tts_mode: string;
   auto_tts: boolean;
+  tts_loaded?: boolean;
+  tts_model?: string;
+  tts_device?: string;
+  tts_available?: boolean;
+  tts_error?: string | null;
+  tts_variant?: string | null;
   capture_backend: string;
   profile: string;
   available_profiles?: string[];
+  stt_provider: SttProvider;
+  stt_model?: string;
+  stt_device?: string;
+  stt_loaded?: boolean;
+  stt_enabled?: boolean;
+  stt_streaming?: boolean;
+  stt_models_dir?: string;
+  tts_models_dir?: string;
+  stt_vad_enabled?: boolean;
+  stt_vad_mode?: number;
+  stt_vad_silence_timeout?: number;
+  stt_vad_auto_calibrate?: boolean;
+  stt_vad_rms_threshold?: number;
   stt_language?: string;
   wake_word_enabled?: boolean;
   input_mode?: string;
   feedback_mode?: string;
   plan_mode?: boolean;
+  artifact_diff_preview?: boolean;
+  config_warnings?: string[];
 }
 
 export interface ErrorEvent {
@@ -291,9 +503,104 @@ export interface ImageReadyEvent {
   error?: string;
 }
 
+export interface TurnStatsEvent {
+  event: "turn_stats";
+  session_id: string;
+  elapsed: number;
+  first_token_latency: number | null;
+  char_count: number;
+  tool_call_count: number;
+  usage?: {
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+    reasoning_tokens: number | null;
+  };
+}
+
 export interface AttachSessionEvent {
   event: "attach_session";
   session_id: string;
+}
+
+export interface DeleteSessionEvent {
+  event: "delete_session";
+  session_id: string;
+}
+
+export interface ClearAllSessionsEvent {
+  event: "clear_all_sessions";
+}
+
+export interface DownloadTtsModelEvent {
+  event: "download_tts_model";
+  model_id: string;
+  provider?: "qwen3" | "piper";
+}
+
+export interface DownloadTtsModelStartedEvent {
+  event: "download_tts_model_started";
+  model_id: string;
+}
+
+export interface DownloadTtsModelProgressEvent {
+  event: "download_tts_model_progress";
+  model_id: string;
+  kind: "tokenizer" | "model";
+  progress: number;
+  downloaded: number;
+  total: number;
+}
+
+export interface DownloadTtsModelCompleteEvent {
+  event: "download_tts_model_complete";
+  model_id: string;
+}
+
+export interface DownloadTtsModelErrorEvent {
+  event: "download_tts_model_error";
+  model_id: string;
+  detail: string;
+}
+
+export interface DownloadSttModelEvent {
+  event: "download_stt_model";
+  model_id: string;
+}
+
+export interface DownloadSttModelStartedEvent {
+  event: "download_stt_model_started";
+  model_id: string;
+}
+
+export interface DownloadSttModelProgressEvent {
+  event: "download_stt_model_progress";
+  model_id: string;
+  kind: string;
+  progress: number;
+  downloaded: number;
+  total: number;
+}
+
+export interface DownloadSttModelCompleteEvent {
+  event: "download_stt_model_complete";
+  model_id: string;
+}
+
+export interface DownloadSttModelErrorEvent {
+  event: "download_stt_model_error";
+  model_id: string;
+  detail: string;
+}
+
+export interface ModelCatalogEntry {
+  id: string;
+  provider: string;
+  display_name: string;
+  language: string;
+  language_code: string;
+  size_mb: number;
+  quality: string;
+  downloaded: boolean;
 }
 
 export type IncomingEvent =
@@ -302,15 +609,24 @@ export type IncomingEvent =
   | NewSessionEvent
   | ListSessionsEvent
   | AttachSessionEvent
+  | DeleteSessionEvent
+  | ClearAllSessionsEvent
   | SettingsEvent
   | ConsentResponseEvent
+  | ConsoleResponseEvent
   | AudioStartEvent
   | AudioEndEvent
   | TtsSpeakEvent
   | ListJobsEvent
   | CancelJobEvent
   | GetJobLogsEvent
-  | RequestImageEvent;
+  | RequestImageEvent
+  | CreateConnectionRequest
+  | UpdateConnectionRequest
+  | DeleteConnectionRequest
+  | ActivateConnectionRequest
+  | DownloadTtsModelEvent
+  | DownloadSttModelEvent;
 
 export type OutgoingEvent =
   | ReadyEvent
@@ -321,6 +637,7 @@ export type OutgoingEvent =
   | MessageEvent
   | SttPartialEvent
   | SttFinalEvent
+  | VadStateEvent
   | WakeWordEvent
   | TtsAudioEvent
   | TtsFilteredEvent
@@ -328,8 +645,10 @@ export type OutgoingEvent =
   | TurnStartEvent
   | ToolEvent
   | ConsentRequestEvent
+  | ConsoleRequestEvent
   | SessionListEvent
   | StatusEvent
+  | ConnectionsListEvent
   | ErrorEvent
   | DisconnectedEvent
   | JobStartEvent
@@ -337,4 +656,13 @@ export type OutgoingEvent =
   | JobDoneEvent
   | JobLogEvent
   | JobListEvent
-  | ImageReadyEvent;
+  | ImageReadyEvent
+  | TurnStatsEvent
+  | DownloadTtsModelStartedEvent
+  | DownloadTtsModelProgressEvent
+  | DownloadTtsModelCompleteEvent
+  | DownloadTtsModelErrorEvent
+  | DownloadSttModelStartedEvent
+  | DownloadSttModelProgressEvent
+  | DownloadSttModelCompleteEvent
+  | DownloadSttModelErrorEvent;

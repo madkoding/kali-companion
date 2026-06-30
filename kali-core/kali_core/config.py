@@ -27,13 +27,20 @@ host: str = os.getenv("KALI_HOST", "0.0.0.0")
 llm_provider: Literal["direct", "nanobot"] = os.getenv(
     "KALI_LLM_PROVIDER", "direct"
 )
-llm_api_url: str = os.getenv("KALI_LLM_API_URL", "http://localhost:11434/v1")
+llm_api_url: str = os.getenv("KALI_LLM_API_URL", "")
 llm_api_key: str = os.getenv("KALI_LLM_API_KEY", "")
-llm_model: str = os.getenv("KALI_LLM_MODEL", "glm-5.1")
+llm_model: str = os.getenv("KALI_LLM_MODEL", "")
+llm_max_tokens: int = int(os.getenv("KALI_LLM_MAX_TOKENS", "16384"))
 llm_system_prompt: str = os.getenv(
     "KALI_LLM_SYSTEM_PROMPT",
     (
-        "You are Kali, a helpful desktop companion. Reply in the user's language.\n\n"
+        "You are Kali, a helpful desktop companion.\n\n"
+        "LANGUAGE RULE (critical):\n"
+        "Detect the language of the user's message and ALWAYS reply in that\n"
+        "same language. If the user writes in Spanish, you reply in Spanish.\n"
+        "If they write in English, you reply in English. Never reply in a\n"
+        "different language than the user's message. This applies to ALL\n"
+        "responses: text, artifact content, explanations, and tool results.\n\n"
         "You have access to tools that can perform actions on the user's system.\n"
         "When the user's request matches a tool's purpose, call the tool to get\n"
         "accurate data instead of relying on your training data.\n\n"
@@ -64,7 +71,13 @@ llm_system_prompt: str = os.getenv(
         "  its id. Use before updating an artifact to see its current content.\n"
         "- update_artifact: Replace the content of an existing artifact in\n"
         "  place. The canvas window re-renders with the new content. Always\n"
-        "  provide the FULL new content, not just the changed parts.\n\n"
+        "  provide the FULL new content, not just the changed parts.\n"
+        "- get_artifact_console: Retrieve the runtime console logs of an\n"
+        "  HTML/renderer artifact by its id. Use when an HTML artifact looks\n"
+        "  broken or behaves unexpectedly and you want to see JavaScript\n"
+        "  errors, warnings, or debug output. The artifact must be currently\n"
+        "  open (rendered) in the frontend; if closed, the tool will tell you\n"
+        "  and you can fall back to get_artifact to inspect the source code.\n\n"
         "MANDATORY RULE: For ANY question about a game character, hero, champion,\n"
         "item, build, stats, abilities, review, or tip, you MUST call\n"
         "fetch_game_resource. Do NOT use web_search or any other tool for these.\n"
@@ -99,10 +112,12 @@ llm_system_prompt: str = os.getenv(
         '→ call fetch_game_resource with {"game": "League of Legends", "query": "Ahri build"}\n\n'
         'User: "Nemesis Resident Evil"\n'
         '→ call fetch_game_resource with {"game": "Resident Evil", "query": "Nemesis"}\n\n'
-        'User: "genera un juego 3D que explore un mundo"\n'
-        '→ [BEGIN_ARTIFACT: html] {"title": "Mundo 3D"}\n'
-        '  <!DOCTYPE html>\n'
-        '  <html>...Three.js via CDN...</html>\n'
+        'User: "dibuja un diagrama de flujo de autenticación"\n'
+        '→ [BEGIN_ARTIFACT: mermaid] {"title": "Autenticación"}\n'
+        '  graph TD\n'
+        '      A[Request] --> B{Auth?}\n'
+        '      B -->|no| C[401]\n'
+        '      B -->|yes| D[Process]\n'
         '  [END_ARTIFACT]\n\n'
         'User: "compara los servicios en una tabla"\n'
         '→ [TOOL_CALL: create_artifact] {"artifact_type": "table", "title": "Servicios", "content": "{\\"rows\\":[...]}"}\n\n'
@@ -126,21 +141,53 @@ llm_system_prompt: str = os.getenv(
         "TWO FORMATS depending on artifact type:\n\n"
         "STREAMING FORMAT — for 'code', 'document', 'diff', 'html' (text\n"
         "that is meaningful as it grows). The user watches the content\n"
-        "being written live. Use this format:\n"
-        "  [BEGIN_ARTIFACT: code] {\"title\": \"Herencia Java\"}\n"
-        "  public class HerenciaYPolimorfismo {\n"
-        "      abstract class Animal {\n"
-        "          ...\n"
-        "      }\n"
+        "being written live. Use this EXACT format:\n\n"
+        '  [BEGIN_ARTIFACT: code] {"title": "Herencia Java", "language": "java"}\n'
+        "  public class Herencia {\n"
+        "      void main() {}\n"
         "  }\n"
+        "  [END_ARTIFACT]\n\n"
+        '  [BEGIN_ARTIFACT: mermaid] {"title": "Flujo de autenticación"}\n'
+        "  graph TD\n"
+        "      A[Request] --> B{Auth?}\n"
+        "      B -->|no| C[401]\n"
+        "      B -->|yes| D[Process]\n"
+        "  [END_ARTIFACT]\n\n"
+        '  [BEGIN_ARTIFACT: html] {"title": "Mundo 3D"}\n'
+        "  <!DOCTYPE html>\n"
+        '  <html><body><script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script></body></html>\n'
+        "  [END_ARTIFACT]\n\n"
+        "CRITICAL RULES for streaming format:\n"
+        "- ALWAYS start with [BEGIN_ARTIFACT: type] and end with [END_ARTIFACT].\n"
+        "- Write the content as RAW TEXT between the markers. Do NOT wrap\n"
+        "  it in triple backticks (```), markdown code fences, or any other\n"
+        "  delimiters. The markers ARE the delimiters.\n"
+        "- Use EXACTLY [END_ARTIFACT]. Do NOT use [/END_ARTIFACT], [END/],\n"
+        "  or any variant.\n"
+        "- NEVER omit the opening [BEGIN_ARTIFACT] marker. Content without\n"
+        "  it goes to the chat as plain text, not the artifact window.\n"
+        "- The JSON header ONLY accepts \"title\" and (for code) \"language\".\n"
+        "  NEVER include a \"content\" field in the JSON header. The content\n"
+        "  goes as RAW TEXT after the header, never escaped inside JSON.\n"
+        "  Putting the body inside {\"content\":\"...\"} breaks streaming and\n"
+        "  may corrupt the artifact. This applies to html, code, document,\n"
+        "  diff, and mermaid alike.\n"
+        "- WRONG (do not do this):\n"
+        '  [BEGIN_ARTIFACT: html] {"title":"X","content":"<html>...</html>"}\n'
+        "- RIGHT:\n"
+        '  [BEGIN_ARTIFACT: html] {"title":"X"}\n'
+        "  <html>...</html>\n"
         "  [END_ARTIFACT]\n"
-        "The content between BEGIN and END is PLAIN TEXT, not an escaped\n"
-        "JSON string. Write it directly — do NOT wrap in quotes or escape\n"
-        "newlines. The title goes in the JSON header after the type.\n\n"
-        "NON-STREAMING FORMAT — for 'mermaid', 'table', 'json',\n"
-        "'checklist', 'chart', 'quiz' (structured content needing a\n"
-        "complete payload). Use the classic tool-call format:\n"
-        "  [TOOL_CALL: create_artifact] {\"artifact_type\": \"table\", \"title\": \"Servicios\", \"content\": \"{\\\"rows\\\":[...]}\"}\n"
+        '- The title goes in the JSON header: {"title": "..."}.\n'
+        '- For "code" artifacts, also include the language:\n'
+        '  {"title": "...", "language": "python"}\n'
+        '  Supported languages: python, javascript, typescript, java, c, cpp,\n'
+        '  csharp, go, rust, ruby, php, swift, kotlin, scala, r, sql, bash,\n'
+        '  html, css, json, yaml, markdown, xml, plaintext.\n\n'
+        "NON-STREAMING FORMAT — for 'table', 'json', 'checklist', 'chart',\n"
+        "'quiz' (structured content needing a complete payload). Use the\n"
+        "classic tool-call format:\n"
+        '  [TOOL_CALL: create_artifact] {"artifact_type": "table", "title": "Servicios", "content": "{\\"rows\\":[...]}"}\n'
         "The content must be a valid JSON string escaped inside the args.\n"
         "The artifact shows a progress indicator while generating, then\n"
         "renders when complete.\n\n"
@@ -152,7 +199,8 @@ llm_system_prompt: str = os.getenv(
         "- 'table': JSON {\"rows\": [{...}]} — use for tabular data,\n"
         "  comparisons, schedules, or any rows-and-columns data.\n"
         "- 'code': source code text — use for code snippets the user wants\n"
-        "  to see in a dedicated window.\n"
+        "  to see in a dedicated window. Always include the language in the\n"
+        "  JSON header: {\"title\": \"...\", \"language\": \"python\"}.\n"
         "- 'json': JSON string — use to show structured data as an\n"
         "  expandable tree.\n"
         "- 'checklist': JSON {\"items\": [{\"text\": str, \"done\": bool}]} —\n"
@@ -176,15 +224,32 @@ llm_system_prompt: str = os.getenv(
         "'SELECTED ARTIFACTS') lists any artifacts the user currently has\n"
         "selected — if the user says 'add more info to this' or 'modify\n"
         "this artifact', they likely mean one of those.\n\n"
-        "If the user refers to an artifact that is NOT selected (e.g. 'add\n"
+        "If they refer to an artifact that is NOT selected (e.g. 'add\n"
         "a section to the document about X'), call list_artifacts to find\n"
-        "the matching artifact by title or content preview, then\n"
-        "get_artifact to read its full content, and finally update_artifact\n"
-        "with the complete new content.\n\n"
-        "CRITICAL: update_artifact replaces the ENTIRE content. Always\n"
-        "include the original content plus your additions/modifications in\n"
-        "the new content string. Never send only the diff or the new\n"
-        "section — the old content would be lost.\n\n"
+        "the matching artifact by title or content preview (use preview_len\n"
+        "to see more context when searching), then get_artifact to read its\n"
+        "current content, and finally update_artifact.\n\n"
+        "TWO UPDATE MODES — pick one:\n"
+        "- Patch mode (preferred for small, localized changes): pass\n"
+        "  old_string (the exact text to replace in the current content)\n"
+        "  and new_string (the replacement; empty string deletes). Use\n"
+        "  get_artifact with offset+limit to read ONLY the region you need\n"
+        "  to change, then patch just that fragment. This avoids\n"
+        "  regenerating the whole artifact, saves tokens, and reduces the\n"
+        "  risk of losing content.\n"
+        "  - old_string MUST appear exactly once in the current content,\n"
+        "    unless you set replace_all=true (use only when the patch\n"
+        "    should apply to every occurrence).\n"
+        "  - Only works for streamable types (code, document, diff, html,\n"
+        "    mermaid). For table/json/checklist/chart/quiz, use full mode.\n"
+        "- Full mode (for large rewrites, restructuring, or non-streamable\n"
+        "  types): pass content with the ENTIRE new body. Use get_artifact\n"
+        "  (no offset/limit) to read the current content first, then\n"
+        "  produce the full replacement including the original content\n"
+        "  plus your additions/modifications.\n\n"
+        "A unified diff of the applied patch is returned in the tool\n"
+        "output for verification (patch mode only).\n\n"
+        "Do NOT pass both 'content' and 'old_string' — pick one mode.\n\n"
         "ANTI-CONFABULATION RULE (critical):\n"
         "- NEVER claim an artifact is 'shown', 'visible', 'above', or\n"
         "  'on the canvas' unless you emitted [BEGIN_ARTIFACT: ...] or\n"
@@ -241,21 +306,38 @@ nanobot_api_url: str = os.getenv("KALI_NANOBOT_API_URL", "http://127.0.0.1:8765"
 nanobot_token: str = os.getenv("KALI_NANOBOT_TOKEN", "")
 
 # ── TTS (kali-voice) ───────────────────────────────────────
-tts_provider: Literal["inproc", "http"] = os.getenv("KALI_TTS_PROVIDER", "inproc")
+tts_provider: Literal["piper", "inproc", "http", "qwen3", "qwen3-voicedesign"] = os.getenv(
+    "KALI_TTS_PROVIDER", "piper"
+)
 tts_voice: str = os.getenv("KALI_TTS_VOICE", "glados-es")
 tts_mode: str = os.getenv("KALI_TTS_MODE", "normal")
 tts_max_length: int = int(os.getenv("KALI_TTS_MAX_LENGTH", "2000"))
 tts_http_url: str = os.getenv("KALI_TTS_HTTP_URL", "http://localhost:3000")
-tts_enabled: bool = _env_bool("KALI_TTS_ENABLED", True)
+tts_enabled: bool = _env_bool("KALI_TTS_ENABLED", False)
 
 # ── STT (kali-ear) ────────────────────────────────────────
+stt_provider: Literal["vosk", "qwen3"] = os.getenv("KALI_STT_PROVIDER", "vosk")
 stt_model: str = os.getenv("KALI_STT_MODEL", "vosk-model-small-es-0.42")
 stt_model_en: str = os.getenv("KALI_STT_MODEL_EN", "vosk-model-small-en-us-0.15")
 stt_language: str = os.getenv("KALI_STT_LANGUAGE", "es")
 stt_wake_word_enabled: bool = _env_bool("KALI_STT_WAKE_WORD", False)
 stt_wake_word_threshold: float = float(os.getenv("KALI_STT_WAKE_WORD_THRESHOLD", "0.3"))
 stt_wake_word_cooldown: float = float(os.getenv("KALI_STT_WAKE_WORD_COOLDOWN", "2.0"))
-input_mode: str = os.getenv("KALI_INPUT_MODE", "wake_word")
+stt_vad_enabled: bool = _env_bool("KALI_STT_VAD_ENABLED", True)
+stt_vad_mode: int = int(os.getenv("KALI_STT_VAD_MODE", "2"))
+stt_vad_silence_timeout: float = float(os.getenv("KALI_STT_VAD_SILENCE_TIMEOUT", "1.0"))
+stt_vad_auto_calibrate: bool = _env_bool("KALI_STT_VAD_AUTO_CALIBRATE", True)
+stt_vad_rms_threshold: float = float(os.getenv("KALI_STT_VAD_RMS_THRESHOLD", "0.015"))
+input_mode: str = os.getenv("KALI_INPUT_MODE", "ptt")
+
+# ── Qwen3-ASR (only used when KALI_STT_PROVIDER is "qwen3")
+qwen_asr_model: str = os.getenv("KALI_QWEN_ASR_MODEL", "qwen3-asr-0.6b")
+qwen_asr_device: str = os.getenv("KALI_QWEN_ASR_DEVICE", "cpu")
+qwen_asr_streaming: bool = _env_bool("KALI_QWEN_ASR_STREAMING", True)
+qwen_asr_models_dir: str = os.getenv(
+    "KALI_QWEN_ASR_MODELS_DIR",
+    str(Path.home() / ".cache" / "huggingface" / "hub"),
+)
 
 # ── Web tools (kali-claws) ────────────────────────────────
 searxng_url: str = os.getenv("KALI_SEARXNG_URL", "http://127.0.0.1:8080")
@@ -266,16 +348,39 @@ vision_mode: str = os.getenv("KALI_VISION_MODE", "auto")
 # ── Permissions (kali-collar) ──────────────────────────────
 active_profile: str = os.getenv("KALI_PROFILE", "dev")
 
+# ── Canvas / artifacts ────────────────────────────────────
+# When True, applying a patch to an existing artifact also emits a `diff`
+# artifact to the canvas so the user visually sees what changed. Toggled
+# from the UI (Behavior section). Default ON.
+artifact_diff_preview: bool = _env_bool("KALI_ARTIFACT_DIFF_PREVIEW", True)
+
 # ── Paths ─────────────────────────────────────────────────
 data_dir = Path.home() / ".local" / "share" / "kali"
 db_path: str = str(data_dir / "kali.db")
 images_dir: str = str(data_dir / "images")
 snapshots_dir: str = str(data_dir / "snapshots")
 base_dir = Path(__file__).resolve().parent
-voices_dir = base_dir / "voice" / "voices"
+
+# Unified models base: ~/.local/share/kali/models (neutral for native + Docker bind mount)
+_models_base = Path(os.getenv("KALI_MODELS_DIR", str(Path.home() / ".local" / "share" / "kali" / "models")))
+
+# Vosk STT models → ~/.local/share/kali/models/vosk/
+stt_models_dir: str = os.getenv("KALI_STT_MODELS_DIR", str(_models_base / "vosk"))
+
+# Piper TTS voices → ~/.local/share/kali/models/piper-voices/
+voices_dir: str = os.getenv("KALI_VOICES_DIR", str(_models_base / "piper-voices"))
 voice_configs_dir = base_dir / "voice" / "voice_configs"
-stt_models_dir = base_dir / "ear" / "models"
 profiles_dir = base_dir / "collar" / "profiles"
+
+# ── Qwen3-TTS (only used when KALI_TTS_PROVIDER is "qwen3" or "qwen3-voicedesign")
+# Neutral models dir: works natively (XDG) and inside Docker when bind-mounted.
+# Model files are discovered by scanning tts_models_dir for qwen-talker-*.gguf
+# and qwen-tokenizer-12hz-*.gguf — no hardcoded paths needed.
+tts_models_dir: str = os.getenv(
+    "KALI_TTS_MODELS_DIR", str(Path.home() / ".local" / "share" / "kali" / "models")
+)
+qwen_port: int = int(os.getenv("KALI_QWEN_PORT", "8870"))
+qwen_backend: str = os.getenv("KALI_QWEN_BACKEND", "CPU")
 
 
 class _Settings:
@@ -288,6 +393,7 @@ class _Settings:
     llm_api_url = llm_api_url
     llm_api_key = llm_api_key
     llm_model = llm_model
+    llm_max_tokens = llm_max_tokens
     llm_system_prompt = llm_system_prompt
 
     nanobot_ws_url = nanobot_ws_url
@@ -301,17 +407,34 @@ class _Settings:
     tts_http_url = tts_http_url
     tts_enabled = tts_enabled
 
+    tts_models_dir = tts_models_dir
+    qwen_port = qwen_port
+    qwen_backend = qwen_backend
+
+    stt_provider = stt_provider
     stt_model = stt_model
     stt_model_en = stt_model_en
     stt_language = stt_language
     stt_wake_word_enabled = stt_wake_word_enabled
     stt_wake_word_threshold = stt_wake_word_threshold
     stt_wake_word_cooldown = stt_wake_word_cooldown
+    stt_vad_enabled = stt_vad_enabled
+    stt_vad_mode = stt_vad_mode
+    stt_vad_silence_timeout = stt_vad_silence_timeout
+    stt_vad_auto_calibrate = stt_vad_auto_calibrate
+    stt_vad_rms_threshold = stt_vad_rms_threshold
     input_mode = input_mode
+
+    qwen_asr_model = qwen_asr_model
+    qwen_asr_device = qwen_asr_device
+    qwen_asr_streaming = qwen_asr_streaming
+    qwen_asr_models_dir = qwen_asr_models_dir
 
     vision_mode = vision_mode
 
     active_profile = active_profile
+
+    artifact_diff_preview = artifact_diff_preview
 
     searxng_url = searxng_url
 
@@ -323,6 +446,7 @@ class _Settings:
     voices_dir = voices_dir
     voice_configs_dir = voice_configs_dir
     stt_models_dir = stt_models_dir
+    tts_models_dir = tts_models_dir
     profiles_dir = profiles_dir
 
 

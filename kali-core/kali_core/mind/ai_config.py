@@ -22,10 +22,12 @@ _CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "ai_config.json"
 @dataclass
 class AIConfig:
     provider: str = "direct"
-    api_url: str = "http://localhost:11434/v1"
+    api_url: str = ""
     api_key: str = ""
-    model: str = "glm-5.1"
+    model: str = ""
     system_prompt_override: str | None = None
+    max_tokens: int = 16384
+    connection_id: str | None = None
 
     def to_env_map(self) -> dict[str, str]:
         """Return a dict suitable for updating os.environ / dotenv."""
@@ -34,6 +36,7 @@ class AIConfig:
             "KALI_LLM_API_URL": self.api_url,
             "KALI_LLM_API_KEY": self.api_key,
             "KALI_LLM_MODEL": self.model,
+            "KALI_LLM_MAX_TOKENS": str(self.max_tokens),
         }
         if self.system_prompt_override is not None:
             out["KALI_LLM_SYSTEM_PROMPT"] = self.system_prompt_override

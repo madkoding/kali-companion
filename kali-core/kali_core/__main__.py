@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 
 from .config import settings
 from .server import Server
@@ -29,7 +30,11 @@ def main() -> None:
     port = int(os.environ.get("KALI_WS_PORT", settings.port))
     host = os.environ.get("KALI_HOST", settings.host)
     logger.info("kali-core starting on %s:%d", host, port)
-    server = Server(host=host, port=port)
+    try:
+        server = Server(host=host, port=port)
+    except Exception as e:
+        logger.error("kali-core failed to start: %s", e)
+        sys.exit(1)
     asyncio.run(server.run())
 
 

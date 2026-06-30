@@ -32,6 +32,7 @@ class HTTPTTSProvider:
         text: str,
         voice: str,
         mode: str = "normal",
+        language: str = "auto",
     ) -> TTSResult:
         resp = await self._client.post(
             f"{self.url}/v1/text-to-speech/{voice}",
@@ -54,3 +55,44 @@ class HTTPTTSProvider:
         except Exception:
             logger.exception("list_voices failed")
             return []
+
+    async def preview(self, voice_id: str, text: str, language: str = "en", mode: str = "normal") -> bytes:
+        result = await self.synthesize(text, voice_id, mode=mode)
+        return result.audio
+
+    @property
+    def is_loaded(self) -> bool:
+        return True
+
+    @property
+    def device(self) -> str | None:
+        return "cpu"
+
+    @property
+    def loaded_model(self) -> str | None:
+        return "remote"
+
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    @property
+    def last_error(self) -> str | None:
+        return None
+
+    def list_models(self) -> list:
+        from .base import TTSModelInfo
+        return [TTSModelInfo(
+            id="remote",
+            display_name="Remote HTTP Service",
+            estimated_vram_mb=0,
+            available=True,
+            loaded=True,
+            device="cpu",
+        )]
+
+    def load_model(self, model_id: str, device: str = "cpu") -> None:
+        pass
+
+    def unload_model(self) -> None:
+        pass

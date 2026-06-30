@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0b0d12" />
+  <!-- cat head silhouette -->
+  <path d="M22 18 L26 8 L34 16 L44 8 L48 18 C54 24 54 40 46 48 C38 56 26 56 18 48 C10 40 12 24 22 18 Z" fill="#e8a3a5" />
+  <!-- eyes -->
+  <ellipse cx="25" cy="34" rx="4.2" ry="5.6" fill="#2dd4bf" />
+  <ellipse cx="39" cy="34" rx="4.2" ry="5.6" fill="#2dd4bf" />
+  <ellipse cx="25" cy="34" rx="1.2" ry="4.6" fill="#0b0d12" />
+  <ellipse cx="39" cy="34" rx="1.2" ry="4.6" fill="#0b0d12" />
+  <!-- nose -->
+  <path d="M30 44 L34 44 L32 47 Z" fill="#0b0d12" />
+</svg>

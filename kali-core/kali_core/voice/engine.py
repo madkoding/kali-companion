@@ -48,6 +48,11 @@ class PiperEngine:
             logger.error("Error loading voice %s: %s", voice_id, e)
             return None
 
+    def unload_voice(self, voice_id: str) -> None:
+        """Drop a cached voice model from memory."""
+        self._voices.pop(voice_id, None)
+        logger.info("Voice unloaded: %s", voice_id)
+
     def synthesize(
         self,
         voice_id: str,
@@ -55,6 +60,7 @@ class PiperEngine:
         length_scale: float = 1.0,
         noise_scale: float = 0.667,
         noise_w_scale: float = 0.8,
+        speaker_id: int | None = None,
     ) -> bytes:
         """Generate audio in memory as WAV bytes (16-bit PCM)."""
         voice = self._voices.get(voice_id) or self.load_voice(voice_id)
@@ -65,6 +71,7 @@ class PiperEngine:
             length_scale=length_scale,
             noise_scale=noise_scale,
             noise_w_scale=noise_w_scale,
+            speaker_id=speaker_id,
         )
 
         chunks = list(voice.synthesize(text, syn_config=syn_config))

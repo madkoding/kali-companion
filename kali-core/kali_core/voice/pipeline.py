@@ -12,6 +12,7 @@ Inspired by the legacy `nanobot.py:_process_tts` flow.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator
 
 from kali_core.voice.filter import filter_for_tts, segment_for_tts
@@ -31,18 +32,22 @@ class TTSPipeline:
         mode: str = "robotic",
         auto_tts: bool = True,
         max_chunk: int = 500,
+        language: str = "auto",
     ) -> None:
         self.provider = provider
         self.voice = voice
         self.mode = mode
         self.auto_tts = auto_tts
         self.max_chunk = max_chunk
+        self.language = language
 
-    def set_voice(self, voice: str | None = None, mode: str | None = None) -> None:
+    def set_voice(self, voice: str | None = None, mode: str | None = None, language: str | None = None) -> None:
         if voice is not None:
             self.voice = voice
         if mode is not None:
             self.mode = mode
+        if language is not None:
+            self.language = language
 
     def set_auto_tts(self, enabled: bool) -> None:
         self.auto_tts = enabled
@@ -65,14 +70,66 @@ class TTSPipeline:
         if not segments:
             return
 
+        # Defensive voice validation: if the current voice is not valid for
+        # this provider (e.g. after switching providers), try to fall back
+        # to the first available voice instead of failing every segment.
+        effective_voice = self.voice
+        try:
+            name = getattr(self.provider, "provider_name", "")
+            if name == "piper":
+                # Check config manager
+                if hasattr(self.provider, "_config_manager") and self.provider._config_manager.has_voice(effective_voice):
+                    pass # Valid
+                else:
+                    # Check disk
+                    stem = effective_voice.split("::")[0] if "::" in effective_voice else effective_voice
+                    if not (Path(self.provider.voices_dir) / f"{stem}.onnx").exists():
+                        # Try to find ANY voice
+                        onnx_files = sorted(Path(self.provider.voices_dir).glob("*.onnx"))
+                        if onnx_files:
+                            effective_voice = onnx_files[0].stem
+                            logger.warning(
+                                "Voice '%s' not found for piper — falling back to '%s'",
+                                self.voice, effective_voice,
+                            )
+        except Exception:
+            pass  # Can't validate — let the synthesizer try and report
+
+        logger.info(
+            "synthesize_stream start: provider=%s voice=%s mode=%s lang=%s segments=%d",
+            getattr(self.provider, "provider_name", "?"),
+            effective_voice,
+            self.mode,
+            self.language,
+            len(segments),
+        )
+
         for i, segment in enumerate(segments):
             try:
+                t0 = time.perf_counter()
+                logger.info(
+                    "synthesize segment %d: chars=%d voice=%s text_preview=%r",
+                    i, len(segment), effective_voice, segment[:80],
+                )
                 result = await self.provider.synthesize(
                     segment,
-                    voice=self.voice,
+                    voice=effective_voice,
                     mode=self.mode,
+                    language=self.language,
+                )
+                elapsed = time.perf_counter() - t0
+                logger.info(
+                    "synthesize segment %d done: %.3fs bytes=%d",
+                    i, elapsed, len(result.audio),
                 )
                 result.segment = i
                 yield result
             except Exception as exc:
-                logger.error("TTS synthesis failed for segment %d: %s", i, exc)
+                logger.error(
+                    "TTS synthesis failed for segment %d (voice=%s, provider=%s): %s",
+                    i,
+                    self.voice,
+                    getattr(self.provider, "provider_name", "?"),
+                    exc,
+                    exc_info=True,
+                )

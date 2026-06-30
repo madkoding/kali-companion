@@ -57,22 +57,25 @@ class DirectLLMProvider:
 
     provider_name = "direct"
 
-    def __init__(self, *, api_url: str | None = None, api_key: str | None = None, model: str | None = None) -> None:
+    def __init__(self, *, api_url: str | None = None, api_key: str | None = None, model: str | None = None, max_tokens: int | None = None) -> None:
         self._api_url = api_url or settings.llm_api_url
         self._api_key = api_key or settings.llm_api_key
         self._model = model or settings.llm_model
+        self._max_tokens = max_tokens or settings.llm_max_tokens
         self._system_prompt = settings.llm_system_prompt
         self._client = AsyncOpenAI(
             base_url=self._api_url,
             api_key=self._api_key or "unused",
         )
 
-    def reconfigure(self, *, api_url: str, api_key: str, model: str) -> None:
+    def reconfigure(self, *, api_url: str, api_key: str, model: str, max_tokens: int | None = None) -> None:
         """Hot-swap the provider configuration without restarting."""
         old_client = self._client
         self._api_url = api_url
         self._api_key = api_key
         self._model = model
+        if max_tokens is not None:
+            self._max_tokens = max_tokens
         self._client = AsyncOpenAI(
             base_url=self._api_url,
             api_key=self._api_key or "unused",
@@ -179,7 +182,7 @@ class DirectLLMProvider:
                 "messages": full,
                 "stream": True,
                 "temperature": 0.7,
-                "max_tokens": 16384,
+                "max_tokens": self._max_tokens,
             }
             if tools_param:
                 kwargs["tools"] = tools_param
@@ -257,6 +260,19 @@ class DirectLLMProvider:
                     self._model,
                 )
 
+            # Emit token usage stats if available.
+            if hasattr(stream, "usage") and stream.usage:
+                usage = stream.usage
+                reasoning_tokens = None
+                if hasattr(usage, "completion_tokens_details") and usage.completion_tokens_details:
+                    reasoning_tokens = getattr(usage.completion_tokens_details, "reasoning_tokens", None)
+                yield StreamEvent(
+                    kind="usage",
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    reasoning_tokens=reasoning_tokens,
+                )
+
             # Emit accumulated tool calls.
             for idx in sorted(tool_calls_acc):
                 tc = tool_calls_acc[idx]
@@ -325,7 +341,18 @@ class DirectLLMProvider:
             yield StreamEvent(kind="done")
         except Exception as exc:
             logger.error("LLM error: %s", exc)
-            yield StreamEvent(kind="delta", text=f"[LLM error: {exc}]")
+            # Provide a user-friendly message instead of raw exception text.
+            if "connection" in str(exc).lower() or "timeout" in str(exc).lower():
+                msg = (
+                    "No pude conectar con el modelo de IA. "
+                    "Verifica que el endpoint esté activo y accesible."
+                    if self._api_url and not self._api_url.startswith("http://localhost")
+                    else "No pude conectar con el modelo de IA. "
+                    "Verifica que el servidor local esté corriendo."
+                )
+            else:
+                msg = f"Error del modelo de IA: {exc}"
+            yield StreamEvent(kind="delta", text=msg)
             yield StreamEvent(kind="done")
 
     def _maybe_stream_artifact_tool(
@@ -382,9 +409,17 @@ class DirectLLMProvider:
                     # Emit the synthetic BEGIN_ARTIFACT marker.
                     atype = parser.artifact_type
                     title = parser.title or ""
+                    language = parser.language or ""
+                    if language:
+                        header = (
+                            f'{{"title":"{title}",'
+                            f'"language":"{language}"}}'
+                        )
+                    else:
+                        header = f'{{"title":"{title}"}}'
                     yield StreamEvent(
                         kind="delta",
-                        text=f'[BEGIN_ARTIFACT: {atype}] {{"title":"{title}"}} ',
+                        text=f"[BEGIN_ARTIFACT: {atype}] {header} ",
                     )
                     acc["art_streaming"] = True
                 # Emit the unescaped content chunk as a synthetic delta.
@@ -418,7 +453,7 @@ class DirectLLMProvider:
                 "model": self._model,
                 "messages": full,
                 "temperature": 0.7,
-                "max_tokens": 16384,
+                "max_tokens": self._max_tokens,
             }
             if tools_param:
                 kwargs["tools"] = tools_param
@@ -438,4 +473,6 @@ class DirectLLMProvider:
             }
         except Exception as exc:
             logger.error("LLM error: %s", exc)
-            return {"text": f"[LLM error: {exc}]"}
+            if "connection" in str(exc).lower() or "timeout" in str(exc).lower():
+                return {"text": "No pude conectar con el modelo de IA. Verifica que el endpoint esté activo."}
+            return {"text": f"Error del modelo de IA: {exc}"}

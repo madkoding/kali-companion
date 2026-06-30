@@ -1,0 +1,28 @@
+# =============================================================================
+# Kali — Docker Compose Override (Desarrollo)
+# =============================================================================
+# Monta el código fuente como volumen para hot-reload durante desarrollo.
+# No usar en producción.
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml --profile piper up
+# =============================================================================
+
+services:
+  kali:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: builder  # usa la etapa builder para tener herramientas de compilación
+
+    volumes:
+      # Montar código fuente para iteración rápida
+      - ../kali-core:/app/kali-core
+      - ../kali-web/src:/app/kali-web/src
+      - kali-models:/app/models
+      - kali-data:/app/data
+      - /dev/snd:/dev/snd
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/pulse:${XDG_RUNTIME_DIR:-/run/user/1000}/pulse
+
+    environment:
+      - KALI_PROFILE=dev

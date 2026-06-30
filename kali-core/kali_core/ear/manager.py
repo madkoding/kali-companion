@@ -12,13 +12,14 @@ import re
 import time
 
 from kali_core.config import settings
+from kali_core.lang_map import normalize
 
 from .vosk_engine import StreamingSTT
 
 logger = logging.getLogger("kali_core.ear.manager")
 
-# Trigger words checked in every partial / final result.
-_TRIGGER_WORDS = ["kali", "cali"]
+# Trigger pattern: ok-variant followed by kali/cali.
+_OK_TRIGGER = re.compile(r"\b(?:ok(?:ay|ey|ei)?)\b.*\b(?:kali|cali)\b", re.IGNORECASE)
 
 # Map language code → default Vosk model name.
 _LANG_MODELS: dict[str, str] = {
@@ -29,6 +30,7 @@ _LANG_MODELS: dict[str, str] = {
 
 def model_for_language(lang: str) -> str:
     """Return the Vosk model name for a language code."""
+    lang = normalize(lang)
     if lang == "es":
         return settings.stt_model
     if lang == "en":
@@ -46,7 +48,7 @@ class STTManager:
 
     def set_language(self, lang: str) -> None:
         """Switch the active language (takes effect on next session)."""
-        self.language = lang
+        self.language = normalize(lang)
         self.model_name = model_for_language(lang)
 
     def start_session(self) -> StreamingSTT:
@@ -117,14 +119,8 @@ class WakeWordDetector:
 
     @staticmethod
     def _contains_trigger(text: str) -> bool:
-        """Return ``True`` if *text* contains a trigger word at a word boundary."""
-        words = re.findall(r"[a-zA-Záéíóúüñ]+", text)
-        for w in words:
-            wl = w.lower()
-            for tw in _TRIGGER_WORDS:
-                if wl == tw:
-                    return True
-        return False
+        """Return ``True`` if *text* matches "ok [kali|cali]" pattern."""
+        return bool(_OK_TRIGGER.search(text))
 
     # ── public API ─────────────────────────────────────────────────────
 
