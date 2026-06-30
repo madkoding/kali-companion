@@ -18,8 +18,8 @@ from .vosk_engine import StreamingSTT
 
 logger = logging.getLogger("kali_core.ear.manager")
 
-# Trigger words checked in every partial / final result.
-_TRIGGER_WORDS = ["kali", "cali"]
+# Trigger pattern: ok-variant followed by kali/cali.
+_OK_TRIGGER = re.compile(r"\b(?:ok(?:ay|ey|ei)?)\b.*\b(?:kali|cali)\b", re.IGNORECASE)
 
 # Map language code → default Vosk model name.
 _LANG_MODELS: dict[str, str] = {
@@ -119,14 +119,8 @@ class WakeWordDetector:
 
     @staticmethod
     def _contains_trigger(text: str) -> bool:
-        """Return ``True`` if *text* contains a trigger word at a word boundary."""
-        words = re.findall(r"[a-zA-Záéíóúüñ]+", text)
-        for w in words:
-            wl = w.lower()
-            for tw in _TRIGGER_WORDS:
-                if wl == tw:
-                    return True
-        return False
+        """Return ``True`` if *text* matches "ok [kali|cali]" pattern."""
+        return bool(_OK_TRIGGER.search(text))
 
     # ── public API ─────────────────────────────────────────────────────
 

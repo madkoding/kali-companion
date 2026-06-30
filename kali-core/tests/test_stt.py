@@ -109,15 +109,22 @@ def test_wake_word_detector_full_vocab():
 
 
 def test_contains_trigger():
-    assert WakeWordDetector._contains_trigger("hey kali")
+    assert WakeWordDetector._contains_trigger("ok kali")
     assert WakeWordDetector._contains_trigger("ok cali")
-    assert WakeWordDetector._contains_trigger("oye Kali")
-    assert WakeWordDetector._contains_trigger("kali!")
-    assert WakeWordDetector._contains_trigger("hi cali")
+    assert WakeWordDetector._contains_trigger("okay kali")
+    assert WakeWordDetector._contains_trigger("okey cali")
+    assert WakeWordDetector._contains_trigger("okei kali")
+    assert WakeWordDetector._contains_trigger("OK Kali")
+    assert not WakeWordDetector._contains_trigger("hey kali")
+    assert not WakeWordDetector._contains_trigger("oye Kali")
+    assert not WakeWordDetector._contains_trigger("kali!")
+    assert not WakeWordDetector._contains_trigger("hi cali")
     assert not WakeWordDetector._contains_trigger("hello world")
     assert not WakeWordDetector._contains_trigger("")
     assert not WakeWordDetector._contains_trigger("california")
-    assert WakeWordDetector._contains_trigger("Kali está aquí")
+    assert not WakeWordDetector._contains_trigger("Kali está aquí")
+    assert not WakeWordDetector._contains_trigger("kali")
+    assert not WakeWordDetector._contains_trigger("cali")
 
 
 def test_extract_text():
