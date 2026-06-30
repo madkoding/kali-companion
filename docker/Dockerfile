@@ -11,7 +11,7 @@
 #
 # Run (Piper TTS, default):
 #   docker run -d --name kali \
-#     -p 8900:8900 -p 8080:80 \
+#     -p 8900:8900 -p 8080:8080 \
 #     -v kali-models:/app/models \
 #     -v kali-data:/app/data \
 #     --device /dev/snd \
@@ -19,7 +19,7 @@
 #
 # Run (Qwen3 TTS):
 #   docker run -d --name kali \
-#     -p 8900:8900 -p 8080:80 \
+#     -p 8900:8900 -p 8080:8080 \
 #     -v kali-models:/app/models \
 #     -v kali-data:/app/data \
 #     --device /dev/snd \
@@ -37,6 +37,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     g++ \
     git \
+    make \
+    pkg-config \
+    nodejs \
+    npm \
     libopenblas-dev \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -71,6 +75,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Runtime deps: nginx, audio (ALSA + PulseAudio), BLAS, download tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
+    build-essential \
     libopenblas0 \
     libasound2 \
     libpulse0 \
@@ -88,6 +93,9 @@ RUN useradd --create-home --uid 1000 --shell /bin/bash kali
 # App directories
 RUN mkdir -p /app/kali-core /app/kali-web /app/models /app/data \
     && chown -R kali:kali /app
+
+# Nginx tmp dir (logs go to stdout/stderr, pid+temps to /tmp/nginx)
+RUN mkdir -p /tmp/nginx && chown kali:kali /tmp/nginx
 
 # Set HOME so Path.home() resolves to /home/kali.
 # The entrypoint symlinks ~/.local/share/kali → /app/data for persistence.
@@ -107,15 +115,19 @@ COPY --chown=kali:kali kali-core/ /app/kali-core/
 # Copy scripts for model downloads
 COPY --chown=kali:kali scripts/ /app/scripts/
 
+# README needed by hatchling build metadata (pyproject.toml: readme = "../README.md")
+COPY --chown=kali:kali README.md /app/README.md
+
 # Install kali-core + deps
 RUN pip install --no-cache-dir \
-    -e /app/kali-core \
+    /app/kali-core \
     piper-tts \
     numpy \
     scipy \
     vosk
 
-# Copy and configure nginx
+# Copy and configure nginx (non-root: logs to stdout/stderr, pid+temps to /tmp)
+COPY docker/nginx-main.conf /etc/nginx/nginx.conf
 COPY docker/nginx.conf /etc/nginx/sites-available/default
 RUN rm -f /etc/nginx/sites-enabled/default \
     && ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
@@ -126,8 +138,8 @@ RUN chmod +x /app/entrypoint.sh
 
 # Expose ports
 # 8900 = kali-core WebSocket + HTTP API
-# 80   = nginx (kali-web static files + WS proxy)
-EXPOSE 8900 80
+# 8080 = nginx (kali-web static files + WS proxy)
+EXPOSE 8900 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

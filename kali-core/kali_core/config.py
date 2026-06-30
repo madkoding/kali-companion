@@ -306,8 +306,8 @@ nanobot_api_url: str = os.getenv("KALI_NANOBOT_API_URL", "http://127.0.0.1:8765"
 nanobot_token: str = os.getenv("KALI_NANOBOT_TOKEN", "")
 
 # ── TTS (kali-voice) ───────────────────────────────────────
-tts_provider: Literal["inproc", "http", "qwen3", "qwen3-voicedesign"] = os.getenv(
-    "KALI_TTS_PROVIDER", "inproc"
+tts_provider: Literal["piper", "inproc", "http", "qwen3", "qwen3-voicedesign"] = os.getenv(
+    "KALI_TTS_PROVIDER", "piper"
 )
 tts_voice: str = os.getenv("KALI_TTS_VOICE", "glados-es")
 tts_mode: str = os.getenv("KALI_TTS_MODE", "normal")
@@ -368,7 +368,6 @@ profiles_dir = base_dir / "collar" / "profiles"
 # ── Qwen3-TTS (only used when KALI_TTS_PROVIDER is "qwen3" or "qwen3-voicedesign")
 _qwen_base = base_dir / "voice" / "qwen_cpp"
 _qwen_models = base_dir / "voice" / "qwen_models"
-qwen_binary: str = os.getenv("KALI_QWEN_BINARY", str(_qwen_base / "build" / "tts-server"))
 qwen_talker_model: str = os.getenv(
     "KALI_QWEN_TALKER_MODEL",
     str(_qwen_models / "qwen-talker-0.6b-customvoice-Q4_K_M.gguf"),
@@ -409,7 +408,6 @@ class _Settings:
     tts_http_url = tts_http_url
     tts_enabled = tts_enabled
 
-    qwen_binary = qwen_binary
     qwen_talker_model = qwen_talker_model
     qwen_voicedesign_model = qwen_voicedesign_model
     qwen_codec_model = qwen_codec_model

@@ -24,7 +24,7 @@ services:
 
     ports:
       - "${KALI_PORT:-8900}:8900"   # kali-core WebSocket + HTTP API
-      - "${KALI_WEB_PORT:-8080}:80"  # nginx (kali-web frontend)
+      - "${KALI_WEB_PORT:-8080}:8080"  # nginx (kali-web frontend)
 
     volumes:
       # Modelos (Piper .onnx, Vosk, Qwen3 .gguf) — se descargan en el primer arranque
@@ -32,9 +32,6 @@ services:
 
       # Datos persistentes (SQLite sessions, ai_config.json, snapshots, imágenes)
       - kali-data:/app/data
-
-      # Audio: ALSA (micrófono)
-      - /dev/snd:/dev/snd
 
       # Audio: PulseAudio socket (para compartir audio con el host)
       - ${XDG_RUNTIME_DIR:-/run/user/1000}/pulse:${XDG_RUNTIME_DIR:-/run/user/1000}/pulse
@@ -59,14 +56,13 @@ services:
       # ── Qwen3-TTS (solo si KALI_TTS_PROVIDER=qwen3*) ──
       - KALI_QWEN_BACKEND=${KALI_QWEN_BACKEND:-CPU}
       - KALI_QWEN_PORT=${KALI_QWEN_PORT:-8870}
-      - KALI_QWEN_BINARY=${KALI_QWEN_BINARY:-/app/qwen-cpp/build/tts-server}
       - KALI_QWEN_TALKER_MODEL=${KALI_QWEN_TALKER_MODEL:-/app/models/qwen-talker-0.6b-customvoice-Q4_K_M.gguf}
       - KALI_QWEN_VOICEDESIGN_MODEL=${KALI_QWEN_VOICEDESIGN_MODEL:-/app/models/qwen-talker-1.7b-voicedesign-Q4_K_M.gguf}
       - KALI_QWEN_CODEC_MODEL=${KALI_QWEN_CODEC_MODEL:-/app/models/qwen-tokenizer-12hz-Q4_K_M.gguf}
 
       # ── LLM ──
       - KALI_LLM_PROVIDER=${KALI_LLM_PROVIDER:-direct}
-      - KALI_LLM_API_URL=${KALI_LLM_API_URL:-http://localhost:11434/v1}
+      - KALI_LLM_API_URL=${KALI_LLM_API_URL:-http://host.docker.internal:11434/v1}
       - KALI_LLM_API_KEY=${KALI_LLM_API_KEY:-}
       - KALI_LLM_MODEL=${KALI_LLM_MODEL:-glm-5.1}
 
@@ -80,9 +76,9 @@ services:
     devices:
       - /dev/snd:/dev/snd
 
-    # Usar network_mode: host simplifica la conexión a Ollama en localhost:11434
-    # Comenta esta línea si prefieres usar el puente de Docker y host.docker.internal
-    network_mode: host
+    # Bridge network + host access (Ollama, etc.)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   kali-models:

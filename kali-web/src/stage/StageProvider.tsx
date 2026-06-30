@@ -5,7 +5,6 @@
 //   - URL <-> session sync
 //   - PTT final transcript -> chat.send
 //   - wake-word barge-in (stop TTS + chat)
-//   - voices list fetch
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -26,10 +25,13 @@ interface StageContextValue {
   chat: ChatState;
   tts: TtsPlaybackState & { stop: () => void };
   ptt: PTTControls;
-  voices: Record<string, unknown>[];
   customVoices: CustomVoice[];
   sttLanguage: string;
   ttsProvider: string;
+  ttsModel: string | null;
+  ttsLoaded: boolean;
+  ttsAvailable: boolean;
+  ttsVariant: string | null;
   sttProvider: string;
   connections: ConnectionSummary[];
   activeConnectionId: string | null;
@@ -68,7 +70,6 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const tts = useTTS(chat.subscribeTts, chat.onTtsEnded);
   const navigate = useNavigate();
   const { sid: urlSid } = useParams<{ sid?: string }>();
-  const [voices, setVoices] = useState<Record<string, unknown>[]>([]);
   const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
   const [connections, setConnections] = useState<ConnectionSummary[]>([]);
   const [cloudProviders, setCloudProviders] = useState<CloudProviderInfo[]>([]);
@@ -178,36 +179,27 @@ export function StageProvider({ children }: { children: ReactNode }) {
     }
   }, [ptt.finalText, chat]);
 
-  // Voices list (one-shot). Waits until the core is ready so the
-  // fetch doesn't race a sidecar that is still booting.
-  useEffect(() => {
-    if (chat.status !== "ready") return;
-    async function fetchVoices() {
-      const port = await getSidecarPort();
-      const host = window.location.hostname;
-      const resp = await fetchWithRetry(`http://${host}:${port ?? 8900}/voices`);
-      if (!resp) return;
-      try {
-        const data = await resp.json();
-        if (data.voices && Array.isArray(data.voices)) {
-          setVoices(data.voices as Record<string, unknown>[]);
-        }
-      } catch {
-        // keep default empty
-      }
-    }
-    void fetchVoices();
-  }, [chat.status]);
-
   // Custom voices list (one-shot + refresh on event). Also gated on
   // chat.status === "ready" to avoid racing the sidecar boot.
+  const sttLanguage = chat.systemStatus?.stt_language ?? "en";
+  const ttsProvider = chat.systemStatus?.tts_provider ?? "piper";
+  const ttsModel = chat.systemStatus?.tts_model ?? null;
+  const ttsLoaded = chat.systemStatus?.tts_loaded ?? false;
+  const ttsAvailable = chat.systemStatus?.tts_available ?? true;
+  const ttsVariant = chat.systemStatus?.tts_variant ?? null;
+  const sttProvider = chat.systemStatus?.stt_provider ?? "vosk";
+
   useEffect(() => {
     if (chat.status !== "ready") return;
     async function fetchCustomVoices() {
+      if (ttsProvider !== "qwen3" || ttsVariant !== "voicedesign") {
+        setCustomVoices([]);
+        return;
+      }
       const port = await getSidecarPort();
       const host = window.location.hostname;
       const resp = await fetchWithRetry(
-        `http://${host}:${port ?? 8900}/voices/custom?provider=qwen3-voicedesign`,
+        `http://${host}:${port ?? 8900}/voices/custom?provider=qwen3`,
       );
       if (!resp) return;
       try {
@@ -224,21 +216,21 @@ export function StageProvider({ children }: { children: ReactNode }) {
     const handler = () => void fetchCustomVoices();
     window.addEventListener("refresh-custom-voices", handler);
     return () => window.removeEventListener("refresh-custom-voices", handler);
-  }, [chat.status]);
+  }, [chat.status, ttsProvider, ttsVariant]);
 
-  const sttLanguage = chat.systemStatus?.stt_language ?? "en";
-  const ttsProvider = chat.systemStatus?.tts_provider ?? "inproc";
-  const sttProvider = chat.systemStatus?.stt_provider ?? "vosk";
   const activeConnectionId = chat.systemStatus?.llm_connection_id ?? null;
   const configWarnings = chat.systemStatus?.config_warnings ?? [];
   const value: StageContextValue = {
     chat,
     tts,
     ptt,
-    voices,
     customVoices,
     sttLanguage,
     ttsProvider,
+    ttsModel,
+    ttsLoaded,
+    ttsAvailable,
+    ttsVariant,
     sttProvider,
     connections,
     activeConnectionId,

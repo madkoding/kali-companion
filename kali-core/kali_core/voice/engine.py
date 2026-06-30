@@ -48,6 +48,11 @@ class PiperEngine:
             logger.error("Error loading voice %s: %s", voice_id, e)
             return None
 
+    def unload_voice(self, voice_id: str) -> None:
+        """Drop a cached voice model from memory."""
+        self._voices.pop(voice_id, None)
+        logger.info("Voice unloaded: %s", voice_id)
+
     def synthesize(
         self,
         voice_id: str,

@@ -18,7 +18,6 @@ import sys
 
 from .config import settings
 from .server import Server
-from .voice.providers.qwen import StartupError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,8 +32,8 @@ def main() -> None:
     logger.info("kali-core starting on %s:%d", host, port)
     try:
         server = Server(host=host, port=port)
-    except StartupError as e:
-        logger.error(str(e))
+    except Exception as e:
+        logger.error("kali-core failed to start: %s", e)
         sys.exit(1)
     asyncio.run(server.run())
 

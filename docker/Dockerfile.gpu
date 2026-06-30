@@ -4,14 +4,20 @@
 # Kali — AI Voice Companion (GPU / CUDA)
 # =============================================================================
 # Multi-stage build with CUDA support for Qwen3-TTS and future STT/ASR.
-# Requires nvidia-container-toolkit on the host.
+# Requires nvidia-container-toolkit on the host (≥ v1.14).
+# Host NVIDIA driver ≥ 545.23 (CUDA 12.6 minimum).
+#
+# Note: nvidia-smi is NOT bundled in the runtime image — it comes from the
+# host driver. If device enumeration APIs return empty, GPU inference still
+# works; the C++ binary accesses CUDA directly via libcuda.so (mounted by
+# nvidia-container-toolkit).
 #
 # Build:
 #   docker build -f docker/Dockerfile.gpu -t kali:gpu .
 #
 # Run:
 #   docker run -d --name kali --gpus all \
-#     -p 8900:8900 -p 8080:80 \
+#     -p 8900:8900 -p 8080:8080 \
 #     -v kali-models:/app/models \
 #     -v kali-data:/app/data \
 #     --device /dev/snd \
@@ -30,6 +36,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     g++ \
     git \
+    make \
+    pkg-config \
+    nodejs \
+    npm \
     libopenblas-dev \
     python3 \
     python3-venv \
@@ -67,11 +77,6 @@ RUN mkdir build && cd build \
     && cmake .. -DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS \
     && cmake --build . --config Release -j "$(nproc)"
 
-# Build kali-web frontend (need Node in builder)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    nodejs npm \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /build/kali-web
 COPY kali-web/package.json kali-web/package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
@@ -87,12 +92,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Runtime deps: nginx, audio, BLAS, Python, download tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
+    build-essential \
     libopenblas0 \
-    libasound2 \
+    libasound2t64 \
     libpulse0 \
     pulseaudio-utils \
     alsa-utils \
     python3 \
+    python3-dev \
     python3-venv \
     python3-pip \
     curl \
@@ -102,11 +109,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd --create-home --uid 1000 --shell /bin/bash kali
+RUN useradd --create-home --uid 1001 --shell /bin/bash kali
 
 # App directories
 RUN mkdir -p /app/kali-core /app/kali-web /app/models /app/data \
     && chown -R kali:kali /app
+
+# Nginx tmp dir (logs go to stdout/stderr, pid+temps to /tmp/nginx)
+RUN mkdir -p /tmp/nginx && chown kali:kali /tmp/nginx
 
 # Set HOME so Path.home() resolves to /home/kali.
 # The entrypoint symlinks ~/.local/share/kali → /app/data for persistence.
@@ -127,15 +137,19 @@ COPY --chown=kali:kali kali-core/ /app/kali-core/
 # Copy scripts for model downloads
 COPY --chown=kali:kali scripts/ /app/scripts/
 
-# Install kali-core + deps
+# README needed by hatchling build metadata (pyproject.toml: readme = "../README.md")
+COPY --chown=kali:kali README.md /app/README.md
+
+# Install kali-core + deps (incl. qwen-stt extras for torch + HF transformers GPU STT)
 RUN pip install --no-cache-dir --break-system-packages \
-    -e /app/kali-core \
+    "/app/kali-core[qwen-stt]" \
     piper-tts \
     numpy \
     scipy \
     vosk
 
-# Copy and configure nginx
+# Copy and configure nginx (non-root: logs to stdout/stderr, pid+temps to /tmp)
+COPY docker/nginx-main.conf /etc/nginx/nginx.conf
 COPY docker/nginx.conf /etc/nginx/sites-available/default
 RUN rm -f /etc/nginx/sites-enabled/default \
     && ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
@@ -145,7 +159,7 @@ COPY --chown=kali:kali docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Expose ports
-EXPOSE 8900 80
+EXPOSE 8900 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

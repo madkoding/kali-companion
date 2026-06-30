@@ -154,9 +154,9 @@ if [ -x "$BINARY" ]; then
   echo "=== Build complete ==="
   echo "Binary: $BINARY"
   echo ""
-  echo "To use with kali, set in your .env:"
-  echo "  KALI_TTS_PROVIDER=qwen3"
-  echo "  KALI_QWEN_BINARY=$BINARY"
+  echo "The binary is auto-resolved by kali based on KALI_QWEN_BACKEND:"
+  echo "  CPU build  -> build/tts-server     (when KALI_QWEN_BACKEND=CPU)"
+  echo "  GPU build  -> build-gpu/tts-server (when KALI_QWEN_BACKEND=CUDA0)"
 else
   echo "ERROR: Build failed - tts-server binary not found at $BINARY"
   exit 1

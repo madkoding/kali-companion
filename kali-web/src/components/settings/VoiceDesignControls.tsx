@@ -22,7 +22,7 @@ export function VoiceDesignControls({
   onSeedChange = () => {},
   customVoices = [],
   sttLanguage = "en",
-  ttsProvider = "qwen3-voicedesign",
+  ttsProvider = "qwen3",
   onCustomVoicesChange = () => {},
 }: {
   presets: VoiceDesignPreset[];
@@ -70,6 +70,7 @@ export function VoiceDesignControls({
             instructions: currentInstructions,
             seed: currentSeed,
             language: sttLanguage,
+            provider: ttsProvider,
           }),
         },
       );
@@ -111,7 +112,7 @@ export function VoiceDesignControls({
       setPreviewLoading(false);
       setPlaying(false);
     }
-  }, [sttLanguage]);
+  }, [sttLanguage, ttsProvider]);
 
   const handlePreview = useCallback(() => {
     if (playing) {
