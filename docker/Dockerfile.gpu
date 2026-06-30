@@ -109,7 +109,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd --create-home --uid 1001 --shell /bin/bash kali
+RUN useradd --create-home --uid 1000 --shell /bin/bash kali
 
 # App directories
 RUN mkdir -p /app/kali-core /app/kali-web /app/models /app/data \
