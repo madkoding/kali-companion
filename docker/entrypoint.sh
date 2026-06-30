@@ -7,7 +7,7 @@
 # 3. Arranca nginx + kali-core
 # 4. Captura SIGTERM/SIGINT para graceful shutdown
 # =============================================================================
-set -euo pipefail
+set -uo pipefail
 
 APP_DIR="/app"
 MODELS_DIR="/app/models"
@@ -56,10 +56,12 @@ download_vosk_models() {
         mkdir -p "$MODELS_DIR"
         local tmp
         tmp="$(mktemp -d)"
-        curl -L -o "$tmp/model.zip" "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip"
-        unzip -q "$tmp/model.zip" -d "$MODELS_DIR"
+        if curl -L -o "$tmp/model.zip" "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip" && unzip -q "$tmp/model.zip" -d "$MODELS_DIR"; then
+            log "STT model (es) installed"
+        else
+            warn "Failed to download STT model (es) — continuing without it"
+        fi
         rm -rf "$tmp"
-        log "STT model (es) installed"
     fi
 
     if [ -d "$en_dir" ] && [ -f "$en_dir/am/final.mdl" ]; then
@@ -69,10 +71,12 @@ download_vosk_models() {
         mkdir -p "$MODELS_DIR"
         local tmp
         tmp="$(mktemp -d)"
-        curl -L -o "$tmp/model.zip" "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
-        unzip -q "$tmp/model.zip" -d "$MODELS_DIR"
+        if curl -L -o "$tmp/model.zip" "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip" && unzip -q "$tmp/model.zip" -d "$MODELS_DIR"; then
+            log "STT model (en) installed"
+        else
+            warn "Failed to download STT model (en) — continuing without it"
+        fi
         rm -rf "$tmp"
-        log "STT model (en) installed"
     fi
 }
 
@@ -89,12 +93,14 @@ download_piper_voices() {
     log "Downloading Piper voice model (es_ES-davefx-medium)..."
     mkdir -p "$voices_dir"
 
-    curl -L -o "$model_file" \
-        "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx"
-    curl -L -o "$config_file" \
-        "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json"
-
-    log "Piper voice model installed"
+    if curl -L -o "$model_file" \
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx" && \
+       curl -L -o "$config_file" \
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json"; then
+        log "Piper voice model installed"
+    else
+        warn "Failed to download Piper voice model — continuing without it"
+    fi
 }
 
 download_qwen_models() {
@@ -163,14 +169,20 @@ QWEN_PID=""
 
 start_qwen_server() {
     local binary="${KALI_QWEN_BINARY:-/app/qwen-cpp/build/tts-server}"
-    local talker="${KALI_QWEN_TALKER_MODEL:-/app/models/qwen-talker-0.6b-customvoice-Q4_K_M.gguf}"
-    local codec="${KALI_QWEN_CODEC_MODEL:-/app/models/qwen-tokenizer-12hz-Q4_K_M.gguf}"
     local port="${KALI_QWEN_PORT:-8870}"
     local backend="${KALI_QWEN_BACKEND:-CPU}"
 
+    # Discover talker model in /app/models/ based on TTS provider.
+    local talker=""
     if [ "$tts_provider" = "qwen3-voicedesign" ]; then
-        talker="${KALI_QWEN_VOICEDESIGN_MODEL:-/app/models/qwen-talker-1.7b-voicedesign-Q4_K_M.gguf}"
+        talker="$(ls "$MODELS_DIR"/qwen-talker-1.7b-voicedesign-*.gguf 2>/dev/null | head -1)"
+    else
+        talker="$(ls "$MODELS_DIR"/qwen-talker-0.6b-customvoice-*.gguf 2>/dev/null | head -1)"
     fi
+
+    # Discover codec/tokenizer.
+    local codec
+    codec="$(ls "$MODELS_DIR"/qwen-tokenizer-12hz-*.gguf 2>/dev/null | head -1)"
 
     if [ ! -x "$binary" ]; then
         err "Qwen3 binary not found: $binary"
@@ -294,24 +306,15 @@ log " Data dir:     ${DATA_DIR}"
 log "============================================"
 
 # Ensure data directories exist
-mkdir -p "$DATA_DIR" "$MODELS_DIR"
+mkdir -p "$DATA_DIR" "$MODELS_DIR" "$MODELS_DIR/vosk" "$MODELS_DIR/piper-voices"
 
 # Symlink ~/.local/share/kali → /app/data so Path.home() resolves correctly
 # without modifying config.py
 mkdir -p "$HOME/.local/share"
 ln -sfn "$DATA_DIR" "$HOME/.local/share/kali"
 
-# Download models
-log "Checking models..."
-download_stt_models
-download_piper_voices
-
-if [ "$tts_provider" = "qwen3" ] || [ "$tts_provider" = "qwen3-voicedesign" ]; then
-    download_qwen_models
-fi
-
-# Symlink models to expected locations
-setup_model_symlinks
+# Models are downloaded from the UI — no auto-download at startup.
+log "Models are managed from the Settings UI."
 
 # Start Qwen3 C++ server if needed
 if [ "$tts_provider" = "qwen3" ] || [ "$tts_provider" = "qwen3-voicedesign" ]; then

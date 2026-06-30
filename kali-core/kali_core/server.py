@@ -117,20 +117,36 @@ def _validate_voice_for_provider(voice: str, provider) -> str:
             return voice
         raise ValueError(f"Voice '{voice}' is not valid for qwen3 provider.")
     if name == "piper":
-        # Piper voices are discovered from .onnx files in the voices dir.
-        # list_voices is async, but the underlying VoiceConfigManager
-        # has a sync list_voices we can use.
+        # Piper voices are discovered from .onnx files in the voices dir
+        # or from voice_configs. The provider already handles this.
         try:
-            from kali_core.voice.voice_config import VoiceConfigManager
-            vm = VoiceConfigManager(provider.voices_dir)
-            valid = {v["id"] for v in vm.list_voices()}
-            if voice in valid:
+            # We use the provider's list_voices which is now dynamic.
+            # Since _validate_voice_for_provider is sync, and list_voices
+            # is async in the provider (due to other providers), but for
+            # Piper it just returns a list, we might need to handle it.
+            # Actually, PiperTTSProvider.list_voices is async.
+            # For validation, we can use the sync config manager or 
+            # just allow it if it matches the dynamic pattern.
+            
+            # Better: use the voice_configs manager but ALSO check 
+            # if the model exists on disk.
+            if hasattr(provider, "_config_manager"):
+                if provider._config_manager.has_voice(voice):
+                    return voice
+            
+            # Pattern check for dynamic voices: model or model::speaker
+            if "::" in voice:
+                stem = voice.split("::")[0]
+            else:
+                stem = voice
+            
+            if (Path(provider.voices_dir) / f"{stem}.onnx").exists():
                 return voice
-            raise ValueError(f"Voice '{voice}' is not valid for piper provider. Available: {sorted(valid)}.")
+
+            raise ValueError(f"Voice '{voice}' is not valid for piper provider.")
         except ValueError:
             raise
         except Exception:
-            # Can't enumerate — let it pass; the synthesizer will report the error.
             return voice
     return voice
 
@@ -148,11 +164,16 @@ def _first_available_voice(provider) -> str | None:
         return None
     if name == "piper":
         try:
-            from kali_core.voice.voice_config import VoiceConfigManager
-            vm = VoiceConfigManager(provider.voices_dir)
-            voices = vm.list_voices()
-            if voices:
-                return voices[0]["id"]
+            # 1. Try configured voices
+            if hasattr(provider, "_config_manager"):
+                voices = provider._config_manager.list_voices()
+                if voices:
+                    return voices[0]["voice_id"]
+            
+            # 2. Try discovered models
+            onnx_files = sorted(Path(provider.voices_dir).glob("*.onnx"))
+            if onnx_files:
+                return onnx_files[0].stem
             return None
         except Exception:
             return None
@@ -187,10 +208,13 @@ def _build_tts_provider():
         return HTTPTTSProvider()
     if settings.tts_provider in ("qwen3", "qwen3-voicedesign"):
         voice_design = settings.tts_provider == "qwen3-voicedesign"
-        talker_models_dir = Path(settings.qwen_talker_model).parent
+        # Discover codec/tokenizer in the models dir.
+        models_dir = Path(settings.tts_models_dir)
+        codec_files = list(models_dir.glob("qwen-tokenizer-12hz-*.gguf")) if models_dir.exists() else []
+        codec_model = str(codec_files[0]) if codec_files else str(models_dir / "qwen-tokenizer-12hz-Q4_K_M.gguf")
         return QwenTTSProvider(
-            talker_models_dir=talker_models_dir,
-            codec_model=settings.qwen_codec_model,
+            talker_models_dir=settings.tts_models_dir,
+            codec_model=codec_model,
             port=settings.qwen_port,
             backend=settings.qwen_backend,
             voice_design=voice_design,
@@ -639,19 +663,29 @@ class Server:
 
         @self.app.get("/voices")
         async def voices(provider: str | None = None, variant: str | None = None) -> dict[str, Any]:
+            from kali_core.voice.providers import get_tts_provider
             target_provider = provider if provider else self.tts_provider.provider_name
-            target_variant = variant if variant else getattr(self.tts_provider, "tts_variant", None)
+            # variant here represents the model_id for qwen3/piper
+            target_variant = variant
 
             if target_provider == "qwen3":
-                from kali_core.voice.providers import get_tts_provider
                 qwen_provider = get_tts_provider("qwen3")
-                if hasattr(qwen_provider, "list_voices"):
-                    return {"voices": await qwen_provider.list_voices(target_variant), "provider": "qwen3", "variant": target_variant}
-                return {"voices": [], "provider": "qwen3", "variant": target_variant}
-            elif hasattr(self.tts_provider, "list_voices") and self.tts_provider.provider_name == target_provider:
-                return {"voices": await self.tts_provider.list_voices(), "provider": target_provider, "variant": target_variant}
+                return {"voices": await qwen_provider.list_voices(target_variant), "provider": "qwen3", "variant": target_variant}
+            
+            if target_provider == "piper":
+                piper_provider = get_tts_provider("piper")
+                # For Piper, if variant is provided, we can temporarily filter by it
+                # but the user wants it to be based on the LOADED model.
+                # However, if they are just browsing, maybe we show all?
+                # No, user said: "si no hay modelo cargado.. no se puede seleccionar hablante"
+                return {"voices": await piper_provider.list_voices(), "provider": "piper", "variant": target_variant}
 
-            return {"voices": self.voice_configs.list_voices(), "provider": "piper", "variant": None}
+            # Fallback for others (http, etc)
+            prov = get_tts_provider(target_provider)
+            if hasattr(prov, "list_voices"):
+                return {"voices": await prov.list_voices(), "provider": target_provider, "variant": target_variant}
+            
+            return {"voices": [], "provider": target_provider, "variant": target_variant}
 
         @self.app.get("/voices/custom")
         async def list_custom_voices(provider: str | None = None) -> dict[str, Any]:
@@ -1014,22 +1048,39 @@ class Server:
 
         @self.app.post("/stt/models/unload")
         async def stt_unload_model(provider: str | None = None) -> dict[str, Any]:
-            if any(c._stt_session_active for c in self._connections):
-                return JSONResponse(
-                    content={"error": "Cannot unload model during active recording"},
-                    status_code=400,
-                )
-            target_name = provider or self.stt_provider.provider_name
-            if target_name == self.stt_provider.provider_name:
-                return JSONResponse(
-                    content={"error": "Cannot unload the active STT provider's model. Switch to another provider first."},
-                    status_code=400,
-                )
             from kali_core.ear.providers import get_stt_provider
-            stt = get_stt_provider(provider) if provider else self.stt_provider
-            stt.unload_model()
-            await self.broadcast_status()
-            return {"status": "unloaded"}
+            if provider and provider != self.stt_provider.provider_name:
+                target = get_stt_provider(provider)
+            else:
+                target = self.stt_provider
+            try:
+                target.unload_model()
+                if target is self.stt_provider:
+                    self.stt_available = getattr(target, "is_available", True)
+                    self.stt_error = getattr(target, "last_error", None)
+                await self.broadcast_status()
+                return {"status": "unloaded"}
+            except Exception as exc:
+                return JSONResponse(content={"error": str(exc)}, status_code=500)
+
+        @self.app.post("/stt/models/{model_id}/delete")
+        async def stt_delete_model(model_id: str, provider: str | None = None) -> dict[str, Any]:
+            from kali_core.ear.providers import get_stt_provider
+            if provider and provider != self.stt_provider.provider_name:
+                target = get_stt_provider(provider)
+            else:
+                target = self.stt_provider
+            try:
+                if hasattr(target, "delete_model"):
+                    target.delete_model(model_id)
+                else:
+                    return JSONResponse(content={"error": f"Provider {target.provider_name} does not support deletion"}, status_code=400)
+                
+                await self.broadcast_status()
+                return {"status": "deleted", "model": model_id}
+            except Exception as exc:
+                logger.exception("STT model deletion failed")
+                return JSONResponse(content={"error": str(exc)}, status_code=500)
 
         @self.app.get("/stt/status")
         async def stt_status() -> dict[str, Any]:
@@ -1050,6 +1101,30 @@ class Server:
         async def tts_providers() -> dict[str, Any]:
             from kali_core.voice.providers import list_tts_providers
             return {"providers": list_tts_providers()}
+
+        @self.app.get("/models/catalog")
+        async def models_catalog(provider: str) -> dict[str, Any]:
+            from kali_core.model_catalog import get_catalog_dict, get_all_languages
+            kwargs = {}
+            target_provider = provider
+            if provider == "vosk":
+                kwargs["stt_models_dir"] = settings.stt_models_dir
+            elif provider == "piper":
+                kwargs["voices_dir"] = settings.voices_dir
+            elif provider == "qwen3":
+                # Check context: is it for STT or TTS?
+                # For now, let's assume we might want both or distinguish.
+                # Actually, in STT tab, provider is 'qwen3' but we want ASR models.
+                # In TTS tab, provider is 'qwen3' but we want TTS models.
+                # We can look at the current active providers to guess, or 
+                # better, let the frontend ask for 'qwen3-asr' or 'qwen3'.
+                kwargs["tts_models_dir"] = settings.tts_models_dir
+            elif provider == "qwen3-asr":
+                kwargs["stt_models_dir"] = settings.qwen_asr_models_dir
+            
+            models = get_catalog_dict(target_provider, **kwargs)
+            languages = get_all_languages(target_provider)
+            return {"models": models, "languages": languages}
 
         @self.app.get("/tts/models")
         async def tts_models(provider: str | None = None) -> dict[str, Any]:
@@ -1120,6 +1195,17 @@ class Server:
                 await loop.run_in_executor(None, target.load_model, model_id, device)
                 self.tts_available = getattr(target, "is_available", True)
                 self.tts_error = getattr(target, "last_error", None)
+
+                # Auto-select first voice if current one is invalid for the new model
+                if target == self.tts_provider and hasattr(target, "list_voices"):
+                    voices = await target.list_voices()
+                    if voices:
+                        current_voice = self.tts_pipeline.voice
+                        if not any(v["voice_id"] == current_voice for v in voices):
+                            new_voice = voices[0]["voice_id"]
+                            self.tts_pipeline.set_voice(voice=new_voice)
+                            logger.info("Switched voice to '%s' after loading model '%s'", new_voice, model_id)
+
                 await self.broadcast_status()
                 return {"status": "ready", "model": model_id, "device": device}
             except Exception as exc:
@@ -1141,6 +1227,25 @@ class Server:
                 await self.broadcast_status()
                 return {"status": "unloaded"}
             except Exception as exc:
+                return JSONResponse(content={"error": str(exc)}, status_code=500)
+
+        @self.app.post("/tts/models/{model_id}/delete")
+        async def tts_delete_model(model_id: str, provider: str | None = None) -> dict[str, Any]:
+            from kali_core.voice.providers import get_tts_provider
+            if provider and provider != self.tts_provider.provider_name:
+                target = get_tts_provider(provider)
+            else:
+                target = self.tts_provider
+            try:
+                if hasattr(target, "delete_model"):
+                    target.delete_model(model_id)
+                else:
+                    return JSONResponse(content={"error": f"Provider {target.provider_name} does not support deletion"}, status_code=400)
+                
+                await self.broadcast_status()
+                return {"status": "deleted", "model": model_id}
+            except Exception as exc:
+                logger.exception("TTS model deletion failed")
                 return JSONResponse(content={"error": str(exc)}, status_code=500)
 
         @self.app.get("/tts/status")
@@ -1353,6 +1458,7 @@ class Connection:
         self.server = server
         self.session_id: str | None = None
         self._current_task: asyncio.Task | None = None
+        self._send_lock = asyncio.Lock()
         self._stt_session_active: bool = False
         self._wake_word: WakeWordDetector | None = None
         self._stt_language: str = normalize(settings.stt_language)
@@ -1557,7 +1663,10 @@ class Connection:
             await self._apply_settings(event)
 
         elif kind == "download_tts_model":
-            await self._handle_download_tts_model(event)
+            asyncio.create_task(self._handle_download_tts_model(event))
+
+        elif kind == "download_stt_model":
+            asyncio.create_task(self._handle_download_stt_model(event))
 
         elif kind == "create_connection":
             try:
@@ -1681,11 +1790,19 @@ class Connection:
         else:
             logger.debug("unhandled event: %s", kind)
 
-    # ── TTS model download ──────────────────────────────────
+    # ── Model download ─────────────────────────────────────
 
     async def _handle_download_tts_model(self, event: dict[str, Any]) -> None:
-        """Download a Qwen3-TTS model on request and emit progress events."""
+        """Download a TTS model (Qwen3 or Piper) and emit progress events."""
         model_id = event.get("model_id", "")
+        tts_provider = event.get("provider", "qwen3")
+
+        if tts_provider == "piper":
+            await self._download_piper_voice(model_id)
+        else:
+            await self._download_qwen3_model(model_id)
+
+    async def _download_qwen3_model(self, model_id: str) -> None:
         from kali_core.voice.providers.qwen import QWEN_MODELS
 
         if model_id not in QWEN_MODELS:
@@ -1701,8 +1818,6 @@ class Connection:
         models_dir.mkdir(parents=True, exist_ok=True)
         target = models_dir / cfg["filename"]
 
-        # Derive tokenizer filename from the talker's quantization suffix
-        # (e.g. qwen-talker-0.6b-customvoice-Q4_K_M.gguf → qwen-tokenizer-12hz-Q4_K_M.gguf)
         import re as _re
         quant_match = _re.search(r"-(Q4_K_M|Q8_0|BF16|F32)\.gguf$", cfg["filename"])
         quant_suffix = quant_match.group(1) if quant_match else "Q4_K_M"
@@ -1714,8 +1829,91 @@ class Connection:
         await self.send({"event": "download_tts_model_started", "model_id": model_id})
 
         loop = asyncio.get_event_loop()
+        try:
+            if not tokenizer_path.exists():
+                await loop.run_in_executor(None, self._make_downloader(model_id, "tokenizer"), tokenizer_url, tokenizer_path)
+            if not target.exists():
+                await loop.run_in_executor(None, self._make_downloader(model_id, "model"), model_url, target)
 
-        def _download(url: str, path: Path, kind: str) -> None:
+            if hasattr(self.server.tts_provider, "configure"):
+                self.server.tts_provider.configure(models_dir=str(models_dir))
+
+            await self.server.broadcast_status()
+            await self.send({"event": "download_tts_model_complete", "model_id": model_id})
+        except Exception as exc:
+            logger.exception("Failed to download TTS model %s", model_id)
+            await self.send({"event": "download_tts_model_error", "model_id": model_id, "detail": str(exc)})
+
+    async def _download_piper_voice(self, voice_key: str) -> None:
+        from kali_core.model_catalog import piper_voice_urls, piper_voice_filenames
+
+        urls = piper_voice_urls(voice_key)
+        names = piper_voice_filenames(voice_key)
+        if not urls:
+            await self.send({"event": "download_tts_model_error", "model_id": voice_key, "detail": "Unknown Piper voice"})
+            return
+
+        voices_dir = Path(settings.voices_dir).expanduser().resolve()
+        voices_dir.mkdir(parents=True, exist_ok=True)
+
+        await self.send({"event": "download_tts_model_started", "model_id": voice_key})
+        loop = asyncio.get_event_loop()
+
+        try:
+            for url, name in zip(urls, names):
+                target = voices_dir / name
+                if not target.exists():
+                    await loop.run_in_executor(None, self._make_downloader(voice_key, "voice"), url, target)
+
+            await self.server.broadcast_status()
+            await self.send({"event": "download_tts_model_complete", "model_id": voice_key})
+        except Exception as exc:
+            logger.exception("Failed to download Piper voice %s", voice_key)
+            await self.send({"event": "download_tts_model_error", "model_id": voice_key, "detail": str(exc)})
+
+    async def _handle_download_stt_model(self, event: dict[str, Any]) -> None:
+        """Download a Vosk STT model (zip) and extract it."""
+        model_id = event.get("model_id", "")
+
+        from kali_core.model_catalog import VOSK_MODELS, VOSK_URL_BASE
+
+        model_entry = next((m for m in VOSK_MODELS if m["id"] == model_id), None)
+        if not model_entry:
+            await self.send({"event": "download_stt_model_error", "model_id": model_id, "detail": "Unknown Vosk model"})
+            return
+
+        stt_dir = Path(settings.stt_models_dir).expanduser().resolve()
+        stt_dir.mkdir(parents=True, exist_ok=True)
+        url = f"{VOSK_URL_BASE}/{model_id}.zip"
+
+        await self.send({"event": "download_stt_model_started", "model_id": model_id})
+        loop = asyncio.get_event_loop()
+
+        try:
+            import tempfile, zipfile
+            tmp_zip = stt_dir / f"{model_id}.zip"
+
+            if not (stt_dir / model_id / "am" / "final.mdl").exists():
+                await loop.run_in_executor(None, self._make_downloader(model_id, "model"), url, tmp_zip)
+
+                # Extract zip
+                def _extract():
+                    with zipfile.ZipFile(str(tmp_zip), "r") as zf:
+                        zf.extractall(str(stt_dir))
+                    tmp_zip.unlink(missing_ok=True)
+
+                await loop.run_in_executor(None, _extract)
+
+            await self.server.broadcast_status()
+            await self.send({"event": "download_stt_model_complete", "model_id": model_id})
+        except Exception as exc:
+            logger.exception("Failed to download STT model %s", model_id)
+            await self.send({"event": "download_stt_model_error", "model_id": model_id, "detail": str(exc)})
+
+    def _make_downloader(self, model_id: str, kind: str):
+        """Return a callable that downloads a URL to a path, emitting progress."""
+        loop = asyncio.get_event_loop()
+        def _download(url: str, path: Path) -> None:
             req = urllib.request.Request(url, headers={"User-Agent": "kali-companion/1.0"})
             with urllib.request.urlopen(req, timeout=30) as resp:
                 total = int(resp.headers.get("Content-Length", 0))
@@ -1742,27 +1940,7 @@ class Connection:
                                 }),
                                 loop,
                             )
-
-        try:
-            if not tokenizer_path.exists():
-                await loop.run_in_executor(None, _download, tokenizer_url, tokenizer_path, "tokenizer")
-
-            if not target.exists():
-                await loop.run_in_executor(None, _download, model_url, target, "model")
-
-            # Rescan available models in the directory without auto-mounting.
-            if hasattr(self.server.tts_provider, "configure"):
-                self.server.tts_provider.configure(models_dir=str(models_dir))
-
-            await self.server.broadcast_status()
-            await self.send({"event": "download_tts_model_complete", "model_id": model_id})
-        except Exception as exc:
-            logger.exception("Failed to download TTS model %s", model_id)
-            await self.send({
-                "event": "download_tts_model_error",
-                "model_id": model_id,
-                "detail": str(exc),
-            })
+        return _download
 
     # ── Audio / STT ────────────────────────────────────────
 
@@ -2415,7 +2593,8 @@ class Connection:
         await self.send(payload)
 
     async def send(self, payload: dict[str, Any]) -> None:
-        try:
-            await self.ws.send_json(payload)
-        except Exception:
-            logger.exception("send failed")
+        async with self._send_lock:
+            try:
+                await self.ws.send_json(payload)
+            except Exception:
+                logger.exception("send failed")

@@ -77,15 +77,21 @@ class TTSPipeline:
         try:
             name = getattr(self.provider, "provider_name", "")
             if name == "piper":
-                from kali_core.voice.voice_config import VoiceConfigManager
-                vm = VoiceConfigManager(self.provider.voices_dir)
-                valid = {v["id"] for v in vm.list_voices()}
-                if effective_voice not in valid and valid:
-                    effective_voice = sorted(valid)[0]
-                    logger.warning(
-                        "Voice '%s' not found for piper — falling back to '%s'",
-                        self.voice, effective_voice,
-                    )
+                # Check config manager
+                if hasattr(self.provider, "_config_manager") and self.provider._config_manager.has_voice(effective_voice):
+                    pass # Valid
+                else:
+                    # Check disk
+                    stem = effective_voice.split("::")[0] if "::" in effective_voice else effective_voice
+                    if not (Path(self.provider.voices_dir) / f"{stem}.onnx").exists():
+                        # Try to find ANY voice
+                        onnx_files = sorted(Path(self.provider.voices_dir).glob("*.onnx"))
+                        if onnx_files:
+                            effective_voice = onnx_files[0].stem
+                            logger.warning(
+                                "Voice '%s' not found for piper — falling back to '%s'",
+                                self.voice, effective_voice,
+                            )
         except Exception:
             pass  # Can't validate — let the synthesizer try and report
 

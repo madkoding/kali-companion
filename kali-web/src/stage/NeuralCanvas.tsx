@@ -406,6 +406,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
         currentLanguage={i18n.language}
         onLanguageChange={onLanguageChange}
         downloadTtsModel={chat.downloadTtsModel}
+        downloadSttModel={chat.downloadSttModel}
         downloadProgress={chat.downloadProgress}
         downloadError={chat.downloadError}
       />

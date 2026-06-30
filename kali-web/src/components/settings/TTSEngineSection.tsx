@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Loader2, Plug, Unplug } from "lucide-react";
+import { Download, Loader2, Plug, Unplug, Trash2 } from "lucide-react";
 import { apiBase, fetchWithRetry } from "../../lib/api/http";
-import type { StatusEvent, TtsModelInfo, TtsDeviceInfo } from "../../lib/protocol";
+import type { StatusEvent, TtsModelInfo, TtsDeviceInfo, ModelCatalogEntry } from "../../lib/protocol";
 import { TTS_PROVIDERS } from "../../lib/tts-providers";
 import type { TtsProviderId } from "../../lib/tts-providers";
 import { PiperVoiceControls } from "./PiperVoiceControls";
@@ -11,7 +11,7 @@ import { QwenVoiceControls } from "./QwenVoiceControls";
 interface Props {
   systemStatus: StatusEvent | null;
   onUpdate: (patch: Record<string, unknown>) => void;
-  downloadTtsModel: (modelId: string) => void;
+  downloadTtsModel: (modelId: string, provider?: "qwen3" | "piper") => void;
   downloadProgress: Record<string, number>;
   downloadError: string | null;
 }
@@ -30,6 +30,14 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
   const [selectedDevice, setSelectedDevice] = useState(systemStatus?.tts_device ?? "cpu");
   const [error, setError] = useState<string | null>(null);
   const [modelsDir, setModelsDir] = useState(systemStatus?.tts_models_dir ?? "");
+  const [piperCatalog, setPiperCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [piperCatalogLangs, setPiperCatalogLangs] = useState<string[]>([]);
+  const [piperSearch, setPiperSearch] = useState("");
+  const [piperLangFilter, setPiperLangFilter] = useState("");
+  const [loadingPiperCatalog, setLoadingPiperCatalog] = useState(false);
+  const [qwenCatalog, setQwenCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [loadingQwenCatalog, setLoadingQwenCatalog] = useState(false);
+  const [subTab, setSubTab] = useState<"installed" | "catalog">("installed");
   const mountedRef = useRef(true);
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
@@ -107,9 +115,49 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
     const count = Object.keys(downloadProgress).length;
     if (prevDownloadCount.current > 0 && count === 0) {
       void fetchModels(tab);
+      if (tab === TTS_PROVIDERS.PIPER) void fetchPiperCatalog();
+      if (tab === TTS_PROVIDERS.QWEN3) void fetchQwenCatalog();
     }
     prevDownloadCount.current = count;
   }, [downloadProgress, fetchModels, tab]);
+
+  const fetchPiperCatalog = useCallback(async () => {
+    setLoadingPiperCatalog(true);
+    try {
+      const base = await apiBase();
+      const resp = await fetch(`${base}/models/catalog?provider=piper`);
+      if (resp && resp.ok) {
+        const data = await resp.json();
+        if (mountedRef.current) {
+          setPiperCatalog(data.models ?? []);
+          setPiperCatalogLangs(data.languages ?? []);
+        }
+      }
+    } catch { } finally {
+      if (mountedRef.current) setLoadingPiperCatalog(false);
+    }
+  }, [apiBase]);
+
+  const fetchQwenCatalog = useCallback(async () => {
+    setLoadingQwenCatalog(true);
+    try {
+      const base = await apiBase();
+      const resp = await fetch(`${base}/models/catalog?provider=qwen3`);
+      if (resp && resp.ok) {
+        const data = await resp.json();
+        if (mountedRef.current) {
+          setQwenCatalog(data.models ?? []);
+        }
+      }
+    } catch { } finally {
+      if (mountedRef.current) setLoadingQwenCatalog(false);
+    }
+  }, [apiBase]);
+
+  useEffect(() => {
+    if (tab === TTS_PROVIDERS.PIPER) void fetchPiperCatalog();
+    if (tab === TTS_PROVIDERS.QWEN3) void fetchQwenCatalog();
+  }, [tab, fetchPiperCatalog, fetchQwenCatalog]);
 
   const handleLoadModel = async (modelId: string) => {
     setLoadingAction(true);
@@ -155,7 +203,28 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
 
   const handleDownloadModel = async (modelId: string) => {
     setError(null);
-    downloadTtsModel(modelId);
+    downloadTtsModel(modelId, tab === TTS_PROVIDERS.QWEN3 ? "qwen3" : "piper");
+  };
+
+  const handleDeleteModel = async (modelId: string) => {
+    if (!window.confirm(t("models.delete_confirm", { name: modelId }))) return;
+    setLoadingAction(true);
+    setError(null);
+    try {
+      const base = await apiBase();
+      const resp = await fetch(`${base}/tts/models/${encodeURIComponent(modelId)}/delete?provider=${tab}`, { method: "POST" });
+      if (!resp.ok) {
+        const data = await resp.json();
+        throw new Error(data.error ?? "Failed to delete model");
+      }
+      await fetchModels(tab);
+      if (tab === TTS_PROVIDERS.PIPER) await fetchPiperCatalog();
+      if (tab === TTS_PROVIDERS.QWEN3) await fetchQwenCatalog();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mountedRef.current) setLoadingAction(false);
+    }
   };
 
   const handleApplyModelsDir = () => {
@@ -163,7 +232,6 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
   };
 
   const savedModelsDir = systemStatus?.tts_models_dir ?? "";
-
   const compatibleDevices = devices.filter((d) => tab === TTS_PROVIDERS.QWEN3 || d.id === "cpu");
 
   return (
@@ -172,7 +240,7 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
         {([TTS_PROVIDERS.PIPER, TTS_PROVIDERS.QWEN3] as TtsProviderId[]).map((p) => (
           <button
             key={p}
-            onClick={() => setTab(p)}
+            onClick={() => { setTab(p); setSubTab("installed"); }}
             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
               tab === p
                 ? "bg-accent-dim text-foreground"
@@ -195,57 +263,82 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
         </div>
       )}
 
+      {(tab === TTS_PROVIDERS.PIPER || tab === TTS_PROVIDERS.QWEN3) && (
+        <div className="flex gap-4 border-b border-border mb-2">
+          {(["installed", "catalog"] as const).map((st) => (
+            <button
+              key={st}
+              onClick={() => setSubTab(st)}
+              className={`pb-2 text-xs font-medium transition-colors relative ${
+                subTab === st
+                  ? "text-foreground"
+                  : "text-muted hover:text-foreground"
+              }`}
+            >
+              {t(`models.${st}`)}
+              {subTab === st && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent-dim" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="space-y-2">
         {loadingModels && (
           <div className="text-xs text-muted animate-pulse">{t("tts.status.loading")}</div>
         )}
-        {!loadingModels && models.map((m) => (
+        {!loadingModels && subTab === "installed" && models.filter(m => m.available).length === 0 && (
+          <div className="text-xs text-muted py-4 text-center">
+            {t("models.no_results")}
+          </div>
+        )}
+        {!loadingModels && subTab === "installed" && models.filter(m => m.available).map((m) => (
           <div key={m.id} className="flex items-center justify-between gap-2 p-2 bg-surface rounded-md border border-border">
             <div className="flex flex-col min-w-0">
               <span className="text-sm text-foreground truncate">{m.display_name}</span>
               <span className="text-[11px] text-muted">
-                {m.loaded ? `✓ ${t("tts.status.loaded")}` : m.available ? t("tts.status.not_loaded") : t("tts.status.no_model")}
+                {m.loaded ? `✓ ${t("tts.status.loaded")}` : t("tts.status.not_loaded")}
                 {m.variant && ` · ${m.variant}`}
               </span>
             </div>
-            {m.loaded ? (
-              <button
-                onClick={() => handleUnloadModel(m.id)}
-                disabled={loadingAction}
-                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md border border-border text-muted hover:text-foreground hover:border-foreground/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Unplug size={13} />
-                {t("tts.unload")}
-              </button>
-            ) : m.available ? (
-              <button
-                onClick={() => handleLoadModel(m.id)}
-                disabled={loadingAction}
-                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-accent-dim text-foreground hover:bg-accent-dim/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Plug size={13} />
-                {t("tts.load")}
-              </button>
-            ) : downloadProgress[m.id] !== undefined ? (
-              <span className="flex items-center gap-1 text-xs px-2.5 py-1 text-accent">
-                <Loader2 size={13} className="animate-spin" />
-                {t("tts.download_progress", { progress: downloadProgress[m.id] })}
-              </span>
-            ) : (
-              <button
-                onClick={() => handleDownloadModel(m.id)}
-                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md border border-accent/40 text-accent hover:bg-accent/10 transition-colors"
-              >
-                <Download size={13} />
-                {t("tts.download")}
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {m.loaded ? (
+                <button
+                  onClick={() => handleUnloadModel(m.id)}
+                  disabled={loadingAction}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md border border-border text-muted hover:text-foreground hover:border-foreground/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Unplug size={13} />
+                  {t("tts.unload")}
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => handleLoadModel(m.id)}
+                    disabled={loadingAction}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-accent-dim text-foreground hover:bg-accent-dim/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Plug size={13} />
+                    {t("tts.load")}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteModel(m.id)}
+                    disabled={loadingAction}
+                    className="p-1.5 text-muted hover:text-err transition-colors"
+                    title={t("common.delete")}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ))}
       </div>
 
-      {tab === TTS_PROVIDERS.QWEN3 && compatibleDevices.length > 0 && (
-        <div className="flex flex-col gap-1.5">
+      {tab === TTS_PROVIDERS.QWEN3 && subTab === "installed" && compatibleDevices.length > 0 && (
+        <div className="flex flex-col gap-1.5 pt-2">
           <label className="text-xs text-muted">{t("settings.tts_device")}</label>
           <select
             className="bg-surface text-foreground border border-border rounded-md px-2.5 py-2 text-sm outline-none focus:border-accent-dim"
@@ -263,7 +356,7 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
         </div>
       )}
 
-      {tab === TTS_PROVIDERS.QWEN3 && (
+      {tab === TTS_PROVIDERS.QWEN3 && subTab === "installed" && (
         <div className="flex flex-col gap-1.5">
           <label className="text-xs text-muted">{t("settings.tts_models_dir")}</label>
           <div className="flex gap-2">
@@ -283,6 +376,123 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
             </button>
           </div>
           <p className="text-[11px] text-muted/60">{t("settings.tts_models_dir_hint")}</p>
+        </div>
+      )}
+
+      {/* Qwen voice download catalog */}
+      {tab === TTS_PROVIDERS.QWEN3 && subTab === "catalog" && (
+        <div className="flex flex-col gap-2">
+          <div className="max-h-64 overflow-y-auto flex flex-col gap-1 rounded-md border border-border">
+            {loadingQwenCatalog && (
+              <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted">
+                <Loader2 size={12} className="animate-spin" />
+                {"Loading..."}
+              </div>
+            )}
+            {!loadingQwenCatalog && qwenCatalog.map((m) => {
+              const isDownloaded = m.downloaded || models.some(im => im.id === m.id && im.available);
+              return (
+                <div key={m.id} className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 last:border-0">
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs text-foreground truncate">{m.display_name}</span>
+                    <span className="text-[10px] text-muted">{m.language} · {m.quality} · {m.size_mb} MB</span>
+                  </div>
+                  {isDownloaded ? (
+                    <span className="text-[10px] text-ok shrink-0">✓ {t("models.downloaded")}</span>
+                  ) : downloadProgress[m.id] !== undefined ? (
+                    <span className="flex items-center gap-1 text-[10px] text-accent shrink-0">
+                      <Loader2 size={11} className="animate-spin" />
+                      {downloadProgress[m.id]}%
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => downloadTtsModel(m.id, "qwen3")}
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border border-accent/40 text-accent hover:bg-accent/10 transition-colors shrink-0"
+                    >
+                      <Download size={10} />
+                      {t("models.download")}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {!loadingQwenCatalog && qwenCatalog.length === 0 && (
+              <div className="px-3 py-2 text-xs text-muted">{t("models.no_results")}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Piper voice download catalog */}
+      {tab === TTS_PROVIDERS.PIPER && subTab === "catalog" && (
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              className="flex-1 bg-surface text-foreground border border-border rounded-md px-2.5 py-2 text-sm outline-none focus:border-accent-dim"
+              placeholder={t("models.search_placeholder")}
+              value={piperSearch}
+              onChange={(e) => setPiperSearch(e.target.value)}
+            />
+            {piperCatalogLangs.length > 0 && (
+              <select
+                className="bg-surface text-foreground border border-border rounded-md px-2 py-1.5 text-xs outline-none"
+                value={piperLangFilter}
+                onChange={(e) => setPiperLangFilter(e.target.value)}
+              >
+                <option value="">{t("models.filter_all")}</option>
+                {piperCatalogLangs.map((l) => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="max-h-64 overflow-y-auto flex flex-col gap-1 rounded-md border border-border">
+            {loadingPiperCatalog && (
+              <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted">
+                <Loader2 size={12} className="animate-spin" />
+                {"Loading..."}
+              </div>
+            )}
+            {!loadingPiperCatalog && piperCatalog
+              .filter((m) => {
+                const matchSearch = !piperSearch
+                  || m.display_name.toLowerCase().includes(piperSearch.toLowerCase())
+                  || m.language.toLowerCase().includes(piperSearch.toLowerCase());
+                const matchLang = !piperLangFilter || m.language === piperLangFilter;
+                return matchSearch && matchLang;
+              })
+              .map((m) => {
+                const isDownloaded = m.downloaded || models.some(im => im.id === m.id && im.available);
+                return (
+                  <div key={m.id} className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 last:border-0">
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-xs text-foreground truncate">{m.display_name}</span>
+                      <span className="text-[10px] text-muted">{m.language} · {m.quality} · {m.size_mb} MB</span>
+                    </div>
+                    {isDownloaded ? (
+                      <span className="text-[10px] text-ok shrink-0">✓ {t("models.downloaded")}</span>
+                    ) : downloadProgress[m.id] !== undefined ? (
+                      <span className="flex items-center gap-1 text-[10px] text-accent shrink-0">
+                        <Loader2 size={11} className="animate-spin" />
+                        {downloadProgress[m.id]}%
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => downloadTtsModel(m.id, "piper")}
+                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border border-accent/40 text-accent hover:bg-accent/10 transition-colors shrink-0"
+                      >
+                        <Download size={10} />
+                        {t("models.download")}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            {!loadingPiperCatalog && piperCatalog.length === 0 && (
+              <div className="px-3 py-2 text-xs text-muted">{t("models.no_results")}</div>
+            )}
+          </div>
         </div>
       )}
 

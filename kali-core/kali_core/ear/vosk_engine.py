@@ -17,15 +17,17 @@ import os
 
 import vosk
 
+from kali_core.config import settings
+
 logger = logging.getLogger("kali_core.ear.vosk_engine")
 
 # ── Model cache ───────────────────────────────────────────
 _models: dict[str, vosk.Model] = {}
 _model_paths: dict[str, str] = {}
 
-DEFAULT_MODEL_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "models"
-)
+DEFAULT_MODEL_DIR = settings.stt_models_dir
+
+_INTERNAL_MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
 
 
 def get_model(model_name: str | None = None) -> vosk.Model:
@@ -39,6 +41,7 @@ def get_model(model_name: str | None = None) -> vosk.Model:
     search_paths = [
         os.path.join(DEFAULT_MODEL_DIR, model_name),
         os.path.join(DEFAULT_MODEL_DIR),
+        os.path.join(_INTERNAL_MODELS_DIR, model_name),
     ]
 
     model_path = None

@@ -670,6 +670,28 @@ class QwenTTSProvider:
         self._client = None
         self._proc = None
 
+    def delete_model(self, model_id: str) -> None:
+        """Unload and delete model files from disk."""
+        if self._loaded_model_id == model_id:
+            self.unload_model()
+        
+        if model_id in QWEN_MODELS:
+            filename = QWEN_MODELS[model_id]["filename"]
+            
+            # 1. Delete from current models dir
+            path = self._talker_models_dir / filename
+            if path.exists():
+                path.unlink()
+            
+            # 2. Delete from fallback common dir
+            common_dir = Path.home() / ".local" / "share" / "kali" / "models"
+            common_path = common_dir / filename
+            if common_path.exists():
+                common_path.unlink()
+            
+            logger.info("Qwen3 model deleted: %s", model_id)
+            self._discover_talker_models()
+
     # ── lifecycle ───────────────────────────────────────────────────
 
     def _validate_and_spawn(self) -> None:

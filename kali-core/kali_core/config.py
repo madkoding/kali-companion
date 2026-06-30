@@ -360,28 +360,24 @@ db_path: str = str(data_dir / "kali.db")
 images_dir: str = str(data_dir / "images")
 snapshots_dir: str = str(data_dir / "snapshots")
 base_dir = Path(__file__).resolve().parent
-voices_dir = base_dir / "voice" / "voices"
+
+# Unified models base: ~/.local/share/kali/models (neutral for native + Docker bind mount)
+_models_base = Path(os.getenv("KALI_MODELS_DIR", str(Path.home() / ".local" / "share" / "kali" / "models")))
+
+# Vosk STT models → ~/.local/share/kali/models/vosk/
+stt_models_dir: str = os.getenv("KALI_STT_MODELS_DIR", str(_models_base / "vosk"))
+
+# Piper TTS voices → ~/.local/share/kali/models/piper-voices/
+voices_dir: str = os.getenv("KALI_VOICES_DIR", str(_models_base / "piper-voices"))
 voice_configs_dir = base_dir / "voice" / "voice_configs"
-stt_models_dir = base_dir / "ear" / "models"
 profiles_dir = base_dir / "collar" / "profiles"
 
 # ── Qwen3-TTS (only used when KALI_TTS_PROVIDER is "qwen3" or "qwen3-voicedesign")
 # Neutral models dir: works natively (XDG) and inside Docker when bind-mounted.
+# Model files are discovered by scanning tts_models_dir for qwen-talker-*.gguf
+# and qwen-tokenizer-12hz-*.gguf — no hardcoded paths needed.
 tts_models_dir: str = os.getenv(
     "KALI_TTS_MODELS_DIR", str(Path.home() / ".local" / "share" / "kali" / "models")
-)
-_qwen_models = Path(tts_models_dir)
-qwen_talker_model: str = os.getenv(
-    "KALI_QWEN_TALKER_MODEL",
-    str(_qwen_models / "qwen-talker-0.6b-customvoice-Q4_K_M.gguf"),
-)
-qwen_voicedesign_model: str = os.getenv(
-    "KALI_QWEN_VOICEDESIGN_MODEL",
-    str(_qwen_models / "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf"),
-)
-qwen_codec_model: str = os.getenv(
-    "KALI_QWEN_CODEC_MODEL",
-    str(_qwen_models / "qwen-tokenizer-12hz-Q4_K_M.gguf"),
 )
 qwen_port: int = int(os.getenv("KALI_QWEN_PORT", "8870"))
 qwen_backend: str = os.getenv("KALI_QWEN_BACKEND", "CPU")
@@ -412,9 +408,6 @@ class _Settings:
     tts_enabled = tts_enabled
 
     tts_models_dir = tts_models_dir
-    qwen_talker_model = qwen_talker_model
-    qwen_voicedesign_model = qwen_voicedesign_model
-    qwen_codec_model = qwen_codec_model
     qwen_port = qwen_port
     qwen_backend = qwen_backend
 

@@ -532,6 +532,7 @@ export interface ClearAllSessionsEvent {
 export interface DownloadTtsModelEvent {
   event: "download_tts_model";
   model_id: string;
+  provider?: "qwen3" | "piper";
 }
 
 export interface DownloadTtsModelStartedEvent {
@@ -559,6 +560,47 @@ export interface DownloadTtsModelErrorEvent {
   detail: string;
 }
 
+export interface DownloadSttModelEvent {
+  event: "download_stt_model";
+  model_id: string;
+}
+
+export interface DownloadSttModelStartedEvent {
+  event: "download_stt_model_started";
+  model_id: string;
+}
+
+export interface DownloadSttModelProgressEvent {
+  event: "download_stt_model_progress";
+  model_id: string;
+  kind: string;
+  progress: number;
+  downloaded: number;
+  total: number;
+}
+
+export interface DownloadSttModelCompleteEvent {
+  event: "download_stt_model_complete";
+  model_id: string;
+}
+
+export interface DownloadSttModelErrorEvent {
+  event: "download_stt_model_error";
+  model_id: string;
+  detail: string;
+}
+
+export interface ModelCatalogEntry {
+  id: string;
+  provider: string;
+  display_name: string;
+  language: string;
+  language_code: string;
+  size_mb: number;
+  quality: string;
+  downloaded: boolean;
+}
+
 export type IncomingEvent =
   | InputEvent
   | StopEvent
@@ -581,7 +623,8 @@ export type IncomingEvent =
   | UpdateConnectionRequest
   | DeleteConnectionRequest
   | ActivateConnectionRequest
-  | DownloadTtsModelEvent;
+  | DownloadTtsModelEvent
+  | DownloadSttModelEvent;
 
 export type OutgoingEvent =
   | ReadyEvent
@@ -616,4 +659,8 @@ export type OutgoingEvent =
   | DownloadTtsModelStartedEvent
   | DownloadTtsModelProgressEvent
   | DownloadTtsModelCompleteEvent
-  | DownloadTtsModelErrorEvent;
+  | DownloadTtsModelErrorEvent
+  | DownloadSttModelStartedEvent
+  | DownloadSttModelProgressEvent
+  | DownloadSttModelCompleteEvent
+  | DownloadSttModelErrorEvent;

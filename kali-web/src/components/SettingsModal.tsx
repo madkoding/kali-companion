@@ -29,7 +29,8 @@ interface Props {
   onUIScaleChange: (patch: Record<string, number>) => void;
   currentLanguage: string;
   onLanguageChange: (lang: string) => void;
-  downloadTtsModel: (modelId: string) => void;
+  downloadTtsModel: (modelId: string, provider?: "qwen3" | "piper") => void;
+  downloadSttModel: (modelId: string) => void;
   downloadProgress: Record<string, number>;
   downloadError: string | null;
 }
@@ -65,6 +66,7 @@ export function SettingsModal({
   currentLanguage,
   onLanguageChange,
   downloadTtsModel,
+  downloadSttModel,
   downloadProgress,
   downloadError,
 }: Props) {
@@ -153,7 +155,7 @@ export function SettingsModal({
     if (active === "provider") return <ProviderSection />;
     if (active === "generation") return <GenerationSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     if (active === "voice") return <TTSEngineSection systemStatus={systemStatus} onUpdate={onUpdate} downloadTtsModel={downloadTtsModel} downloadProgress={downloadProgress} downloadError={downloadError} />;
-    if (active === "stt") return <STTSection systemStatus={systemStatus} onUpdate={onUpdate} />;
+    if (active === "stt") return <STTSection systemStatus={systemStatus} onUpdate={onUpdate} downloadSttModel={downloadSttModel} downloadProgress={downloadProgress} downloadError={downloadError} />;
     if (active === "behavior") return <BehaviorSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     return (
       <AppearanceSection
