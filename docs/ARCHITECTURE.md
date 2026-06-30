@@ -159,26 +159,6 @@ kali-core/gaze/local.py ──► mss library captures screen
                                      ▼
                           kali-mind sends PNG to vision-capable LLM
 ```
-kali-mind calls the "screenshot" tool
-   │
-   ▼
-kali-claws/screenshot ──► kali-collar (consent: "Kali wants to see your screen…")
-   │ allowed
-   ▼
-kali-core/gaze/client ──► Tauri command "kali_capture_screen"
-                                    │
-                                    ▼
-                            kali-home/src/capture (Rust)
-                                    │  selects backend at runtime:
-                                    │    Wayland → xdg-desktop-portal
-                                    │    X11    → (Phase 5)
-                                    │    Win    → (Phase 5)
-                                    ▼
-                              PNG bytes back through IPC
-                                    │
-                                    ▼
-                         kali-mind sends PNG to vision-capable LLM
-```
 
 ## Key technical decisions
 
@@ -302,7 +282,7 @@ preserving the frontend session.
 ## Repository layout
 
 ```
-kali/
+ai-voice-companion/
 ├── README.md
 ├── docs/                  ← you are here
 ├── kali-shell/            ← Electron/TypeScript shell

@@ -4,11 +4,12 @@ A cat-themed, always-on desktop companion that lives on your second
 monitor. Not a chatbot — a presence that researches, renders, and acts on
 your behalf. Voice and text are first-class equals. Local-first by default.
 
-> Status: **Phase 3 — complete.** Screen capture via Wayland portal,
+> Status: **Phase 4 — complete.** Screen capture via Wayland portal,
 > vision provider (LLM multimodal + OCR), organize_folder, WidgetGrid,
-> Mermaid diagram rendering. **Phase 4 (gaming) — in progress.** Dota 2
-> builds via OpenDota API, anti-spoiler game info search, DotaHeroCard
-> widget, gaming profile.
+> Mermaid diagram rendering, Dota 2 builds via OpenDota API,
+> anti-spoiler game info search, DotaHeroCard widget, gaming profile.
+> **Phase 5 (Advanced voice) — in progress.** Wake word detection
+> implemented, UI indicators, multi-backend capture research.
 
 ## What Kali does
 
@@ -37,7 +38,7 @@ naming scheme.
 ## Repository layout
 
 ```
-kali/
+ai-voice-companion/
 ├── docs/                ← start here
 │   ├── VISION.md
 │   ├── ARCHITECTURE.md
@@ -45,7 +46,7 @@ kali/
 │   ├── GLOSSARY.md
 │   ├── I18N.md
 │   └── PROTOCOL.md
-├── kali-home/           ← Tauri/Rust shell (the cat's home)
+├── kali-shell/          ← Electron shell (the cat's home)
 ├── kali-web/            ← React + Vite frontend (the cat's face)
 ├── kali-core/           ← Python sidecar (the cat's body)
 │   └── kali_core/
@@ -74,34 +75,81 @@ Read these in order:
 5. [docs/PROTOCOL.md](docs/PROTOCOL.md) — the WebSocket event contract.
 6. [docs/I18N.md](docs/I18N.md) — the internationalization strategy.
 
+## Running Kali
+
+### Without Docker (native development)
+
+**Quick start (Piper TTS, no compilation required):**
+
+```bash
+cp kali-core/.env.example kali-core/.env
+# Edit KALI_LLM_API_URL with your LLM endpoint
+
+./scripts/dev.sh
+# → Open http://localhost:5173 in your browser
+```
+
+`dev.sh` auto-creates a Python venv, installs PyPI dependencies, and starts
+both kali-core (port 8900) and the Vite dev server (port 5173). Screen
+capture is not available in dev mode.
+
+**With Qwen3-TTS (optional, higher quality voice):**
+
+```bash
+./scripts/build-qwen-cpp.sh cpu          # compile C++ inference binary
+./scripts/download-qwen-models.sh        # download GGUF voice models
+./scripts/dev.sh                         # start (set KALI_TTS_PROVIDER=qwen3)
+```
+
+**Production mode (Electron + screen capture):**
+
+```bash
+# Requires a Wayland session with Hyprland
+./scripts/prod.sh
+```
+
+`prod.sh` builds the production frontend, compiles the Electron shell, and
+launches kali as a native window.
+
+### With Docker
+
+```bash
+cp docker/.env.example docker/.env
+# Edit KALI_LLM_API_URL in docker/.env
+
+docker compose -f docker/docker-compose.yml up -d --build
+# → Open http://localhost:8080 in your browser
+```
+
+See [docker/README.md](docker/README.md) for GPU support, engine selection,
+microphone setup, and advanced configuration.
+
 ## Roadmap
 
-| Phase | Scope | Delivers |
-|---|---|---|
-| **0 — Cimientos** | Tauri shell launches sidecar, WS, port STT/TTS/robot-es, frontend dashboard, DirectLLMProvider | A working companion = today's behavior on a better shell |
-| **1 — Agente + tools básicas** | AgentRuntime single-step, tools `fs_*`, `run_command`, PermissionGateway with dev profile, consent modal UI, activity widgets, themes, profile switcher, syntax highlighting | ✅ Complete |
-| **2 — Dev use cases** | `run_tests`, `git_worktree`, `git_diff`, `launch_app`, `web_search`, `web_fetch`, multi-session, gaming/files profiles | "Ask it to run tests / create a worktree" |
-| **3 — Capture + render** | Wayland ScreenCapture, screenshot tool, Canvas artifacts (HTML/markdown/diff), vision provider, `organize_folder` | "Have it see my screen and render a mockup" |
-| **4 — Gaming** | Dota builds, no-spoiler game info, per-game widgets, refined gaming profile | "In-match assistance" |
-| **5 — Voz avanzada + portabilidad** | Wake word, intra-segment PCM streaming (optional), X11/Windows/macOS capture backends, packaging (AppImage/.deb) | Polished open-source release |
+| Phase | Scope | Delivers | Status |
+|---|---|---|---|
+| **0 — Foundations** | Tauri/Electron shell, WS, STT/TTS, DirectLLMProvider, base frontend | Functional companion | ✅ |
+| **1 — Agent + Tools** | AgentRuntime, `fs_*`, `run_command`, PermissionGateway, consent UI, themes, profiles | Agent with tools and permissions | ✅ |
+| **2 — Dev Cases** | `run_tests`, `git_*`, `launch_app`, `web_search`, `web_fetch`, multi-session, Planner, Memory | "Ask it to run tests / create a worktree" | ✅ |
+| **3 — Capture + Render** | Wayland ScreenCapture, `screenshot` tool, Canvas artifacts, vision provider, `organize_folder` | "Watch your screen and render mockups" | ✅ |
+| **4 — Gaming** | Dota builds, anti-spoiler info, per-game widgets, refined profile, LLM vision | "In-match assistance" | ✅ |
+| **5 — Advanced Voice** | Wake word, intra-segment PCM, X11/Win/macOS capture, packaging | Polished open-source release | ⬜ |
 
 ## Tech stack
 
 | Layer | Tech | Why |
 |---|---|---|
-| Shell | Tauri 2 + Rust | Lightweight, modular, open source, multiplatform |
-| Frontend | React + Vite + TypeScript | Canvas ecosystem, i18n ecosystem |
-| Core | Python 3.12 + asyncio | Readable for someone learning AI; reuses existing code |
-| Protocol | Local WebSocket | Same pattern as the legacy prototype |
-| STT | Vosk (offline) | Already working in the prototype |
-| TTS | Piper in-process + numpy effects | Local, no ffmpeg required |
-| TTS external (optional) | Any HTTP TTS via config | For users who already run lapis-tts |
-| LLM | OpenAI-compatible + nanobot | Flexible |
-| Capture | xdg-desktop-portal (Wayland) | Standard, no root |
-| Tools | subprocess + whitelist | Auditable |
-| Permissions | JSON profiles + consent | Declarative |
-| i18n | react-i18next | Standard, browser-friendly |
-| Build | `tauri build` + `pyinstaller` | Open-source packaging |
+| Shell | Electron + TypeScript | Mature, multiplatform, native tray support |
+| Frontend | React + Vite + TypeScript | Canvas ecosystem, i18n support |
+| Core | Python 3.12 + asyncio | Readable, reuses existing AI libraries |
+| Protocol | Local WebSocket (JSON) | Low latency, documented contract |
+| STT | Vosk (offline) | Offline, supports multiple languages |
+| TTS | Piper in-process + Qwen3-TTS + HTTP | Local, high quality, modular |
+| LLM | OpenAI-compatible + nanobot | Flexible, works with Ollama/Cloud |
+| Capture | mss (Python) | Automatic platform detection (Wayland/X11/Win) |
+| Permissions | JSON profiles + consent | Declarative and secure |
+| i18n | react-i18next | Standard and browser-friendly |
+| Build | `electron-builder` + `pyinstaller` | standard packaging options |
 
 ## License
 
@@ -109,10 +157,4 @@ MIT. See `LICENSE`.
 
 ## Status
 
-This is a personal project with open-source intent. Phase 1 is complete
-(text + voice I/O, agent with tools, permissions + consent, themes, profile
-switcher, syntax highlighting). Phase 2 is complete (dev tools, web tools,
-multi-session, Planner, Memory, NanobotLLMProvider, reasoning panel).
-Phase 3 (capture + render) is pending. Contributions are not yet open while the
-core shapes stabilize, but issues and discussions are welcome once the
-repo goes public.
+This is a personal project with open-source intent. All phases from 1 to 4 are complete (text + voice I/O, agent with tools, permissions + consent, themes, profile switcher, dev tools, web tools, multi-session, Planner, Memory, Screen capture, Artifact rendering, and Gaming assistance). Phase 5 (advanced voice + portability) is partially implemented with wake word support. Contributions are not yet open while the core shapes stabilize, but issues and discussions are welcome.
