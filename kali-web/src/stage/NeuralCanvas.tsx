@@ -419,7 +419,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
         onCanvasAutoExpandChange={onCanvasAutoExpandChange}
         uiScale={uiScale}
         onUIScaleChange={onUIScaleChange}
-        currentLanguage={i18n.language}
+        currentLanguage={i18n.resolvedLanguage ?? "en"}
         onLanguageChange={onLanguageChange}
         downloadTtsModel={chat.downloadTtsModel}
         downloadSttModel={chat.downloadSttModel}
