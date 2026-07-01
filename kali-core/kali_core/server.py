@@ -1484,6 +1484,7 @@ class Connection:
         self._stt_language: str = normalize(settings.stt_language)
         self._wake_word_enabled: bool = settings.stt_wake_word_enabled
         self._input_mode: str = settings.input_mode
+        self._ui_language: str = "en"
         self._feedback_mode: str = "minimal"
         self._plan_mode: bool = False
         self._voice_instructions: str = ""
@@ -1511,6 +1512,8 @@ class Connection:
             self._stt_enabled = bool(cfg.stt_enabled)
         if cfg.stt_language is not None:
             self._stt_language = normalize(cfg.stt_language)
+        if cfg.ui_language is not None:
+            self._ui_language = normalize(cfg.ui_language)
         if cfg.stt_vad_enabled is not None:
             self._stt_vad_enabled = bool(cfg.stt_vad_enabled)
         if cfg.stt_vad_mode is not None:
@@ -2236,7 +2239,7 @@ class Connection:
             first_token_ts: float | None = None
             tool_call_count = 0
             usage_stats: dict | None = None
-            async for event in self.server.agent.respond(agent_message, session_id, language=self._stt_language):
+            async for event in self.server.agent.respond(agent_message, session_id, language=self._ui_language):
                 if event.kind == "delta" and event.text:
                     if first_token_ts is None:
                         first_token_ts = time.monotonic()
@@ -2441,6 +2444,8 @@ class Connection:
             self._stt_enabled = bool(event["stt_enabled"])
         if "stt_language" in event:
             self._stt_language = normalize(event["stt_language"])
+        if "ui_language" in event:
+            self._ui_language = normalize(event["ui_language"])
         if "stt_provider" in event:
             if self._stt_session_active:
                 await self.send(
@@ -2584,6 +2589,7 @@ class Connection:
             # Per-connection
             stt_enabled=self._stt_enabled,
             stt_language=self._stt_language,
+            ui_language=self._ui_language,
             stt_vad_enabled=self._stt_vad_enabled,
             stt_vad_mode=self._stt_vad_mode,
             stt_vad_silence_timeout=self._stt_vad_silence_timeout,
@@ -2606,6 +2612,7 @@ class Connection:
         payload.update({
             "stt_enabled": self._stt_enabled,
             "stt_language": self._stt_language,
+            "ui_language": self._ui_language,
             "wake_word_enabled": self._wake_word_enabled,
             "input_mode": self._input_mode,
             "feedback_mode": self._feedback_mode,

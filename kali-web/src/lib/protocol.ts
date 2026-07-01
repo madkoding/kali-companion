@@ -48,6 +48,7 @@ export interface SettingsEvent {
   llm_max_tokens?: number;
   profile?: string;
   language?: string;
+  ui_language?: string;
   stt_enabled?: boolean;
   stt_language?: string;
   stt_provider?: string;

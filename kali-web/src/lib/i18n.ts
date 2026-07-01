@@ -25,7 +25,7 @@ void i18n
       escapeValue: false, // React escapes by default
     },
     detection: {
-      order: ["localStorage", "navigator"],
+      order: ["localStorage"],
       lookupLocalStorage: "kali.lang",
       caches: ["localStorage"],
     },

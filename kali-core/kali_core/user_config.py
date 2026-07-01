@@ -44,6 +44,7 @@ class UserConfig:
     # ── Per-connection (applied on every new Connection, override env defaults) ──
     stt_enabled: bool | None = None
     stt_language: str | None = None
+    ui_language: str | None = None
     stt_vad_enabled: bool | None = None
     stt_vad_mode: int | None = None
     stt_vad_silence_timeout: float | None = None

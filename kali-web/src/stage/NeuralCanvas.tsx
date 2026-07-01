@@ -140,7 +140,8 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
   const onLanguageChange = useCallback((lang: string) => {
     void i18n.changeLanguage(lang);
     localStorage.setItem("kali.lang", lang);
-  }, [i18n]);
+    chat.updateSettings({ ui_language: lang });
+  }, [i18n, chat]);
 
   // Expose workspace API globally for debugging (dev only)
   useEffect(() => {
