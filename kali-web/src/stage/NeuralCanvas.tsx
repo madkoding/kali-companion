@@ -100,12 +100,16 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
 
   // Auto-adaptive input: any printable keypress reveals the text field.
   // Captures the first character in a ref so SpotlightInput can inject it.
+  // Suppressed when a game window has focus (games own their keyboard).
   const firstCharRef = useRef("");
+  const apiRef = useRef(api);
+  useEffect(() => { apiRef.current = api; }, [api]);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (typing) return;
       if (chat.isTurnActive) return;
       if (customizerOpen) return;
+      if (apiRef.current.windows.some((w) => w.type === "game" && !w.closed)) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {

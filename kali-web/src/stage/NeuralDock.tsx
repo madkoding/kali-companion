@@ -174,14 +174,23 @@ export function NeuralDock({ api, onToggleDebug }: Props) {
 
         {/* ── Toys button ──────────────────────────────────── */}
         <button
-          onClick={() => api.createWindow("game", {
-            title: t("dock.toys"),
-            icon: "\u{1F3AE}",
-            content: { mode: "launchpad" },
-            resizable: true,
-            minW: 360,
-            minH: 400,
-          })}
+          onClick={() => {
+            const existing = api.windows.find(
+              (w) => w.type === "game" && (w.content as any)?.mode === "launchpad",
+            );
+            if (existing && !existing.closed) {
+              api.focusWindow(existing.id);
+            } else {
+              api.createWindow("game", {
+                title: t("dock.toys"),
+                icon: "\u{1F3AE}",
+                content: { mode: "launchpad" },
+                resizable: true,
+                minW: 360,
+                minH: 400,
+              });
+            }
+          }}
           disabled={isChatActive || isRecording}
           className={`h-9 w-9 rounded-xl transition flex items-center justify-center badge ${
             isChatActive || isRecording
