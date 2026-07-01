@@ -18,6 +18,51 @@ interface Props {
   firstCharRef: React.MutableRefObject<string>;
 }
 
+/**
+ * Get the screen-space coordinates of the textarea caret.
+ * Uses a hidden mirror div to measure text layout accurately.
+ */
+function getCaretScreenCoords(ta: HTMLTextAreaElement): { x: number; y: number } | null {
+  const rect = ta.getBoundingClientRect();
+  if (rect.width === 0) return null;
+
+  const pos = ta.selectionStart ?? ta.value.length;
+  const text = ta.value;
+  const before = text.slice(0, pos);
+  const after = text.slice(pos);
+
+  const mirror = document.createElement("div");
+  const style = window.getComputedStyle(ta);
+  mirror.style.cssText = `
+    position: fixed; top: -9999px; left: -9999px; visibility: hidden;
+    white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word;
+    font: ${style.font}; font-size: ${style.fontSize};
+    line-height: ${style.lineHeight}; letter-spacing: ${style.letterSpacing};
+    padding: ${style.padding}; border: ${style.border};
+    width: ${ta.clientWidth}px;
+  `;
+  mirror.textContent = before;
+  document.body.appendChild(mirror);
+
+  const span = document.createElement("span");
+  span.textContent = after || ".";
+  mirror.appendChild(span);
+
+  const spanRect = span.getBoundingClientRect();
+  const x = rect.left + (spanRect.left - mirror.getBoundingClientRect().left) + spanRect.width;
+  const y = rect.top + (spanRect.top - mirror.getBoundingClientRect().top);
+  document.body.removeChild(mirror);
+
+  return { x, y };
+}
+
+function dispatchCursorMove(ta: HTMLTextAreaElement) {
+  const coords = getCaretScreenCoords(ta);
+  if (coords) {
+    window.dispatchEvent(new CustomEvent("kali:cursor-move", { detail: coords }));
+  }
+}
+
 export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
   const { t } = useTranslation();
   const { chat } = useStage();
@@ -31,7 +76,7 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
     
     // Reset height to compute scrollHeight correctly
     el.style.height = "auto";
-    const newHeight = Math.min(el.scrollHeight, window.innerHeight * 0.6);
+    const newHeight = Math.min(el.scrollHeight, window.innerHeight * 0.5);
     el.style.height = `${newHeight}px`;
   }, [value, open]);
 
@@ -45,6 +90,7 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
           inputRef.current.focus();
           // Move cursor to end if there's initial text
           inputRef.current.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
+          dispatchCursorMove(inputRef.current);
         }
       }, 50);
       return () => clearTimeout(timer);
@@ -52,6 +98,31 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
       setValue("");
     }
   }, [open, firstCharRef]);
+
+  // Dispatch cursor position on every change so the avatar can track it.
+  useEffect(() => {
+    if (!open) return;
+    const ta = inputRef.current;
+    if (!ta) return;
+    dispatchCursorMove(ta);
+  }, [value, open]);
+
+  // Track cursor position via keyup, click, and selectionchange.
+  useEffect(() => {
+    if (!open) return;
+    const ta = inputRef.current;
+    if (!ta) return;
+    const onInput = () => dispatchCursorMove(ta);
+    const onMouseUp = () => dispatchCursorMove(ta);
+    ta.addEventListener("keyup", onInput);
+    ta.addEventListener("click", onMouseUp);
+    document.addEventListener("selectionchange", onInput);
+    return () => {
+      ta.removeEventListener("keyup", onInput);
+      ta.removeEventListener("click", onMouseUp);
+      document.removeEventListener("selectionchange", onInput);
+    };
+  }, [open]);
 
   const onSubmit = useCallback(() => {
     const text = value.trim();
@@ -78,7 +149,7 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center"
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[42vh]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -126,7 +197,7 @@ export function SpotlightInput({ open, onClose, firstCharRef }: Props) {
                   placeholder={chat.isTurnActive ? (t("stage.waiting_response") as string) : (t("chat.placeholder") as string)}
                   onKeyDown={onKeyDown}
                   disabled={chat.isTurnActive}
-                  className={`w-full bg-transparent outline-none text-center placeholder:text-muted/40 resize-none overflow-y-auto scrollbar-none transition-opacity duration-300 ${
+                  className={`w-full bg-transparent outline-none text-center placeholder:text-muted/40 resize-none overflow-y-auto transition-opacity duration-300 ${
                     chat.isTurnActive ? "opacity-50 cursor-not-allowed" : "opacity-100"
                   }`}
                   style={{

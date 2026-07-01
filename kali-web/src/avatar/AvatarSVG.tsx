@@ -39,6 +39,8 @@ interface Props {
   config: AvatarConfig;
   onClick?: () => void;
   className?: string;
+  /** When true, eyes look down at the textbox instead of following the mouse. */
+  typing?: boolean;
 }
 
 /** The full SVG markup — injected once on mount. */
@@ -102,7 +104,7 @@ const SVG_MARKUP = `<svg id="avatar-svg" data-state="idle" data-mood="normal" vi
   </g>
 </svg>`;
 
-export function AvatarSVG({ state, emotion, analyser, audioLevel, config, onClick, className }: Props) {
+export function AvatarSVG({ state, emotion, analyser, audioLevel, config, onClick, className, typing }: Props) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -372,6 +374,62 @@ export function AvatarSVG({ state, emotion, analyser, audioLevel, config, onClic
       observer.disconnect();
     };
   }, []);
+
+  // When typing, eyes track the text cursor position via CustomEvent.
+  useEffect(() => {
+    if (!svgRef.current) return;
+
+    const applyLook = (targetX: number, targetY: number) => {
+      if (!svgRef.current) return;
+      const rect = svgRef.current.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const relX = (targetX - rect.left) / rect.width;
+      const relY = (targetY - rect.top) / rect.height;
+      const maxOffset = 18, maxHeadRot = 10, maxHeadTx = 22, maxHeadTy = 14;
+      const dx = (relX - 0.5) * 2, dy = (relY - 0.5) * 2;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const f = dist > 1 ? 1 / dist : 1;
+      if (pupilLeftRef.current) {
+        pupilLeftRef.current.style.transition = "transform 0.15s ease";
+        pupilLeftRef.current.style.transform = `translate(${dx * f * maxOffset}px, ${dy * f * maxOffset}px)`;
+      }
+      if (pupilRightRef.current) {
+        pupilRightRef.current.style.transition = "transform 0.15s ease";
+        pupilRightRef.current.style.transform = `translate(${dx * f * maxOffset}px, ${dy * f * maxOffset}px)`;
+      }
+      if (headPivotRef.current) {
+        headPivotRef.current.style.transition = "transform 0.15s ease";
+        headPivotRef.current.style.transform = `translate(${dx * f * maxHeadTx}px, ${dy * f * maxHeadTy}px) rotate(${dx * f * maxHeadRot}deg)`;
+      }
+    };
+
+    const resetLook = () => {
+      if (pupilLeftRef.current) {
+        pupilLeftRef.current.style.transition = "transform 0.4s ease";
+        pupilLeftRef.current.style.transform = "translate(0, 0)";
+      }
+      if (pupilRightRef.current) {
+        pupilRightRef.current.style.transition = "transform 0.4s ease";
+        pupilRightRef.current.style.transform = "translate(0, 0)";
+      }
+      if (headPivotRef.current) {
+        headPivotRef.current.style.transition = "transform 0.4s ease";
+        headPivotRef.current.style.transform = "translate(0, 0) rotate(0deg)";
+      }
+    };
+
+    const handleCursorMove = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { x: number; y: number } | undefined;
+      if (detail) applyLook(detail.x, detail.y);
+    };
+
+    if (typing) {
+      window.addEventListener("kali:cursor-move", handleCursorMove);
+      return () => window.removeEventListener("kali:cursor-move", handleCursorMove);
+    } else {
+      resetLook();
+    }
+  }, [typing]);
 
   return (
     <div

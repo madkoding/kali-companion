@@ -105,6 +105,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
     function onKey(e: KeyboardEvent) {
       if (typing) return;
       if (chat.isTurnActive) return;
+      if (customizerOpen) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -114,7 +115,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [typing, chat.isTurnActive]);
+  }, [typing, chat.isTurnActive, customizerOpen]);
 
   const newSession = useCallback(() => {
     setHistoryOpen(false);
@@ -227,19 +228,21 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
 
   return (
     <div className="relative h-full w-full overflow-hidden stage-surface stage-grain">
-      {/* Avatar zone — Always centered in available space */}
+      {/* Avatar zone — centered, moves up when typing or customizer opens */}
       <div
-        className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none transition-all duration-500"
+        className="absolute inset-0 flex items-center justify-center pointer-events-none transition-all duration-500"
         style={{
-          zIndex: customizerOpen ? 60 : 10,
+          zIndex: customizerOpen || typing ? 60 : 10,
           paddingRight: customizerOpen && !isMobile ? "calc(360px * var(--mul-density))" : "0",
         }}
       >
-        {/* Avatar & Rings container */}
-        <div className="relative flex items-center justify-center transition-all duration-500" style={{
-          width: avPx,
-          height: avPx,
-        }}>
+          {/* Avatar & Rings container */}
+          <div className="relative flex items-center justify-center" style={{
+            width: avPx,
+            height: avPx,
+            transform: typing ? "translateY(-20vh)" : "translateY(0)",
+            transition: "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)",
+          }}>
           <div className="absolute rounded-full border border-accent/10 transition-all duration-500" style={{
             width: ring1Px,
             height: ring1Px,
@@ -255,7 +258,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
             zIndex: customizerOpen ? 61 : 20,
             width: innerPx,
             height: innerPx,
-            filter: customizerOpen ? "drop-shadow(0 0 40px rgba(124,92,255,0.35))" : undefined,
+            filter: customizerOpen || typing ? "drop-shadow(0 0 40px rgba(124,92,255,0.35))" : undefined,
           }}>
             <AvatarSVG
               state={avatarState}
@@ -263,13 +266,26 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
               analyser={tts.analyser}
               config={avatarConfig}
               onClick={onAvatarClick}
+              typing={typing}
               className="avatar-mount"
             />
           </div>
         </div>
-        {/* Ambient welcome text — only when no assistant messages */}
+      </div>
+
+      {/* Welcome + transcript — fixed at bottom, NOT affected by avatar growth */}
+      <div
+        className="absolute inset-x-0 flex flex-col items-center pointer-events-none"
+        style={{
+          zIndex: customizerOpen ? 60 : 10,
+          paddingRight: customizerOpen && !isMobile ? "calc(360px * var(--mul-density))" : "0",
+          bottom: "25%",
+          opacity: customizerOpen ? 0 : 1,
+          pointerEvents: customizerOpen ? "none" : "auto",
+          transition: "opacity 0.3s ease, padding-right 0.5s ease",
+        }}
+      >
         <WelcomeText messages={chat.messages} />
-        {/* Floating transcript — in the flow, below avatar */}
         <FloatingTranscript messages={chat.messages} />
       </div>
 
