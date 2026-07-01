@@ -48,6 +48,7 @@ export interface SettingsEvent {
   llm_max_tokens?: number;
   profile?: string;
   language?: string;
+  ui_language?: string;
   stt_enabled?: boolean;
   stt_language?: string;
   stt_provider?: string;
@@ -385,6 +386,10 @@ export interface ActivateConnectionRequest {
   model: string;
 }
 
+export interface DeactivateConnectionRequest {
+  event: "deactivate_connection";
+}
+
 // Backend → frontend: full connections snapshot
 export interface ConnectionsListEvent {
   event: "connections_list";
@@ -625,6 +630,7 @@ export type IncomingEvent =
   | UpdateConnectionRequest
   | DeleteConnectionRequest
   | ActivateConnectionRequest
+  | DeactivateConnectionRequest
   | DownloadTtsModelEvent
   | DownloadSttModelEvent;
 
