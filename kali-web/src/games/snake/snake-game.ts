@@ -16,7 +16,7 @@ type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
 
 const BOARD_W = 20;
 const BOARD_H = 20;
-const TICK_INTERVAL_MS = 200;
+const TICK_INTERVAL_MS = 100;
 
 export class SnakeGame extends BaseGame {
   readonly type = GameType.SNAKE;
@@ -97,6 +97,9 @@ export class SnakeGame extends BaseGame {
         case GameCommand.PLAY_AGAIN:
           this.restart();
           return this.state;
+        case GameCommand.RESTART:
+          this.restart();
+          return this.state;
         case GameCommand.PAUSE:
           this.pause();
           return this.state;
@@ -149,14 +152,16 @@ export class SnakeGame extends BaseGame {
       return;
     }
 
-    this.snake.unshift(newHead);
+    const newSnake = [newHead, ...this.snake];
 
     if (newHead.x === this.food.x && newHead.y === this.food.y) {
       this._score += 10;
       this._spawnFood();
     } else {
-      this.snake.pop();
+      newSnake.pop();
     }
+
+    this.snake = newSnake;
 
     this.state = {
       status: GameStatus.PLAYING,

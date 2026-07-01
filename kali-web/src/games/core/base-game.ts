@@ -14,6 +14,7 @@ export abstract class BaseGame {
 
   pause(): void {}
   resume(): void {}
+  tick(): void {}
 
   private _state: GameState = {
     status: "waiting",
@@ -22,6 +23,7 @@ export abstract class BaseGame {
     winner: null,
   };
 
+  private _prevData: unknown = null;
   private _version = 0;
 
   protected get state(): GameState {
@@ -29,8 +31,19 @@ export abstract class BaseGame {
   }
 
   protected set state(s: GameState) {
+    this._prevData = this._cloneData(this._state.data);
     this._state = s;
     this._version++;
+  }
+
+  private _cloneData(data: unknown): unknown {
+    if (data === null || typeof data !== "object") return data;
+    if (typeof structuredClone === "function") return structuredClone(data);
+    try {
+      return JSON.parse(JSON.stringify(data));
+    } catch {
+      return data;
+    }
   }
 
   getState(): GameState {
@@ -43,5 +56,9 @@ export abstract class BaseGame {
 
   get version(): number {
     return this._version;
+  }
+
+  get prevData(): unknown {
+    return this._prevData;
   }
 }
