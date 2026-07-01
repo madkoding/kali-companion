@@ -503,6 +503,7 @@
   "dock.mic_disabled": "Speech to Text is disabled",
   "dock.toys": "Toys",
   "dock.debug": "Debug",
+  "dock.text_input": "Type a message",
   "jobs.title": "Jobs",
   "jobs.active": "{{count}} active",
 

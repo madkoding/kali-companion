@@ -361,6 +361,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
       <NeuralDock
         api={api}
         onToggleDebug={() => setDebugOpen((d) => !d)}
+        onOpenTextInput={() => setTyping(true)}
       />
 
       {/* Stopped toast */}

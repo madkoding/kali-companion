@@ -5,6 +5,8 @@
 
 import type { OutgoingEvent, EventName } from "./protocol";
 
+const DEFAULT_SEND_TIMEOUT_MS = 10_000;
+
 type Listener = (payload: OutgoingEvent) => void;
 type IncomingEventName = EventName;
 
@@ -78,6 +80,52 @@ export class WSClient {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(payload));
     }
+  }
+
+  sendAndWait<T>(
+    payload: Record<string, unknown>,
+    responseEventName: string,
+    timeoutMs: number = DEFAULT_SEND_TIMEOUT_MS,
+    abortSignal?: AbortSignal,
+  ): Promise<T> {
+    if (abortSignal?.aborted) {
+      return Promise.reject(new Error("sendAndWait aborted before send"));
+    }
+
+    return new Promise((resolve, reject) => {
+      let rejected = false;
+
+      const timer = setTimeout(() => {
+        rejected = true;
+        this.off(responseEventName as IncomingEventName, handler as Listener);
+        reject(new Error(`sendAndWait timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      const abortHandler = () => {
+        if (rejected) return;
+        rejected = true;
+        clearTimeout(timer);
+        this.off(responseEventName as IncomingEventName, handler as Listener);
+        reject(new Error("sendAndWait aborted"));
+      };
+
+      if (abortSignal) {
+        abortSignal.addEventListener("abort", abortHandler);
+      }
+
+      const handler = (response: OutgoingEvent) => {
+        if (rejected) return;
+        rejected = true;
+        clearTimeout(timer);
+        if (abortSignal) {
+          abortSignal.removeEventListener("abort", abortHandler);
+        }
+        this.off(responseEventName as IncomingEventName, handler as Listener);
+        resolve(response as T);
+      };
+      this.on(responseEventName as IncomingEventName, handler as Listener);
+      this.send(payload);
+    });
   }
 
   sendBinary(data: ArrayBuffer | Blob): void {

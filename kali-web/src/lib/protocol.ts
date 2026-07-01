@@ -608,6 +608,48 @@ export interface ModelCatalogEntry {
   downloaded: boolean;
 }
 
+// ── Game AI WebSocket Events ────────────────────────────────────────────────
+
+export interface GameRules {
+  system_prompt: string;
+  response_format?: string;
+  [key: string]: unknown;
+}
+
+export interface GameMoveEvent {
+  event: "game_move";
+  game_type: string;
+  session_id?: string;
+  rules: GameRules;
+  game_state: Record<string, unknown>;
+  player_role: string;
+  difficulty?: string;
+  starter?: string;
+  player_marker?: string;
+  opponent_marker?: string;
+}
+
+export interface GameAction {
+  type: string;
+  data: Record<string, unknown>;
+}
+
+export type GameMoveErrorCode = "PARSE_ERROR" | "INVALID_MOVE" | "MODEL_ERROR" | "NO_LEGAL_MOVES";
+
+export interface GameMoveError {
+  code: GameMoveErrorCode;
+  message: string;
+  fallback_action?: GameAction;
+}
+
+export interface GameMoveResponseEvent {
+  event: "game_move_response";
+  game_type: string;
+  session_id?: string;
+  action: GameAction | null;
+  error: GameMoveError | null;
+}
+
 export type IncomingEvent =
   | InputEvent
   | StopEvent
@@ -632,7 +674,8 @@ export type IncomingEvent =
   | ActivateConnectionRequest
   | DeactivateConnectionRequest
   | DownloadTtsModelEvent
-  | DownloadSttModelEvent;
+  | DownloadSttModelEvent
+  | GameMoveEvent;
 
 export type OutgoingEvent =
   | ReadyEvent
@@ -671,4 +714,5 @@ export type OutgoingEvent =
   | DownloadSttModelStartedEvent
   | DownloadSttModelProgressEvent
   | DownloadSttModelCompleteEvent
-  | DownloadSttModelErrorEvent;
+  | DownloadSttModelErrorEvent
+  | GameMoveResponseEvent;

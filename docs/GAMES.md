@@ -33,7 +33,7 @@
 
 | # | ID | Juego | Descripción | Render | Prioridad | Estado |
 |---|-----|-------|-------------|--------|-----------|--------|
-| 11 | `tictactoe` | Tic-Tac-Toe | Kali juega contra el jugador con estrategia | Grid | - | Pendiente |
+| 11 | `tictactoe` | Tic-Tac-Toe | Jugador contra IA local (CPU) o contra Kali vía LLM. Tablero 3×3, selector de modo, dificultad y quien empieza. | Grid | - | Implementado |
 | 12 | `wordle-duel` | Wordle Duelo | Ambos intentan adivinar la palabra, cada uno con sus intentos | Widget | - | Pendiente |
 | 13 | `chess` | Ajedrez | Kali como rival de ajedrez | Grid | - | Pendiente |
 | 14 | `connect4` | Conecta 4 | Kali juega contra el jugador, 4 en línea | Grid | - | Pendiente |

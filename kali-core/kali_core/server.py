@@ -1820,8 +1820,131 @@ class Connection:
             if text and self.session_id:
                 await self._synthesize_tts(text, self.session_id)
 
+        elif kind == "game_move":
+            await self._handle_game_move(event)
+
         else:
             logger.debug("unhandled event: %s", kind)
+
+    # ── Game AI (WebSocket) ───────────────────────────────────
+
+    async def _handle_game_move(self, event: dict[str, Any]) -> None:
+        """Handle game_move: call LLM with game state and return an action."""
+        game_type = event.get("game_type", "unknown")
+        session_id = event.get("session_id")
+        rules = event.get("rules", {})
+        game_state = event.get("game_state", {})
+        player_role = event.get("player_role", "opponent")
+
+        messages = self._build_game_messages(rules, game_state)
+
+        try:
+            llm = self.server.llm_provider
+            if llm is None:
+                raise RuntimeError("No LLM provider configured")
+            response = await llm.complete(messages)
+        except Exception as ex:
+            logger.exception("LLM complete failed for game_move")
+            await self.send({
+                "event": "game_move_response",
+                "game_type": game_type,
+                "session_id": session_id,
+                "action": None,
+                "error": {
+                    "code": "MODEL_ERROR",
+                    "message": str(ex),
+                    "fallback_action": None,
+                },
+            })
+            return
+
+        action, error = self._parse_game_action(response, game_state, rules)
+        await self.send({
+            "event": "game_move_response",
+            "game_type": game_type,
+            "session_id": session_id,
+            "action": action,
+            "error": error,
+        })
+
+    def _build_game_messages(self, rules: dict, game_state: dict) -> list[dict]:
+        """Build a fresh user-only messages list. The provider's own system prompt is
+        prepended by complete(), so we embed the game system prompt as a user preamble
+        to avoid double-system-message errors with Jinja-templated LLM backends."""
+        system_prompt = rules.get("system_prompt", "You are a game AI. Output valid JSON.")
+        user_content = "SYSTEM INSTRUCTIONS:\n" + system_prompt + "\n\nGame state:\n" + json.dumps(game_state, indent=2)
+        return [{"role": "user", "content": user_content}]
+
+    def _parse_game_action(
+        self,
+        llm_response: dict,
+        game_state: dict,
+        rules: dict,
+    ) -> tuple[dict | None, dict | None]:
+        """
+        Parse LLM response into a GameAction.
+        Returns (action, error). One is always None.
+        """
+        text = llm_response.get("text", "").strip()
+
+        try:
+            data = json.loads(text)
+            row = data.get("row")
+            col = data.get("col")
+
+            if not self._is_legal_move(game_state, row, col):
+                fallback = self._get_fallback_move(game_state)
+                return None, {
+                    "code": "INVALID_MOVE",
+                    "message": f"Coordinates ({row}, {col}) are out of range or cell is occupied",
+                    "fallback_action": fallback,
+                }
+
+            return {"type": "move", "data": {"row": row, "col": col}}, None
+
+        except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+            logger.warning(
+                "game AI parse error | game_type=%s | raw_response=%r",
+                rules.get("game_type", "unknown"),
+                text[:500],
+            )
+            fallback = self._get_fallback_move(game_state)
+            return None, {
+                "code": "PARSE_ERROR",
+                "message": f"Could not parse JSON from model response: {text[:100]}",
+                "fallback_action": fallback,
+            }
+
+    def _is_legal_move(self, game_state: dict, row: int | None, col: int | None) -> bool:
+        """Check if the coordinates are within bounds and the cell is empty."""
+        if row is None or col is None:
+            return False
+        if not isinstance(row, int) or not isinstance(col, int):
+            return False
+        if row < 0 or col < 0:
+            return False
+        board = game_state.get("board", [])
+        if not board or row >= len(board) or col >= len(board[0]):
+            return False
+        return board[row][col] is None
+
+    def _get_fallback_move(self, game_state: dict) -> dict | None:
+        """Pick a random legal move from the board. Returns None if no legal moves."""
+        import random
+
+        board = game_state.get("board", [])
+        if not board:
+            return None
+        legal = [
+            (r, c)
+            for r, row in enumerate(board)
+            for c, cell in enumerate(row)
+            if cell is None
+        ]
+        if not legal:
+            return None
+        r, c = random.choice(legal)
+        return {"type": "move", "data": {"row": r, "col": c}}
 
     # ── Model download ─────────────────────────────────────
 
