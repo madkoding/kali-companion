@@ -240,7 +240,7 @@ export function NeuralCanvas({ theme, onThemeChange, canvasAutoExpand, onCanvasA
           <div className="relative flex items-center justify-center" style={{
             width: avPx,
             height: avPx,
-            transform: typing ? "translateY(-22vh)" : "translateY(0)",
+            transform: typing ? "translateY(-20vh)" : "translateY(0)",
             transition: "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)",
           }}>
           <div className="absolute rounded-full border border-accent/10 transition-all duration-500" style={{

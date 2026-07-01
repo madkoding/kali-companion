@@ -375,14 +375,14 @@ export function AvatarSVG({ state, emotion, analyser, audioLevel, config, onClic
     };
   }, []);
 
-  // When typing, eyes look down at the textbox (bottom-center of viewport).
+  // When typing, eyes track the text cursor position via CustomEvent.
   useEffect(() => {
     if (!svgRef.current) return;
-    if (typing) {
+
+    const applyLook = (targetX: number, targetY: number) => {
+      if (!svgRef.current) return;
       const rect = svgRef.current.getBoundingClientRect();
       if (rect.width === 0) return;
-      const targetX = rect.left + rect.width / 2;
-      const targetY = window.innerHeight * 0.75;
       const relX = (targetX - rect.left) / rect.width;
       const relY = (targetY - rect.top) / rect.height;
       const maxOffset = 18, maxHeadRot = 10, maxHeadTx = 22, maxHeadTy = 14;
@@ -390,18 +390,20 @@ export function AvatarSVG({ state, emotion, analyser, audioLevel, config, onClic
       const dist = Math.sqrt(dx * dx + dy * dy);
       const f = dist > 1 ? 1 / dist : 1;
       if (pupilLeftRef.current) {
-        pupilLeftRef.current.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
+        pupilLeftRef.current.style.transition = "transform 0.15s ease";
         pupilLeftRef.current.style.transform = `translate(${dx * f * maxOffset}px, ${dy * f * maxOffset}px)`;
       }
       if (pupilRightRef.current) {
-        pupilRightRef.current.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
+        pupilRightRef.current.style.transition = "transform 0.15s ease";
         pupilRightRef.current.style.transform = `translate(${dx * f * maxOffset}px, ${dy * f * maxOffset}px)`;
       }
       if (headPivotRef.current) {
-        headPivotRef.current.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
+        headPivotRef.current.style.transition = "transform 0.15s ease";
         headPivotRef.current.style.transform = `translate(${dx * f * maxHeadTx}px, ${dy * f * maxHeadTy}px) rotate(${dx * f * maxHeadRot}deg)`;
       }
-    } else {
+    };
+
+    const resetLook = () => {
       if (pupilLeftRef.current) {
         pupilLeftRef.current.style.transition = "transform 0.4s ease";
         pupilLeftRef.current.style.transform = "translate(0, 0)";
@@ -414,6 +416,18 @@ export function AvatarSVG({ state, emotion, analyser, audioLevel, config, onClic
         headPivotRef.current.style.transition = "transform 0.4s ease";
         headPivotRef.current.style.transform = "translate(0, 0) rotate(0deg)";
       }
+    };
+
+    const handleCursorMove = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { x: number; y: number } | undefined;
+      if (detail) applyLook(detail.x, detail.y);
+    };
+
+    if (typing) {
+      window.addEventListener("kali:cursor-move", handleCursorMove);
+      return () => window.removeEventListener("kali:cursor-move", handleCursorMove);
+    } else {
+      resetLook();
     }
   }, [typing]);
 
