@@ -272,3 +272,24 @@ export const ALL_PATTERNS = [
   "pattern-dog-shiba", "pattern-dog-husky", "pattern-dog-pug",
   "pattern-dog-dalmata", "pattern-dog-tuxedo", "pattern-solid",
 ];
+
+/** Valid ear types per species. */
+export const SPECIES_EARS: Record<AvatarSpecies, EarType[]> = {
+  gato: ["cat"],
+  perro: ["dog-up", "dog-flop"],
+  erizo: ["hedgehog"],
+};
+
+/** Valid pattern IDs per species. */
+export const SPECIES_PATTERNS: Record<AvatarSpecies, string[]> = {
+  gato: [
+    "pattern-calico-1", "pattern-calico-2", "pattern-calico-3",
+    "pattern-tabby-1", "pattern-tabby-2", "pattern-tabby-3",
+    "pattern-tuxedo-1", "pattern-siamese-1", "pattern-solid",
+  ],
+  perro: [
+    "pattern-dog-shiba", "pattern-dog-husky", "pattern-dog-pug",
+    "pattern-dog-dalmata", "pattern-dog-tuxedo", "pattern-solid",
+  ],
+  erizo: ["pattern-solid"],
+};

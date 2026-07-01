@@ -7,7 +7,7 @@ import {
   saveAvatarConfig,
   resetAvatarConfig,
 } from "../avatar/avatarConfig";
-import { animalDatabase, type Breed, type Variation, ALL_PATTERNS } from "../avatar/avatarPresets";
+import { animalDatabase, type Breed, type Variation, SPECIES_EARS, SPECIES_PATTERNS } from "../avatar/avatarPresets";
 import { ColorSwatchPicker } from "./ColorSwatchPicker";
 import { Overlay } from "../components/ui/Overlay";
 import { Cat, Palette, User, Sparkles } from "lucide-react";
@@ -31,8 +31,6 @@ const EYE_PRESETS = [
 const COLLAR_PRESETS = ["#D33C37", "#3B82F6", "#10B981"];
 
 type TabId = "base" | "style" | "face" | "addons";
-
-const EAR_TYPES: EarType[] = ["cat", "dog-up", "dog-flop", "hedgehog"];
 
 export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
   const { t } = useTranslation();
@@ -77,6 +75,10 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
   const selectBreed = useCallback((breedKey: string) => {
     setSelectedBreed(breedKey);
     setSelectedVariation(0);
+    if (breedKey === "custom") {
+      onChange({ ...config, breed: "custom" });
+      return;
+    }
     const breed = animalDatabase[species].breeds[breedKey];
     const ears = breed.ears || animalDatabase[species].ears;
     const variation = breed.variations[0];
@@ -244,58 +246,67 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                 </div>
               </div>
 
-              {/* 3. Ears (Morphology) */}
-              <div className="customizer-section">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-1 h-4 bg-accent rounded-full" />
-                  <h3 className="text-sm font-bold m-0">{t("customizer.section.ears")}</h3>
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {EAR_TYPES.map((et) => (
-                    <button
-                      key={et}
-                      className={`py-3 rounded-xl border transition text-[10px] font-bold uppercase tracking-tight ${
-                        config.ears === et 
-                          ? "bg-accent border-accent text-white" 
-                          : "bg-white/5 border-white/10 text-muted hover:bg-white/10 hover:text-fg"
-                      }`}
-                      onClick={() => setEars(et)}
-                    >
-                      {t(`customizer.ears.${et.replace("-", "_")}`)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* 3. Ears + Patterns (solo en modo Custom) */}
+              {isCustom && (
+                <>
+                  <div className="customizer-section">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-1 h-4 bg-accent rounded-full" />
+                      <h3 className="text-sm font-bold m-0">{t("customizer.section.ears")}</h3>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {SPECIES_EARS[species].map((et) => (
+                        <button
+                          key={et}
+                          className={`py-3 rounded-xl border transition text-[10px] font-bold uppercase tracking-tight ${
+                            config.ears === et 
+                              ? "bg-accent border-accent text-white" 
+                              : "bg-white/5 border-white/10 text-muted hover:bg-white/10 hover:text-fg"
+                          }`}
+                          onClick={() => setEars(et)}
+                        >
+                          {t(`customizer.ears.${et.replace("-", "_")}`)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="customizer-section">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-1 h-4 bg-accent rounded-full" />
+                      <h3 className="text-sm font-bold m-0">{t("customizer.patterns")}</h3>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 max-h-[160px] overflow-y-auto pr-2 stage-scroll">
+                      {SPECIES_PATTERNS[species].map((pid) => (
+                        <button
+                          key={pid}
+                          className={`px-2 py-2 rounded-lg border transition text-[9px] font-bold truncate ${
+                            config.pattern === pid 
+                              ? "bg-accent border-accent text-white" 
+                              : "bg-white/5 border-white/10 text-muted hover:bg-white/10 hover:text-fg"
+                          }`}
+                          onClick={() => setPattern(pid)}
+                          title={pid}
+                        >
+                          {pid.replace("pattern-", "").replace("-", " ")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
 
           {activeTab === "style" && (
             <>
-              {/* Variations / Patterns */}
-              <div className="customizer-section">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-1 h-4 bg-accent rounded-full" />
-                  <h3 className="text-sm font-bold m-0">{isCustom ? t("customizer.patterns") : t("customizer.variants")}</h3>
-                </div>
-                
-                {isCustom ? (
-                   <div className="grid grid-cols-3 gap-2 max-h-[160px] overflow-y-auto pr-2 stage-scroll">
-                   {ALL_PATTERNS.map((pid) => (
-                     <button
-                       key={pid}
-                       className={`px-2 py-2 rounded-lg border transition text-[9px] font-bold truncate ${
-                         config.pattern === pid 
-                           ? "bg-accent border-accent text-white" 
-                           : "bg-white/5 border-white/10 text-muted hover:bg-white/10 hover:text-fg"
-                       }`}
-                       onClick={() => setPattern(pid)}
-                       title={pid}
-                     >
-                       {pid.replace("pattern-", "").replace("-", " ")}
-                     </button>
-                   ))}
-                 </div>
-                ) : (
+              {/* Variations / Patterns — solo cuando NO es Custom (Custom lo tiene en Base) */}
+              {!isCustom && (
+                <div className="customizer-section">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-1 h-4 bg-accent rounded-full" />
+                    <h3 className="text-sm font-bold m-0">{t("customizer.variants")}</h3>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     {currentBreed?.variations.map((_vari, idx) => (
                       <button
@@ -311,8 +322,8 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                       </button>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Colors */}
               <div className="customizer-section">
