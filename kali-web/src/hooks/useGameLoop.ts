@@ -11,8 +11,10 @@ export function useGameLoop(
 ): void {
   const onFrameRef = useRef(onFrame);
   const onStatusChangeRef = useRef(onStatusChange);
+  const tickMsRef = useRef(tickMs);
   onFrameRef.current = onFrame;
   onStatusChangeRef.current = onStatusChange;
+  tickMsRef.current = tickMs;
 
   useEffect(() => {
     let lastTick = performance.now();
@@ -23,11 +25,11 @@ export function useGameLoop(
       const status = game.getStatus();
 
       if (status === GameStatus.PLAYING) {
-        if (now - lastTick >= tickMs) {
+        if (now - lastTick >= tickMsRef.current) {
           game.tick();
           lastTick = now;
         }
-        onFrameRef.current(Math.min((now - lastTick) / tickMs, 1));
+        onFrameRef.current(Math.min((now - lastTick) / tickMsRef.current, 1));
       } else {
         onFrameRef.current(1);
       }
@@ -35,6 +37,9 @@ export function useGameLoop(
       if (status !== lastStatus) {
         lastStatus = status;
         onStatusChangeRef.current(status);
+        if (status === GameStatus.PLAYING) {
+          lastTick = now;
+        }
       }
 
       rafId = requestAnimationFrame(loop);
@@ -42,5 +47,5 @@ export function useGameLoop(
 
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
-  }, [game, tickMs]);
+  }, [game]);
 }

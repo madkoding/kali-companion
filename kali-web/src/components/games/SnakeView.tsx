@@ -59,11 +59,17 @@ function drawPixelApple(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
 }
 
 function drawSnakeHead(ctx: CanvasRenderingContext2D, x: number, y: number, dir: string) {
+  const r = 6;
+
   ctx.fillStyle = PALETTE.headDark;
-  ctx.fillRect(x, y, CELL, CELL);
+  ctx.beginPath();
+  ctx.roundRect(x, y, CELL, CELL, r);
+  ctx.fill();
 
   ctx.fillStyle = PALETTE.head;
-  ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
+  ctx.beginPath();
+  ctx.roundRect(x + 2, y + 2, CELL - 4, CELL - 4, r - 2);
+  ctx.fill();
 
   const ex = x + (dir === "LEFT" ? 4 : dir === "RIGHT" ? 14 : 6);
   const ey = y + (dir === "UP" ? 4 : dir === "DOWN" ? 14 : 6);
@@ -86,11 +92,16 @@ function drawSnakeHead(ctx: CanvasRenderingContext2D, x: number, y: number, dir:
 }
 
 function drawSnakeBody(ctx: CanvasRenderingContext2D, x: number, y: number, idx: number) {
+  const r = 5;
   ctx.fillStyle = idx % 2 === 0 ? PALETTE.body : PALETTE.bodyDark;
-  ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+  ctx.beginPath();
+  ctx.roundRect(x + 1, y + 1, CELL - 2, CELL - 2, r);
+  ctx.fill();
 
   ctx.fillStyle = PALETTE.bodyInner;
-  ctx.fillRect(x + 5, y + 5, CELL - 10, CELL - 10);
+  ctx.beginPath();
+  ctx.roundRect(x + 5, y + 5, CELL - 10, CELL - 10, r - 2);
+  ctx.fill();
 }
 
 interface Point {
@@ -102,19 +113,26 @@ interface DrawState {
   snake: Point[];
   food: Point;
   direction: string;
+  level: number;
 }
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+function smoothstep(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
 export function SnakeView({ game }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scoreSpanRef = useRef<HTMLSpanElement>(null);
+  const levelSpanRef = useRef<HTMLSpanElement>(null);
   const [statusVersion, setStatusVersion] = useState(0);
   void statusVersion;
   const statusRef = useRef<GameStatusValue>(game.getStatus());
   const lastScoreRef = useRef(-1);
+  const lastLevelRef = useRef(-1);
 
   const drawFrame = useCallback(
     (interp: number) => {
@@ -154,10 +172,11 @@ export function SnakeView({ game }: Props) {
       }
 
       if (data) {
+        const eased = smoothstep(interp);
         data.snake.forEach((seg, i) => {
           const prev = prevData?.snake[i];
-          const px = prev ? lerp(prev.x, seg.x, interp) * CELL : seg.x * CELL;
-          const py = prev ? lerp(prev.y, seg.y, interp) * CELL : seg.y * CELL;
+          const px = prev ? lerp(prev.x, seg.x, eased) * CELL : seg.x * CELL;
+          const py = prev ? lerp(prev.y, seg.y, eased) * CELL : seg.y * CELL;
           if (i === 0) {
             drawSnakeHead(ctx, px, py, data.direction);
           } else {
@@ -173,6 +192,12 @@ export function SnakeView({ game }: Props) {
         lastScoreRef.current = score;
         if (scoreSpanRef.current) scoreSpanRef.current.textContent = String(score);
       }
+
+      const level = data?.level ?? 1;
+      if (level !== lastLevelRef.current) {
+        lastLevelRef.current = level;
+        if (levelSpanRef.current) levelSpanRef.current.textContent = String(level);
+      }
     },
     [game],
   );
@@ -185,7 +210,7 @@ export function SnakeView({ game }: Props) {
     [],
   );
 
-  useGameLoop(game, SnakeGame.TICK_INTERVAL_MS, drawFrame, handleStatusChange);
+  useGameLoop(game, game.getTickMs(), drawFrame, handleStatusChange);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -265,10 +290,10 @@ export function SnakeView({ game }: Props) {
             SCORE: <span ref={scoreSpanRef}>{state.score}</span>
           </span>
           <span
-            className="text-[8px]"
-            style={{ ...pixelFont, color: PALETTE.grid }}
+            className="text-[10px] tracking-wider"
+            style={{ ...pixelFont, color: PALETTE.head }}
           >
-            {state.score >= 100 ? "PRO" : "SNAKE"}
+            LEVEL: <span ref={levelSpanRef}>{(state.data as DrawState | null)?.level ?? 1}</span>
           </span>
         </div>
       </div>

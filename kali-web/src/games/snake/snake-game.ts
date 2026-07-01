@@ -16,7 +16,11 @@ type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
 
 const BOARD_W = 20;
 const BOARD_H = 20;
-const TICK_INTERVAL_MS = 100;
+const BASE_TICK_MS = 150;
+const MIN_TICK_MS = 70;
+const FOODS_PER_LEVEL = 4;
+const SPEED_LEVEL_FACTOR = 5;
+const SPEED_LEVEL_EXPONENT = 1.5;
 
 export class SnakeGame extends BaseGame {
   readonly type = GameType.SNAKE;
@@ -26,19 +30,21 @@ export class SnakeGame extends BaseGame {
 
   static readonly BOARD_W = BOARD_W;
   static readonly BOARD_H = BOARD_H;
-  static readonly TICK_INTERVAL_MS = TICK_INTERVAL_MS;
+  static readonly TICK_INTERVAL_MS = BASE_TICK_MS;
 
   private snake: Point[] = [];
   private food: Point = { x: 0, y: 0 };
   private direction: Direction = "RIGHT";
   private nextDirection: Direction = "RIGHT";
   private _score = 0;
+  private _foodsEaten = 0;
 
   start(_config?: GameConfig): GameState {
     this.snake = [{ x: Math.floor(BOARD_W / 2), y: Math.floor(BOARD_H / 2) }];
     this.direction = "RIGHT";
     this.nextDirection = "RIGHT";
     this._score = 0;
+    this._foodsEaten = 0;
     this._spawnFood();
 
     this.state = {
@@ -156,6 +162,7 @@ export class SnakeGame extends BaseGame {
 
     if (newHead.x === this.food.x && newHead.y === this.food.y) {
       this._score += 10;
+      this._foodsEaten += 1;
       this._spawnFood();
     } else {
       newSnake.pop();
@@ -189,6 +196,16 @@ export class SnakeGame extends BaseGame {
     this.food = p;
   }
 
+  getLevel(): number {
+    return Math.floor(this._foodsEaten / FOODS_PER_LEVEL) + 1;
+  }
+
+  getTickMs(): number {
+    const level = this.getLevel();
+    const decrease = Math.pow(level - 1, SPEED_LEVEL_EXPONENT) * SPEED_LEVEL_FACTOR;
+    return Math.max(MIN_TICK_MS, Math.round(BASE_TICK_MS - decrease));
+  }
+
   private _isValidDirection(dir: Direction): boolean {
     const opposites: Record<Direction, Direction> = {
       UP: "DOWN", DOWN: "UP", LEFT: "RIGHT", RIGHT: "LEFT",
@@ -202,7 +219,9 @@ export class SnakeGame extends BaseGame {
       snake: this.snake,
       food: this.food,
       direction: this.direction,
-      speed: TICK_INTERVAL_MS,
+      speed: this.getTickMs(),
+      level: this.getLevel(),
+      foodsEaten: this._foodsEaten,
     };
   }
 }

@@ -9,7 +9,7 @@
 
 | # | ID | Juego | Descripción | Render | Prioridad | Estado |
 |---|-----|-------|-------------|--------|-----------|--------|
-| 1 | `snake` | Snake | Comer sin chocarte contra las paredes o ti mismo | Canvas | - | Pendiente |
+| 1 | `snake` | Snake | Comer sin chocarte contra las paredes o ti mismo. Niveles progresivos, interpolación suave y aumento logarítmico de velocidad. | Canvas | - | Implementado |
 | 2 | `2048` | 2048 | Deslizar fichas y combinar números hasta llegar a 2048 | Grid | - | Pendiente |
 | 3 | `minesweeper` | Minesweeper | Descubrir minas sin explotar, usando lógica | Grid | - | Pendiente |
 | 4 | `memory` | Memory | Encontrar parejas de cartas ocultas | Grid | - | Pendiente |
@@ -69,4 +69,4 @@ over screen. See `docs/superpowers/specs/2026-06-30-kali-toys-design.md` §
 
 ---
 
-*Última actualización: 2026-06-30*
+*Última actualización: 2026-07-01*
