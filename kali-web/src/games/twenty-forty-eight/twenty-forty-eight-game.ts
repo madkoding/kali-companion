@@ -11,9 +11,14 @@ export type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
 
 export type BoardSize = 3 | 4 | 5 | 6;
 
-interface Tile {
+export interface Tile {
   value: number;
   id: number;
+}
+
+export interface TilePosition {
+  row: number;
+  col: number;
 }
 
 export interface BoardData {
@@ -24,8 +29,10 @@ export interface BoardData {
   moves: number;
   won: boolean;
   over: boolean;
-  lastSpawned: { row: number; col: number } | null;
+  lastSpawned: TilePosition | null;
   mergedIds: number[];
+  prevPositions: Record<number, TilePosition>;
+  newIds: number[];
 }
 
 const DEFAULT_SIZE: BoardSize = 4;
@@ -56,8 +63,10 @@ export class TwentyFortyEightGame extends BaseGame {
   private _moves = 0;
   private _won = false;
   private _over = false;
-  private _lastSpawned: { row: number; col: number } | null = null;
+  private _lastSpawned: TilePosition | null = null;
   private _mergedIds: number[] = [];
+  private _prevPositions: Record<number, TilePosition> = {};
+  private _newIds: number[] = [];
 
   start(config?: GameConfig): GameState {
     const requestedSize = this._resolveSize(config);
@@ -69,10 +78,14 @@ export class TwentyFortyEightGame extends BaseGame {
     this._over = false;
     this._lastSpawned = null;
     this._mergedIds = [];
+    this._prevPositions = {};
+    this._newIds = [];
     _tileId = 1;
 
-    this._spawnTile();
-    this._spawnTile();
+    const first = this._spawnTile();
+    const second = this._spawnTile();
+    this._newIds = first && second ? [first.id, second.id] : [];
+
 
     this.state = {
       status: GameStatus.WAITING,
@@ -196,9 +209,16 @@ export class TwentyFortyEightGame extends BaseGame {
 
   private _move(dir: Direction): GameState {
     this._mergedIds = [];
+    this._prevPositions = this._buildPositionMap(this._cells);
+    this._newIds = [];
     const result = this._slide(dir);
 
     if (!result.changed) {
+      this._prevPositions = {};
+      this.state = {
+        ...this.state,
+        data: this._serializeBoard(),
+      };
       return this.state;
     }
 
@@ -225,7 +245,21 @@ export class TwentyFortyEightGame extends BaseGame {
       winner: null,
     };
 
+    this._prevPositions = {};
+    this._newIds = [];
+
     return this.state;
+  }
+
+  private _buildPositionMap(cells: (Tile | null)[][]): Record<number, TilePosition> {
+    const map: Record<number, TilePosition> = {};
+    for (let row = 0; row < cells.length; row++) {
+      for (let col = 0; col < cells[row].length; col++) {
+        const tile = cells[row][col];
+        if (tile) map[tile.id] = { row, col };
+      }
+    }
+    return map;
   }
 
   private _slide(dir: Direction): { cells: (Tile | null)[][]; changed: boolean; scoreDelta: number; reached2048: boolean } {
@@ -292,9 +326,9 @@ export class TwentyFortyEightGame extends BaseGame {
     return { cells: newCells, changed, scoreDelta, reached2048 };
   }
 
-  private _spawnTile(): { row: number; col: number } | null {
+  private _spawnTile(): Tile & TilePosition | null {
     const size = this._size;
-    const empties: { row: number; col: number }[] = [];
+    const empties: TilePosition[] = [];
     for (let row = 0; row < size; row++) {
       for (let col = 0; col < size; col++) {
         if (!this._cells[row][col]) empties.push({ row, col });
@@ -303,8 +337,10 @@ export class TwentyFortyEightGame extends BaseGame {
     if (empties.length === 0) return null;
     const spot = empties[Math.floor(Math.random() * empties.length)];
     const value = Math.random() < 0.9 ? 2 : 4;
-    this._cells[spot.row][spot.col] = { value, id: nextTileId() };
-    return spot;
+    const tile: Tile = { value, id: nextTileId() };
+    this._cells[spot.row][spot.col] = tile;
+    this._newIds.push(tile.id);
+    return { ...tile, ...spot };
   }
 
   private _hasAvailableMoves(): boolean {
@@ -333,6 +369,8 @@ export class TwentyFortyEightGame extends BaseGame {
       over: this._over,
       lastSpawned: this._lastSpawned,
       mergedIds: [...this._mergedIds],
+      prevPositions: { ...this._prevPositions },
+      newIds: [...this._newIds],
     };
   }
 }

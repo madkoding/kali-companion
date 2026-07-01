@@ -54,8 +54,10 @@ export function GameWidget({ content, api, windowId }: Props) {
     const game = gameRef.current;
 
     if (prevFocusedRef.current && !isFocused && game?.getStatus() === GameStatus.PLAYING) {
-      game.pause();
-      forceRender((v) => v + 1);
+      if (game.type === GameType.SNAKE) {
+        game.pause();
+        forceRender((v) => v + 1);
+      }
     }
 
     prevFocusedRef.current = isFocused;

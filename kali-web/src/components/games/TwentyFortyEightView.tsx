@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   TwentyFortyEightGame,
   type BoardData,
   type BoardSize,
   type Direction,
+  type TilePosition,
+  type Tile,
 } from "../../games/twenty-forty-eight/twenty-forty-eight-game";
 import { GameStatus } from "../../games/core/constants/game-status";
 import type { GameStatusValue } from "../../games/core/constants/game-status";
@@ -11,6 +13,38 @@ import { ActionType, GameCommand } from "../../games/core/constants/action-types
 
 interface Props {
   game: TwentyFortyEightGame;
+}
+
+interface TileItem {
+  id: number;
+  value: number;
+  row: number;
+  col: number;
+}
+
+function cellsEqual(a: (Tile | null)[][], b: (Tile | null)[][]): boolean {
+  if (a.length !== b.length) return false;
+  for (let row = 0; row < a.length; row++) {
+    if (a[row].length !== b[row].length) return false;
+    for (let col = 0; col < a[row].length; col++) {
+      const ta = a[row][col];
+      const tb = b[row][col];
+      if ((ta === null) !== (tb === null)) return false;
+      if (ta && tb && (ta.id !== tb.id || ta.value !== tb.value)) return false;
+    }
+  }
+  return true;
+}
+
+function buildPositionMap(cells: (Tile | null)[][]): Record<number, TilePosition> {
+  const map: Record<number, TilePosition> = {};
+  for (let row = 0; row < cells.length; row++) {
+    for (let col = 0; col < cells[row].length; col++) {
+      const tile = cells[row][col];
+      if (tile) map[tile.id] = { row, col };
+    }
+  }
+  return map;
 }
 
 const PALETTE: Record<number, { bg: string; glow: string; text: string }> = {
@@ -37,6 +71,8 @@ const BOARD_BORDER_GLOW = "rgba(56, 189, 248, 0.25)";
 const EMPTY_CELL = "rgba(15, 23, 42, 0.75)";
 const GRID_AREA_SIZE = 320;
 const GRID_GAP = 8;
+const GRID_PADDING = 8;
+const TILE_TRANSITION_MS = 130;
 
 const SIZES: { value: BoardSize; label: string }[] = [
   { value: 3, label: "3×3" },
@@ -53,12 +89,91 @@ function move(game: TwentyFortyEightGame, direction: Direction) {
   game.handleAction({ type: ActionType.MOVE, data: direction }, "player");
 }
 
+function AnimatedTile({
+  tile,
+  prev,
+  size,
+  isNew,
+  fontSize,
+}: {
+  tile: TileItem;
+  prev: TilePosition | null;
+  size: number;
+  isNew: boolean;
+  fontSize: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const initializedRef = useRef(false);
+  const cellSize = (GRID_AREA_SIZE - 2 * GRID_PADDING - (size - 1) * GRID_GAP) / size;
+  const palette = tilePalette(tile.value);
+  const endX = tile.col * (cellSize + GRID_GAP);
+  const endY = tile.row * (cellSize + GRID_GAP);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const hasMove = prev && (prev.row !== tile.row || prev.col !== tile.col);
+
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      if (isNew) {
+        el.style.transition = "none";
+        el.style.transform = `translate(${endX}px, ${endY}px) scale(0.5)`;
+        el.style.opacity = "0";
+        void el.getBoundingClientRect();
+        el.style.transition = `transform ${TILE_TRANSITION_MS}ms ease-out, opacity ${TILE_TRANSITION_MS}ms ease-out`;
+        el.style.transform = `translate(${endX}px, ${endY}px) scale(1)`;
+        el.style.opacity = "1";
+      } else {
+        el.style.transition = "none";
+        el.style.transform = `translate(${endX}px, ${endY}px) scale(1)`;
+        el.style.opacity = "1";
+      }
+      return;
+    }
+
+    if (hasMove) {
+      const startX = prev.col * (cellSize + GRID_GAP);
+      const startY = prev.row * (cellSize + GRID_GAP);
+      el.style.transition = "none";
+      el.style.transform = `translate(${startX}px, ${startY}px) scale(1)`;
+      el.style.opacity = "1";
+      void el.getBoundingClientRect();
+      el.style.transition = `transform ${TILE_TRANSITION_MS}ms ease-out, opacity ${TILE_TRANSITION_MS}ms ease-out`;
+      el.style.transform = `translate(${endX}px, ${endY}px) scale(1)`;
+    }
+  }, [prev, tile, cellSize, isNew, endX, endY]);
+
+  return (
+    <div
+      ref={ref}
+      className="absolute top-0 left-0 rounded-lg font-bold flex items-center justify-center overflow-hidden"
+      style={{
+        width: cellSize,
+        height: cellSize,
+        backgroundColor: palette.bg,
+        color: palette.text,
+        fontSize,
+        boxShadow: `0 0 18px ${palette.glow}, inset 0 0 8px rgba(255,255,255,0.06)`,
+        textShadow: `0 0 10px ${palette.glow}`,
+        border: `1px solid ${palette.glow}`,
+        boxSizing: "border-box",
+        lineHeight: 1,
+      }}
+    >
+      {tile.value}
+    </div>
+  );
+}
+
 export function TwentyFortyEightView({ game }: Props) {
   const [statusVersion, setStatusVersion] = useState(0);
   void statusVersion;
   const statusRef = useRef<GameStatusValue>(game.getStatus());
   const containerRef = useRef<HTMLDivElement>(null);
   const [pendingSize, setPendingSize] = useState<BoardSize>(game.size);
+  const animRef = useRef<BoardData | null>(null);
 
   const refresh = useCallback(() => {
     statusRef.current = game.getStatus();
@@ -140,8 +255,25 @@ export function TwentyFortyEightView({ game }: Props) {
   const score = game.getScore();
   const moves = game.getMoves();
 
-  const estimatedCellSize = (GRID_AREA_SIZE - (size - 1) * GRID_GAP) / size;
-  const fontSize = estimatedCellSize <= 46 ? 16 : estimatedCellSize <= 55 ? 18 : estimatedCellSize <= 65 ? 22 : estimatedCellSize <= 80 ? 28 : 34;
+  const shouldAnimate = !animRef.current || !data || !cellsEqual(animRef.current.cells, data.cells);
+  const prevPositions = shouldAnimate && data ? buildPositionMap(animRef.current?.cells ?? []) : {};
+
+  useEffect(() => {
+    if (shouldAnimate && data) {
+      animRef.current = data;
+    }
+  }, [shouldAnimate, data]);
+
+  const estimatedCellSize = (GRID_AREA_SIZE - 2 * GRID_PADDING - (size - 1) * GRID_GAP) / size;
+  const fontSize = estimatedCellSize <= 42 ? 14 : estimatedCellSize <= 50 ? 16 : estimatedCellSize <= 58 ? 20 : estimatedCellSize <= 72 ? 26 : 32;
+
+  const tiles: TileItem[] = [];
+  for (let row = 0; row < cells.length; row++) {
+    for (let col = 0; col < cells[row].length; col++) {
+      const tile = cells[row][col];
+      if (tile) tiles.push({ id: tile.id, value: tile.value, row, col });
+    }
+  }
 
   return (
     <div
@@ -221,7 +353,7 @@ export function TwentyFortyEightView({ game }: Props) {
         </div>
 
         <div
-          className="grid rounded-xl p-2"
+          className="grid rounded-xl p-2 relative"
           style={{
             gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
             gridTemplateRows: `repeat(${size}, minmax(0, 1fr))`,
@@ -236,46 +368,41 @@ export function TwentyFortyEightView({ game }: Props) {
             flex: "0 0 auto",
           }}
         >
-          {cells.flat().map((tile, idx) => {
-            const row = Math.floor(idx / size);
-            const col = idx % size;
-            const value = tile?.value ?? 0;
-            const palette = value ? tilePalette(value) : null;
-            const isNew = data?.lastSpawned?.row === row && data?.lastSpawned?.col === col;
-            const merged = tile ? data?.mergedIds.includes(tile.id) : false;
+          {Array.from({ length: size * size }).map((_, idx) => (
+            <div
+              key={`bg-${idx}`}
+              className="rounded-lg"
+              style={{
+                width: "100%",
+                height: "100%",
+                minWidth: 0,
+                minHeight: 0,
+                backgroundColor: EMPTY_CELL,
+                border: "1px solid rgba(56,189,248,0.08)",
+                boxSizing: "border-box",
+              }}
+            />
+          ))}
 
-            return (
-              <div
-                key={tile ? tile.id : `${row}-${col}`}
-                className="relative flex items-center justify-center rounded-lg font-bold overflow-hidden"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  minWidth: 0,
-                  minHeight: 0,
-                  backgroundColor: palette ? palette.bg : EMPTY_CELL,
-                  color: palette ? palette.text : "transparent",
-                  fontSize,
-                  boxShadow: palette
-                    ? `0 0 18px ${palette.glow}, inset 0 0 8px rgba(255,255,255,0.06)`
-                    : "none",
-                  textShadow: palette ? `0 0 10px ${palette.glow}` : "none",
-                  border: palette ? `1px solid ${palette.glow}` : "1px solid rgba(56,189,248,0.08)",
-                }}
-              >
-                <span
-                  className="transition-transform duration-200"
-                  style={{
-                    transform: isNew ? "scale(1.12)" : merged ? "scale(1.06)" : "scale(1)",
-                    animation: isNew ? "neon-pop 220ms ease-out" : undefined,
-                    lineHeight: 1,
-                  }}
-                >
-                  {value || ""}
-                </span>
-              </div>
-            );
-          })}
+          <div
+            className="absolute overflow-hidden"
+            style={{ top: GRID_PADDING, left: GRID_PADDING, width: GRID_AREA_SIZE - 2 * GRID_PADDING, height: GRID_AREA_SIZE - 2 * GRID_PADDING }}
+          >
+            {tiles.map((tile) => {
+              const prev = prevPositions[tile.id];
+              const isNew = !prev;
+              return (
+                <AnimatedTile
+                  key={tile.id}
+                  tile={tile}
+                  prev={prev}
+                  size={size}
+                  isNew={isNew}
+                  fontSize={fontSize}
+                />
+              );
+            })}
+          </div>
         </div>
       </div>
 
