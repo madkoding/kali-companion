@@ -53,6 +53,7 @@ export class TicTacToeGame extends BaseGame {
   private _difficulty: Difficulty = "medium";
 
   start(config?: GameConfig): GameState {
+    this.newGame();
     this._board = createEmptyBoard();
     this._winner = null;
     this._winningLine = null;

@@ -7,6 +7,10 @@ import { GameStatus } from "../../games/core/constants/game-status";
 import { GameType, type GameTypeValue } from "../../games/core/constants/game-types";
 import type { BaseGame } from "../../games/core/base-game";
 import { registerGames } from "../../games/register-games";
+import { GameDebugPanel } from "../games/GameDebugPanel";
+import { gameAILogger } from "../../games/core/game-ai-logger";
+import { useSidePanel } from "../../stage/SidePanelContext";
+import { Gamepad2 } from "lucide-react";
 
 interface GameContent {
   mode?: "launchpad" | "game";
@@ -33,18 +37,33 @@ export function GameWidget({ content, api, windowId }: Props) {
   const gameRef = useRef<BaseGame | null>(null);
   const [ready, setReady] = useState(false);
 
+  const { setSidePanelContent } = useSidePanel();
+
   useEffect(() => {
-    if (mode !== "game" || !gameType) return;
+    if (mode !== "game" || !gameType) {
+      setSidePanelContent(null);
+      return;
+    }
+
     ensureRegistered();
     const game = GameRegistry.create(gameType as any, { slots: [] });
     game.start();
     gameRef.current = game;
     setReady(true);
+
+    setSidePanelContent({
+      icon: <Gamepad2 size={14} />,
+      title: "Game Log",
+      onClear: () => gameAILogger.clear(),
+      content: <GameDebugPanel sessionId={game.sessionId} />,
+    });
+
     return () => {
       gameRef.current = null;
       setReady(false);
+      setSidePanelContent(null);
     };
-  }, [mode, gameType]);
+  }, [mode, gameType, setSidePanelContent]);
 
   const prevFocusedRef = useRef(false);
   const [, forceRender] = useState(0);

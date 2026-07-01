@@ -25,6 +25,7 @@ export abstract class BaseGame {
 
   private _prevData: unknown = null;
   private _version = 0;
+  private _sessionId = "";
 
   protected get state(): GameState {
     return this._state;
@@ -60,5 +61,14 @@ export abstract class BaseGame {
 
   get prevData(): unknown {
     return this._prevData;
+  }
+
+  get sessionId(): string {
+    return this._sessionId;
+  }
+
+  newGame(): string {
+    this._sessionId = crypto.randomUUID();
+    return this._sessionId;
   }
 }

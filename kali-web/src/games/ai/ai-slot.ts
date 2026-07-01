@@ -5,7 +5,8 @@ import { ActionType } from "../core/constants/action-types";
 import type { WSClient } from "../../lib/wsClient";
 import type { GameMoveResponseEvent } from "../../lib/protocol";
 import { KaliError, fromGameMoveError } from "./kali-error";
-import { KaliErrorCode, TttField } from "../core/constants/game-ai";
+import { KaliErrorCode, TttField, GAME_AI_TIMEOUT_MS, GAME_AI_TIMEOUT_2_MS, GAME_AI_TIMEOUT_3_MS } from "../core/constants/game-ai";
+import { gameAILogger } from "../core/game-ai-logger";
 
 export class AISlot {
   private _abortController: AbortController | null = null;
@@ -13,10 +14,15 @@ export class AISlot {
   constructor(
     private _slotId: SlotIdValue,
     private _wsClient: WSClient | null = null,
+    private _gameSessionId: string = "",
   ) {}
 
   get slotId(): SlotIdValue {
     return this._slotId;
+  }
+
+  setSessionId(id: string) {
+    this._gameSessionId = id;
   }
 
   async decide(context: GameState): Promise<GameAction> {
@@ -33,67 +39,97 @@ export class AISlot {
     }
 
     const data = context.data as Record<string, unknown>;
+    const payload = {
+      event: "game_move",
+      game_type: "tictactoe",
+      game_session_id: this._gameSessionId,
+      rules: {
+        system_prompt: this._buildSystemPrompt(data),
+        response_format: "json",
+      },
+      game_state: data,
+      player_role: this._slotId,
+      difficulty: data[TttField.DIFFICULTY] as string | undefined,
+      starter: data[TttField.STARTER] as string | undefined,
+      player_marker: data[TttField.PLAYER_MARK] as string | undefined,
+      opponent_marker: data[TttField.OPPONENT_MARK] as string | undefined,
+    };
 
-    let response: GameMoveResponseEvent;
-    try {
-      response = await this._wsClient.sendAndWait<GameMoveResponseEvent>(
-        {
-          event: "game_move",
-          game_type: "tictactoe",
-          rules: {
-            system_prompt: this._buildSystemPrompt(data),
-            response_format: "json",
-          },
-          game_state: data,
-          player_role: this._slotId,
-          difficulty: data[TttField.DIFFICULTY] as string | undefined,
-          starter: data[TttField.STARTER] as string | undefined,
-          player_marker: data[TttField.PLAYER_MARK] as string | undefined,
-          opponent_marker: data[TttField.OPPONENT_MARK] as string | undefined,
-        },
-        "game_move_response",
-        undefined,
-        this._abortController.signal,
-      );
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("timed out")) {
-        throw new KaliError(
-          KaliErrorCode.WS_TIMEOUT,
-          "Kali no pudo responder a tiempo. La conexion se perdio o el servidor no respondio.",
+    const timeouts = [GAME_AI_TIMEOUT_MS, GAME_AI_TIMEOUT_2_MS, GAME_AI_TIMEOUT_3_MS];
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < timeouts.length; attempt++) {
+      const timeoutMs = timeouts[attempt]!;
+      try {
+        gameAILogger.log("→", "game_move", payload);
+
+        const response = await this._wsClient.sendAndWait<GameMoveResponseEvent>(
+          payload,
+          "game_move_response",
+          timeoutMs,
+          this._abortController.signal,
         );
-      }
-      if (err instanceof Error && err.message.includes("aborted")) {
-        console.info("[AISlot] request aborted — likely a new game started");
+
+        gameAILogger.log("←", "game_move_response", response);
+
+        if (response.error) {
+          throw fromGameMoveError(
+            response.error.code,
+            response.error.message,
+            response.error.fallback_action,
+          );
+        }
+
+        if (response.action) {
+          console.info(
+            `[AISlot] move decided | attempt=${attempt + 1} | action=%o`,
+            response.action,
+          );
+          return {
+            type: response.action.type as (typeof ActionType)[keyof typeof ActionType],
+            data: response.action.data,
+          };
+        }
+
+        throw new KaliError(
+          KaliErrorCode.NO_LEGAL_MOVES,
+          "No hay movimientos disponibles. El tablero esta lleno.",
+        );
+      } catch (err) {
+        lastError = err;
+
+        if (err instanceof KaliError && err.code === KaliErrorCode.WS_ERROR && err.message.includes("aborted")) {
+          console.info("[AISlot] request aborted — new game started");
+          throw err;
+        }
+
+        const isTimeout = err instanceof Error && err.message.includes("timed out");
+        const isLastAttempt = attempt === timeouts.length - 1;
+
+        if (isTimeout && !isLastAttempt) {
+          console.warn(`[AISlot] timeout, retrying | attempt=${attempt + 1}/${timeouts.length}`);
+          continue;
+        }
+
+        if (isTimeout && isLastAttempt) {
+          console.error(`[AISlot] all retries exhausted after ${timeouts.length} attempts`);
+          throw new KaliError(
+            KaliErrorCode.WS_TIMEOUT,
+            "Kali no pudo responder a tiempo. La conexion se perdio o el servidor no respondio.",
+          );
+        }
+
+        console.error("[AISlot] sendAndWait error:", err);
         throw new KaliError(
           KaliErrorCode.WS_ERROR,
-          "Pedido anterior fue cancelado por un nuevo juego.",
+          err instanceof Error ? err.message : String(err),
         );
       }
-      console.error("[AISlot] sendAndWait error:", err);
-      throw new KaliError(
-        KaliErrorCode.WS_ERROR,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-
-    if (response.error) {
-      throw fromGameMoveError(
-        response.error.code,
-        response.error.message,
-        response.error.fallback_action,
-      );
-    }
-
-    if (response.action) {
-      return {
-        type: response.action.type as (typeof ActionType)[keyof typeof ActionType],
-        data: response.action.data,
-      };
     }
 
     throw new KaliError(
-      KaliErrorCode.NO_LEGAL_MOVES,
-      "No hay movimientos disponibles. El tablero esta lleno.",
+      KaliErrorCode.WS_ERROR,
+      lastError instanceof Error ? lastError.message : String(lastError),
     );
   }
 

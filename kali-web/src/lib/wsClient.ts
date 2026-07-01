@@ -121,9 +121,11 @@ export class WSClient {
           abortSignal.removeEventListener("abort", abortHandler);
         }
         this.off(responseEventName as IncomingEventName, handler as Listener);
+        console.log(`[WS ← ${responseEventName}]`, response);
         resolve(response as T);
       };
       this.on(responseEventName as IncomingEventName, handler as Listener);
+      console.log(`[WS → ${responseEventName}]`, payload);
       this.send(payload);
     });
   }

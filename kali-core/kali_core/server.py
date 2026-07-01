@@ -1831,10 +1831,15 @@ class Connection:
     async def _handle_game_move(self, event: dict[str, Any]) -> None:
         """Handle game_move: call LLM with game state and return an action."""
         game_type = event.get("game_type", "unknown")
-        session_id = event.get("session_id")
+        session_id = event.get("session_id") or "no-session"
         rules = event.get("rules", {})
         game_state = event.get("game_state", {})
         player_role = event.get("player_role", "opponent")
+
+        logger.info(
+            "[game_move] received | game=%s session=%s player=%s",
+            game_type, session_id, player_role,
+        )
 
         messages = self._build_game_messages(rules, game_state)
 
@@ -1842,9 +1847,14 @@ class Connection:
             llm = self.server.llm_provider
             if llm is None:
                 raise RuntimeError("No LLM provider configured")
+            logger.info("[game_move] → LLM | game=%s session=%s", game_type, session_id)
             response = await llm.complete(messages)
+            logger.info(
+                "[game_move] ← LLM response | game=%s session=%s | text=%r",
+                game_type, session_id, response.get("text", "")[:200],
+            )
         except Exception as ex:
-            logger.exception("LLM complete failed for game_move")
+            logger.exception("[game_move] LLM error | game=%s session=%s", game_type, session_id)
             await self.send({
                 "event": "game_move_response",
                 "game_type": game_type,
@@ -1859,6 +1869,10 @@ class Connection:
             return
 
         action, error = self._parse_game_action(response, game_state, rules)
+        logger.info(
+            "[game_move] → WS response | game=%s session=%s | action=%s error=%s",
+            game_type, session_id, action, error,
+        )
         await self.send({
             "event": "game_move_response",
             "game_type": game_type,
