@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, memo } from "react";
 import { useTranslation } from "react-i18next";
 import type { ArtifactWindowData } from "../workspace/types";
 import type { ArtifactEvent } from "../lib/protocol";
@@ -59,7 +59,7 @@ const RESIZE_HANDLES: { edge: ResizeEdge; className: string; label: string }[] =
   { edge: "sw", className: "aw-handle-sw", label: "Redimensionar suroeste" },
 ];
 
-export function ArtifactWindow({
+function ArtifactWindowImpl({
   window: w,
   focused,
   selected,
@@ -179,6 +179,39 @@ export function ArtifactWindow({
     </div>
   );
 }
+
+/**
+ * Custom comparator for React.memo: re-render only when visual props change.
+ * Callbacks (onFocus, onClose, etc.) are inline arrows that change identity
+ * on every parent render, but their behavior is stable (bound to window id),
+ * so we skip comparing them. This prevents all windows from re-rendering
+ * when one window moves or receives focus.
+ */
+function arePropsEqual(prev: Props, next: Props): boolean {
+  const pw = prev.window;
+  const nw = next.window;
+  if (prev.focused !== next.focused) return false;
+  if (prev.selected !== next.selected) return false;
+  if (prev.winScale !== next.winScale) return false;
+  if (prev.minW !== next.minW) return false;
+  if (prev.minH !== next.minH) return false;
+  // Shallow compare window fields that affect rendering.
+  if (pw.position.x !== nw.position.x || pw.position.y !== nw.position.y) return false;
+  if (pw.size.width !== nw.size.width || pw.size.height !== nw.size.height) return false;
+  if (pw.zIndex !== nw.zIndex) return false;
+  if (pw.closed !== nw.closed) return false;
+  if (pw.minimized !== nw.minimized) return false;
+  if (pw.maximized !== nw.maximized) return false;
+  if (pw.focused !== nw.focused) return false;
+  if (pw.title !== nw.title) return false;
+  // Content identity: if the content reference is the same, skip.
+  // This is the key optimization — during streaming of one window,
+  // others keep the same content reference.
+  if (pw.content !== nw.content) return false;
+  return true;
+}
+
+export const ArtifactWindow = memo(ArtifactWindowImpl, arePropsEqual);
 
 function WindowHeader({
   w,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SnakeGame } from "../../games/snake/snake-game";
 import { GameStatus } from "../../games/core/constants/game-status";
+import type { GameStatusValue } from "../../games/core/constants/game-status";
 import { ActionType, GameCommand } from "../../games/core/constants/action-types";
 
 const CELL = 24;
@@ -99,7 +100,13 @@ interface DrawState {
 
 export function SnakeView({ game }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [, forceRender] = useState(0);
+  const scoreSpanRef = useRef<HTMLSpanElement>(null);
+  // React only needs to re-render when the game *status* changes
+  // (WAITING→PLAYING→PAUSED→LOST). The canvas is drawn imperatively
+  // in the rAF loop, so we don't need a forceRender per tick.
+  const [statusVersion, setStatusVersion] = useState(0);
+  void statusVersion; // re-render trigger only
+  const statusRef = useRef<GameStatusValue>(game.getStatus());
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -114,6 +121,8 @@ export function SnakeView({ game }: Props) {
 
     let lastTick = performance.now();
     let lastVersion = -1;
+    let lastScore = -1;
+    let lastStatus: GameStatusValue = game.getStatus();
     let rafId: number;
 
     function draw() {
@@ -163,18 +172,32 @@ export function SnakeView({ game }: Props) {
     }
 
     function loop(now: number) {
-      if (game.getStatus() === GameStatus.PLAYING) {
+      const curStatus = game.getStatus();
+      if (curStatus === GameStatus.PLAYING) {
         if (now - lastTick >= TICK_MS) {
           game.tick();
           lastTick = now;
         }
       }
 
-      draw();
+      // Only redraw when the game state actually changed (tick or input).
+      const version = game.version;
+      if (version !== lastVersion) {
+        lastVersion = version;
+        draw();
+        // Update score imperatively — no React re-render needed.
+        const score = game.getState().score;
+        if (score !== lastScore) {
+          lastScore = score;
+          if (scoreSpanRef.current) scoreSpanRef.current.textContent = String(score);
+        }
+      }
 
-      if (game.version !== lastVersion) {
-        lastVersion = game.version;
-        forceRender((v) => v + 1);
+      // React only needs to re-render when status changes (overlay UI).
+      if (curStatus !== lastStatus) {
+        lastStatus = curStatus;
+        statusRef.current = curStatus;
+        setStatusVersion((v) => v + 1);
       }
 
       rafId = requestAnimationFrame(loop);
@@ -232,7 +255,7 @@ export function SnakeView({ game }: Props) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [game]);
 
-  const status = game.getStatus();
+  const status = statusRef.current;
   const state = game.getState();
 
   const pixelFont = { fontFamily: "'Press Start 2P', monospace" };
@@ -251,7 +274,7 @@ export function SnakeView({ game }: Props) {
             className="text-[10px] tracking-wider"
             style={{ ...pixelFont, color: PALETTE.head }}
           >
-            SCORE: {state.score}
+            SCORE: <span ref={scoreSpanRef}>{state.score}</span>
           </span>
           <span
             className="text-[8px]"

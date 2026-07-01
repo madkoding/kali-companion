@@ -120,6 +120,8 @@ export interface WorkspaceAPI {
   resetWorkspace: () => void;
   moveWindow: (id: number, pos: Position) => void;
   resizeWindow: (id: number, size: Size) => void;
+  /** Persist a window's layout state (debounced). Called on drag/resize end. */
+  persistWindow: (id: number) => void;
   toggleSelect: (id: number) => void;
   clearSelection: () => void;
   syncArtifact: (event: ArtifactEvent) => void;
