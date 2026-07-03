@@ -88,8 +88,9 @@ export function ActivateModal({ conn, onClose, onActivate }: Props) {
       size="md"
       title={isChangeModel ? t("connections.change_model_title") : t("connections.activate_title")}
       panelClassName="max-h-[70vh]"
+      bare={true}
     >
-      <div className="flex flex-col gap-4 h-full">
+      <div className="flex flex-col h-full p-5 gap-4">
         <div
           className={`flex flex-col rounded-xl border transition-all overflow-hidden shrink-0 ${
             health === "offline" ? "border-err/30 bg-err/5" : "border-border bg-surface"
