@@ -185,7 +185,11 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
   const animRef = useRef<BoardData | null>(null);
 
   const refresh = useCallback(() => {
-    statusRef.current = game.getStatus();
+    const next = game.getStatus();
+    statusRef.current = next;
+    if (next === GameStatus.WAITING) {
+      animRef.current = null;
+    }
     setStatusVersion((v) => v + 1);
   }, [game]);
 
@@ -409,7 +413,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
             className="absolute overflow-hidden"
             style={{ top: GRID_PADDING, left: GRID_PADDING, width: GRID_AREA_SIZE - 2 * GRID_PADDING, height: GRID_AREA_SIZE - 2 * GRID_PADDING }}
           >
-            {tiles.map((tile) => {
+            {statusRef.current !== GameStatus.WAITING && tiles.map((tile) => {
               const prev = prevPositions[tile.id];
               const isNew = !prev;
               return (
