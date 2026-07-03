@@ -44,6 +44,7 @@ export function WindowCanvas({ api, winScale = 1 }: Props) {
               minW={entry?.minW}
               minH={entry?.minH}
               winScale={winScale}
+              bodyAspectRatio={entry?.aspectRatio}
             >
               <WindowContentRouter window={w} api={api} />
             </KaliWindow>
@@ -73,6 +74,7 @@ export function WindowCanvas({ api, winScale = 1 }: Props) {
               minW={entry?.minW}
               minH={entry?.minH}
               winScale={winScale}
+              bodyAspectRatio={entry?.aspectRatio}
             >
               <WindowContentRouter window={w} api={api} />
             </KaliWindow>

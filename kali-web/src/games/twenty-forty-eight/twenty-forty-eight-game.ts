@@ -58,6 +58,9 @@ export class TwentyFortyEightGame extends BaseGame {
     { id: SlotId.PLAYER, type: PlayerType.HUMAN, name: "Tú" },
   ] as const;
 
+  readonly naturalWidth = 364;
+  readonly naturalHeight = 394;
+
   private _size: BoardSize = DEFAULT_SIZE;
   private _cells: (Tile | null)[][] = [];
   private _score = 0;

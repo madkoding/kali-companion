@@ -45,6 +45,9 @@ export class TicTacToeGame extends BaseGame {
     { id: SlotId.OPPONENT, type: PlayerType.AI, name: "Oponente" },
   ] as const;
 
+  readonly naturalWidth = 320;
+  readonly naturalHeight = 362;
+
   private _board: (Mark | null)[][] = createEmptyBoard();
   private _currentSlot: string = SlotId.PLAYER;
   private _winner: string | null = null;

@@ -10,9 +10,11 @@ import {
 import { GameStatus } from "../../games/core/constants/game-status";
 import type { GameStatusValue } from "../../games/core/constants/game-status";
 import { ActionType, GameCommand } from "../../games/core/constants/action-types";
+import { useGameViewport, fitScale, centerOffsets } from "./useGameViewport";
 
 interface Props {
   game: TwentyFortyEightGame;
+  isMaximized?: boolean;
 }
 
 interface TileItem {
@@ -167,12 +169,16 @@ function AnimatedTile({
   );
 }
 
-export function TwentyFortyEightView({ game }: Props) {
+export function TwentyFortyEightView({ game, isMaximized }: Props) {
   const [statusVersion, setStatusVersion] = useState(0);
   void statusVersion;
   const statusRef = useRef<GameStatusValue>(game.getStatus());
   const containerRef = useRef<HTMLDivElement>(null);
   const [pendingSize, setPendingSize] = useState<BoardSize>(game.size);
+
+  const viewport = useGameViewport(containerRef, isMaximized);
+  const scale = fitScale(game.naturalWidth, game.naturalHeight, viewport.width, viewport.height);
+  const offsets = centerOffsets(game.naturalWidth, game.naturalHeight, scale, viewport.width, viewport.height);
   const animRef = useRef<BoardData | null>(null);
 
   const refresh = useCallback(() => {
@@ -278,20 +284,22 @@ export function TwentyFortyEightView({ game }: Props) {
   return (
     <div
       ref={containerRef}
-      className="flex flex-col items-center justify-center flex-1 bg-[#02040a] relative py-4 select-none"
+      className="flex-1 w-full relative select-none overflow-hidden"
+      style={{ backgroundColor: isMaximized ? "#000" : "#02040a" }}
       tabIndex={-1}
     >
       <div
-        className="p-3 rounded-2xl border-2 relative inline-flex flex-col items-center"
+        className="p-3 rounded-2xl border-2 absolute top-0 left-0 inline-flex flex-col items-center"
         style={{
           backgroundColor: BOARD_BG,
           borderColor: BOARD_BORDER,
           boxShadow: `0 0 24px ${BOARD_BORDER_GLOW}, inset 0 0 18px rgba(56, 189, 248, 0.05)`,
-          flex: "0 0 auto",
           boxSizing: "border-box",
-          width: 364,
-          minWidth: 364,
-          maxWidth: 364,
+          width: game.naturalWidth,
+          height: game.naturalHeight,
+          transform: `translate(${offsets.x}px, ${offsets.y}px) scale(${scale})`,
+          transformOrigin: "top left",
+          visibility: viewport.ready ? "visible" : "hidden",
         }}
       >
         <div

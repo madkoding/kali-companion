@@ -95,6 +95,14 @@ export function GameWidget({ content, api, windowId }: Props) {
     managerRef.current = manager;
     setReady(true);
 
+    if (api && windowId != null) {
+      const headerOffset = 42; // measured in logical px; body scaling handles winScale
+      api.resizeWindow(windowId, {
+        width: game.naturalWidth,
+        height: game.naturalHeight + headerOffset,
+      });
+    }
+
     setSidePanelContent({
       icon: <Gamepad2 size={14} />,
       title: "Game Log",
@@ -137,8 +145,10 @@ export function GameWidget({ content, api, windowId }: Props) {
     prevFocusedRef.current = isFocused;
   });
 
+  const isMaximized = (api?.windows ?? []).some((w) => w.id === windowId && w.maximized);
+
   if (mode === "game" && gameType && ready && gameRef.current && managerRef.current) {
-    return <GameRenderer game={gameRef.current} manager={managerRef.current} hasKali={hasKali} />;
+    return <GameRenderer game={gameRef.current} manager={managerRef.current} hasKali={hasKali} isMaximized={isMaximized} />;
   }
 
   if (mode === "saved-games") {

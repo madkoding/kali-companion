@@ -29,6 +29,9 @@ export class SnakeGame extends BaseGame {
     { id: SlotId.PLAYER, type: PlayerType.HUMAN, name: "Tú" },
   ] as const;
 
+  readonly naturalWidth = 500;
+  readonly naturalHeight = 522;
+
   static readonly BOARD_W = BOARD_W;
   static readonly BOARD_H = BOARD_H;
   static readonly TICK_INTERVAL_MS = BASE_TICK_MS;

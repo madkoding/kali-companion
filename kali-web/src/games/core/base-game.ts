@@ -12,8 +12,18 @@ export abstract class BaseGame {
   abstract readonly slots: readonly PlayerSlot[];
   abstract readonly paradigm: "turn-based" | "realtime";
 
+  /** Intrinsic width of the game's content area in logical px. */
+  abstract readonly naturalWidth: number;
+  /** Intrinsic height of the game's content area in logical px. */
+  abstract readonly naturalHeight: number;
+
   abstract start(config?: GameConfig): GameState;
   abstract handleAction(action: GameAction, fromSlotId: string): GameState;
+
+  /** Aspect ratio of the game's content area (width / height). */
+  get aspectRatio(): number {
+    return this.naturalWidth / this.naturalHeight;
+  }
 
   pause(): void {}
   resume(): void {}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TicTacToeGame, type TicTacToeData, type Difficulty } from "../../games/tic-tac-toe/tic-tac-toe-game";
 import { TicTacToeCPUPlayer } from "../../games/tic-tac-toe/tic-tac-toe-cpu";
 import type { GameSessionManager } from "../../games/core/game-session-manager";
@@ -6,11 +6,13 @@ import { GameStatus } from "../../games/core/constants/game-status";
 import { ActionType, GameCommand } from "../../games/core/constants/action-types";
 import { SlotId } from "../../games/core/constants/player-types";
 import { KaliStatus, GameMode, type KaliStatusValue, type GameModeValue } from "../../games/core/constants/game-ai";
+import { useGameViewport, fitScale, centerOffsets } from "./useGameViewport";
 
 interface Props {
   game: TicTacToeGame;
   manager: GameSessionManager;
   hasKali: boolean;
+  isMaximized?: boolean;
 }
 
 const PALETTE = {
@@ -28,8 +30,12 @@ const PALETTE = {
 
 type Starter = typeof SlotId.PLAYER | typeof SlotId.OPPONENT;
 
-export function TicTacToeView({ game, manager, hasKali }: Props) {
+export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
   const [tick, setTick] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewport = useGameViewport(containerRef, isMaximized);
+  const scale = fitScale(game.naturalWidth, game.naturalHeight, viewport.width, viewport.height);
+  const offsets = centerOffsets(game.naturalWidth, game.naturalHeight, scale, viewport.width, viewport.height);
 
   useEffect(() => {
     const unsub = manager.subscribe(() => setTick((v) => v + 1));
@@ -137,21 +143,30 @@ export function TicTacToeView({ game, manager, hasKali }: Props) {
 
   return (
     <div
-      className="relative rounded-2xl border-2"
-      style={{
-        backgroundColor: PALETTE.bg,
-        borderColor: PALETTE.border,
-        boxShadow: `0 0 24px ${PALETTE.borderGlow}, inset 0 0 18px rgba(56, 189, 248, 0.05)`,
-        width: 320,
-        minWidth: 320,
-        maxWidth: 320,
-        boxSizing: "border-box",
-      }}
+      ref={containerRef}
+      className="flex-1 w-full relative overflow-hidden"
+      style={{ backgroundColor: isMaximized ? "#000" : "transparent" }}
     >
+      <div
+        className="relative rounded-2xl border-2 absolute top-0 left-0 flex flex-col items-center"
+        style={{
+          backgroundColor: PALETTE.bg,
+          borderColor: PALETTE.border,
+          boxShadow: `0 0 24px ${PALETTE.borderGlow}, inset 0 0 18px rgba(56, 189, 248, 0.05)`,
+          width: game.naturalWidth,
+          height: game.naturalHeight,
+          transform: `translate(${offsets.x}px, ${offsets.y}px) scale(${scale})`,
+          transformOrigin: "top left",
+          boxSizing: "border-box",
+          visibility: viewport.ready ? "visible" : "hidden",
+          paddingTop: 14,
+          paddingBottom: 14,
+        }}
+      >
       {/* Header bar */}
       <div
-        className="flex items-end justify-between px-1 pb-3 pt-3"
-        style={{ width: 288, height: 46, margin: "0 auto", flex: "0 0 auto" }}
+        className="flex items-end justify-between"
+        style={{ width: 288, height: 46, flex: "0 0 auto" }}
       >
         <span
           className="text-sm tracking-widest font-bold"
@@ -178,7 +193,7 @@ export function TicTacToeView({ game, manager, hasKali }: Props) {
 
       {/* Board grid */}
       <div
-        className="grid rounded-xl p-2 mx-auto"
+        className="grid rounded-xl p-2"
         style={{
           gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
           gridTemplateRows: "repeat(3, minmax(0, 1fr))",
@@ -449,6 +464,7 @@ export function TicTacToeView({ game, manager, hasKali }: Props) {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

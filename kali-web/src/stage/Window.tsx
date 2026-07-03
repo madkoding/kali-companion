@@ -49,6 +49,8 @@ interface Props {
   minH?: number;
   headerActions?: React.ReactNode;
   winScale?: number;
+  /** Aspect ratio (width / height) of the window body to preserve while resizing. */
+  bodyAspectRatio?: number;
 }
 
 const RESIZE_HANDLES: { edge: ResizeEdge; className: string; label: string }[] = [
@@ -78,6 +80,7 @@ function WindowImpl({
   minH = 180,
   headerActions,
   winScale = 1,
+  bodyAspectRatio,
 }: Props) {
   const headerRef = useRef<HTMLDivElement>(null);
   const elRef = useRef<HTMLDivElement>(null);
@@ -187,12 +190,15 @@ function WindowImpl({
       startMouse: { x: e.clientX, y: e.clientY },
       minW,
       minH,
+      bodyAspectRatio,
+      headerHeight: headerRef.current?.getBoundingClientRect().height,
+      winScale,
       onResize: (_id, size, pos) => onResize(
         { width: size.width, height: size.height },
         pos,
       ),
     });
-  }, [isMobile, w.id, w.size, w.position, onFocus, onResize, minW, minH]);
+  }, [isMobile, w.id, w.size, w.position, onFocus, onResize, minW, minH, bodyAspectRatio, winScale]);
 
   const handlePanelResizeStart = useCallback((e: React.PointerEvent, direction: "e" | "s", isLeft: boolean) => {
     if (isMobile) return;
@@ -376,10 +382,11 @@ function WindowImpl({
     return (
       <SidePanelProvider value={sidePanelContextValue}>
         <div className="kw-wrapper">
-          {renderPanel(leftPanelOpen, leftPanelContent, leftPos, leftPanelWidth, leftPanelHeight, toggleLeftPanel, true)}
+          {!w.maximized && renderPanel(leftPanelOpen, leftPanelContent, leftPos, leftPanelWidth, leftPanelHeight, toggleLeftPanel, true)}
           <div
             ref={elRef}
             data-window-id={w.id}
+            data-window-type={w.type}
             className={`kw ${focused ? "focused" : ""} ${selected ? "selected" : ""} ${w.minimized ? "minimized" : ""}`}
             style={{ width: (w.size.width * winScale) + "px", maxWidth: "100%" }}
             onPointerDown={onFocus}
@@ -388,7 +395,7 @@ function WindowImpl({
           >
             {renderWindowContent(children)}
           </div>
-          {renderPanel(sidePanelOpen, sidePanelContent, panelPosition, sidePanelWidth, sidePanelHeight, toggleSidePanel, false)}
+          {!w.maximized && renderPanel(sidePanelOpen, sidePanelContent, panelPosition, sidePanelWidth, sidePanelHeight, toggleSidePanel, false)}
         </div>
       </SidePanelProvider>
     );
@@ -406,10 +413,11 @@ function WindowImpl({
           zIndex: w.zIndex,
         }}
       >
-        {renderPanel(leftPanelOpen, leftPanelContent, leftPos, leftPanelWidth, leftPanelHeight, toggleLeftPanel, true)}
+        {!w.maximized && renderPanel(leftPanelOpen, leftPanelContent, leftPos, leftPanelWidth, leftPanelHeight, toggleLeftPanel, true)}
         <div
           ref={elRef}
           data-window-id={w.id}
+          data-window-type={w.type}
           className={`kw ${focused ? "focused" : ""} ${selected ? "selected" : ""} ${w.minimized ? "minimized" : ""} ${w.maximized ? "maximized" : ""} entering`}
           style={{
             width: (w.size.width * winScale) + "px",
@@ -422,7 +430,7 @@ function WindowImpl({
         >
           {renderWindowContent(children)}
         </div>
-        {renderPanel(sidePanelOpen, sidePanelContent, panelPosition, sidePanelWidth, sidePanelHeight, toggleSidePanel, false)}
+        {!w.maximized && renderPanel(sidePanelOpen, sidePanelContent, panelPosition, sidePanelWidth, sidePanelHeight, toggleSidePanel, false)}
       </div>
     </SidePanelProvider>
   );
