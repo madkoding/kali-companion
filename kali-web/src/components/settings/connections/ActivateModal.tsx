@@ -91,7 +91,7 @@ export function ActivateModal({ conn, onClose, onActivate }: Props) {
     >
       <div className="flex flex-col gap-4 h-full">
         <div
-          className={`flex flex-col rounded-xl border transition-all overflow-hidden ${
+          className={`flex flex-col rounded-xl border transition-all overflow-hidden shrink-0 ${
             health === "offline" ? "border-err/30 bg-err/5" : "border-border bg-surface"
           }`}
         >
@@ -130,27 +130,27 @@ export function ActivateModal({ conn, onClose, onActivate }: Props) {
         </div>
 
         {isChangeModel && health === "online" && models.length > 0 && (
-          <p className="text-[11px] text-muted/80">{t("connections.change_model_subtitle")}</p>
+          <p className="text-[11px] text-muted/80 shrink-0">{t("connections.change_model_subtitle")}</p>
         )}
 
         {!isChangeModel && health === "online" && models.length > 0 && (
-          <p className="text-[11px] text-muted/80">{t("connections.activate_subtitle")}</p>
+          <p className="text-[11px] text-muted/80 shrink-0">{t("connections.activate_subtitle")}</p>
         )}
 
         {health === "checking" && (
-          <div className="text-[11px] text-muted flex items-center gap-1.5">
+          <div className="text-[11px] text-muted flex items-center gap-1.5 shrink-0">
             <div className="w-3 h-3 rounded-full border border-muted border-t-accent animate-spin" />
             {t("ai.loading_models")}
           </div>
         )}
 
         {health === "online" && models.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <div className="text-[10px] text-muted uppercase tracking-wide">
+          <div className="flex flex-col gap-2 flex-1 min-h-0">
+            <div className="text-[10px] text-muted uppercase tracking-wide shrink-0">
               {t("settings.game_ai_select_model")}
             </div>
 
-            <div className="relative">
+            <div className="relative shrink-0">
               <svg
                 width="12"
                 height="12"
