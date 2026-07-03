@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Cpu, Volume2, Sliders, Palette, Gauge, Mic, Info } from "lucide-react";
+import { Cpu, Volume2, Sliders, Palette, Gauge, Mic, Info, Gamepad2 } from "lucide-react";
 import type { StatusEvent, SettingsEvent } from "../lib/protocol";
 import { Modal } from "./ui/Modal";
 import { useBreakpoint } from "../hooks/useBreakpoint";
@@ -16,6 +16,7 @@ import { BehaviorSection } from "./settings/BehaviorSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { GenerationSection } from "./settings/GenerationSection";
 import { AboutSection } from "./settings/AboutSection";
+import { KaliToysSection } from "./settings/KaliToysSection";
 
 interface Props {
   open: boolean;
@@ -36,7 +37,7 @@ interface Props {
   downloadError: string | null;
 }
 
-type SectionId = "provider" | "voice" | "stt" | "behavior" | "generation" | "appearance" | "about";
+type SectionId = "provider" | "voice" | "stt" | "behavior" | "kali_toys" | "generation" | "appearance" | "about";
 
 interface SectionDef {
   id: SectionId;
@@ -50,6 +51,7 @@ const SECTIONS: SectionDef[] = [
   { id: "voice", icon: Volume2, labelKey: "settings.section.voice" },
   { id: "stt", icon: Mic, labelKey: "settings.section.stt" },
   { id: "behavior", icon: Sliders, labelKey: "settings.section.behavior" },
+  { id: "kali_toys", icon: Gamepad2, labelKey: "settings.section.kali_toys" },
   { id: "appearance", icon: Palette, labelKey: "settings.section.appearance" },
   { id: "about", icon: Info, labelKey: "settings.section.about" },
 ];
@@ -159,6 +161,7 @@ export function SettingsModal({
     if (active === "voice") return <TTSEngineSection systemStatus={systemStatus} onUpdate={onUpdate} downloadTtsModel={downloadTtsModel} downloadProgress={downloadProgress} downloadError={downloadError} />;
     if (active === "stt") return <STTSection systemStatus={systemStatus} onUpdate={onUpdate} downloadSttModel={downloadSttModel} downloadProgress={downloadProgress} downloadError={downloadError} />;
     if (active === "behavior") return <BehaviorSection systemStatus={systemStatus} onUpdate={onUpdate} />;
+    if (active === "kali_toys") return <KaliToysSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     if (active === "about") return <AboutSection />;
     return (
       <AppearanceSection
