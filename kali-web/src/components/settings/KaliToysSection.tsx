@@ -1,11 +1,10 @@
-// KaliToysSection — game session persistence and game-specific AI settings.
-
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Gamepad2 } from "lucide-react";
+import { Gamepad2, Server, Cloud, Check } from "lucide-react";
 import type { StatusEvent } from "../../lib/protocol";
 import { useStage } from "../../stage/StageProvider";
-import { SelectField, SliderField, TextField, ToggleField } from "./fields";
+import { GameConnectionPicker } from "./connections/GameConnectionPicker";
+import { SliderField, TextField, ToggleField } from "./fields";
 
 interface Props {
   systemStatus: StatusEvent | null;
@@ -19,8 +18,9 @@ const DEFAULT_MAX_TOKENS = 256;
 
 export function KaliToysSection({ systemStatus, onUpdate }: Props) {
   const { t } = useTranslation();
-  const { connections } = useStage();
+  const { connections, chat } = useStage();
   const [advanced, setAdvanced] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const gameSessionPath = systemStatus?.game_session_path ?? "";
   const gameAiGlobalTimeoutMs = systemStatus?.game_ai_global_timeout_ms ?? 20_000;
@@ -33,17 +33,24 @@ export function KaliToysSection({ systemStatus, onUpdate }: Props) {
   const timeout3 = systemStatus?.game_retry_timeout_3_ms ?? DEFAULT_TIMEOUTS[2];
   const gameMaxRetries = systemStatus?.game_max_retries ?? DEFAULT_MAX_RETRIES;
 
-  const activeLabel = t("settings.game_connection_active");
-  const connectionOptions = [
-    { id: "active", label: activeLabel },
-    ...connections.map((c) => ({
-      id: c.id,
-      label: `${c.kind === "local" ? "Local" : "Cloud"}: ${c.api_url}`,
-    })),
-  ];
+  const activeConnectionId = chat.systemStatus?.llm_connection_id ?? null;
+  const activeConnection = connections.find((c) => c.id === activeConnectionId);
+  const activeConnectionModel = activeConnection?.active_model ?? null;
 
-  const selectedConnection = connections.find((c) => c.id === gameConnectionId);
-  const showModelSelector = gameConnectionId !== "active" && (selectedConnection?.model_count ?? 0) > 1;
+  const isUsingActive = gameConnectionId === "active";
+  const selectedConn = connections.find((c) => c.id === gameConnectionId);
+
+  const displayName = isUsingActive
+    ? t("settings.game_ai_using_active")
+    : (selectedConn?.name ?? t("settings.game_ai_unknown_connection"));
+
+  const displayUrl = isUsingActive
+    ? (activeConnection ? `${activeConnection.name}${activeConnectionModel ? ` → ${activeConnectionModel}` : ""}` : "")
+    : (selectedConn?.api_url ?? "");
+
+  const displayModel = isUsingActive
+    ? (activeConnectionModel ?? "")
+    : gameModel;
 
   return (
     <div className="flex flex-col gap-4">
@@ -73,34 +80,35 @@ export function KaliToysSection({ systemStatus, onUpdate }: Props) {
         helperText={t("settings.game_ai_global_timeout_ms_hint")}
       />
 
-      <SelectField
-        label={t("settings.game_connection_id")}
-        value={gameConnectionId}
-        onChange={(v) => {
-          const patch: Record<string, unknown> = { game_connection_id: v, game_model: "" };
-          onUpdate(patch);
-        }}
-      >
-        {connectionOptions.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.label}
-          </option>
-        ))}
-      </SelectField>
-
-      {showModelSelector && (
-        <SelectField
-          label={t("settings.game_model")}
-          value={gameModel || selectedConnection?.active_model || ""}
-          onChange={(v) => onUpdate({ game_model: v })}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs text-muted">{t("settings.game_ai_title")}</label>
+        <button
+          onClick={() => setPickerOpen(true)}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface border border-border hover:border-accent/30 transition-colors text-left w-full"
         >
-          {selectedConnection?.active_model && (
-            <option key={selectedConnection.active_model} value={selectedConnection.active_model}>
-              {selectedConnection.active_model}
-            </option>
+          {isUsingActive ? (
+            <Check size={14} className="text-ok shrink-0" />
+          ) : selectedConn?.kind === "cloud" ? (
+            <Cloud size={14} className="text-muted shrink-0" />
+          ) : (
+            <Server size={14} className="text-muted shrink-0" />
           )}
-        </SelectField>
-      )}
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-medium text-foreground">{displayName}</div>
+            <div className="text-[10px] text-muted font-mono mt-0.5 truncate">
+              {displayUrl || t("settings.game_ai_no_connection")}
+            </div>
+            {displayModel && (
+              <div className="text-[10px] text-accent font-mono mt-0.5 truncate">
+                {t("settings.game_ai_model_label")}: {displayModel}
+              </div>
+            )}
+          </div>
+          <span className="text-[11px] text-accent shrink-0 font-medium">
+            {t("settings.game_ai_change")}
+          </span>
+        </button>
+      </div>
 
       <ToggleField
         label={t("settings.advanced_configuration")}
@@ -171,6 +179,19 @@ export function KaliToysSection({ systemStatus, onUpdate }: Props) {
           />
         </div>
       )}
+
+      <GameConnectionPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        gameConnectionId={gameConnectionId}
+        gameModel={gameModel}
+        connections={connections}
+        activeConnectionId={activeConnectionId}
+        activeConnectionModel={activeConnectionModel}
+        onSave={(connId, model) => {
+          onUpdate({ game_connection_id: connId, game_model: model });
+        }}
+      />
     </div>
   );
 }
