@@ -156,7 +156,7 @@ export function SettingsModal({
   );
 
   function renderSection() {
-    if (active === "provider") return <ProviderSection />;
+    if (active === "provider") return <ProviderSection systemStatus={systemStatus} />;
     if (active === "generation") return <GenerationSection systemStatus={systemStatus} onUpdate={onUpdate} />;
     if (active === "voice") return <TTSEngineSection systemStatus={systemStatus} onUpdate={onUpdate} downloadTtsModel={downloadTtsModel} downloadProgress={downloadProgress} downloadError={downloadError} />;
     if (active === "stt") return <STTSection systemStatus={systemStatus} onUpdate={onUpdate} downloadSttModel={downloadSttModel} downloadProgress={downloadProgress} downloadError={downloadError} />;
