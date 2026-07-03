@@ -65,6 +65,7 @@ export function GameConnectionPicker({
     if (conn.model_count === 1 && conn.active_model) {
       setAvailableModels([conn.active_model]);
       setSelectedModel(conn.active_model);
+      setStep("model");
       return;
     }
 
@@ -86,9 +87,7 @@ export function GameConnectionPicker({
       setLoadingModels(false);
     }
 
-    if (conn.model_count > 1 || (conn.model_count === 0 && !conn.active_model)) {
-      setStep("model");
-    }
+    setStep("model");
   };
 
   const handleConfirmModel = () => {
