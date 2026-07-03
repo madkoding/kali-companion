@@ -87,8 +87,9 @@ export function ActivateModal({ conn, onClose, onActivate }: Props) {
       onClose={onClose}
       size="md"
       title={isChangeModel ? t("connections.change_model_title") : t("connections.activate_title")}
+      panelClassName="max-h-[70vh]"
     >
-      <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto stage-scroll pr-1">
+      <div className="flex flex-col gap-4 h-full">
         <div
           className={`flex flex-col rounded-xl border transition-all overflow-hidden ${
             health === "offline" ? "border-err/30 bg-err/5" : "border-border bg-surface"
@@ -169,7 +170,7 @@ export function ActivateModal({ conn, onClose, onActivate }: Props) {
               />
             </div>
 
-            <div className="flex flex-col gap-1 max-h-56 overflow-y-auto stage-scroll">
+            <div className="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto stage-scroll">
               {filteredModels.map((m) => {
                 const selected = model === m;
                 return (
@@ -222,7 +223,7 @@ export function ActivateModal({ conn, onClose, onActivate }: Props) {
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/30">
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/30 shrink-0">
           <button
             onClick={onClose}
             className="px-3 py-1.5 rounded-md text-xs text-muted hover:text-foreground hover:bg-white/5 transition-colors"
