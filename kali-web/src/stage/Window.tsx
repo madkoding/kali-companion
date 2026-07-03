@@ -125,9 +125,14 @@ function WindowImpl({
 
   const handleSetSidePanelContent = useCallback((content: SidePanelContent | null) => {
     setSidePanelContentState(content);
-    if (content !== null) {
-      setSidePanelOpen(true);
-    }
+  }, []);
+
+  const handleOpenSidePanel = useCallback(() => {
+    setSidePanelOpen(true);
+  }, []);
+
+  const handleCloseSidePanel = useCallback(() => {
+    setSidePanelOpen(false);
   }, []);
 
   const handleClearSidePanel = useCallback(() => {
@@ -145,9 +150,14 @@ function WindowImpl({
 
   const handleSetLeftPanelContent = useCallback((content: SidePanelContent | null) => {
     setLeftPanelContentState(content);
-    if (content !== null) {
-      setLeftPanelOpen(true);
-    }
+  }, []);
+
+  const handleOpenLeftSidePanel = useCallback(() => {
+    setLeftPanelOpen(true);
+  }, []);
+
+  const handleCloseLeftSidePanel = useCallback(() => {
+    setLeftPanelOpen(false);
   }, []);
 
   const handleClearLeftPanel = useCallback(() => {
@@ -255,10 +265,14 @@ function WindowImpl({
     setSidePanelContent: handleSetSidePanelContent,
     clearSidePanel: handleClearSidePanel,
     sidePanelContent: sidePanelContent,
+    openSidePanel: handleOpenSidePanel,
+    closeSidePanel: handleCloseSidePanel,
     setLeftSidePanelContent: handleSetLeftPanelContent,
     clearLeftSidePanel: handleClearLeftPanel,
     leftSidePanelContent: leftPanelContent,
-  }), [handleSetSidePanelContent, handleClearSidePanel, sidePanelContent, handleSetLeftPanelContent, handleClearLeftPanel, leftPanelContent]);
+    openLeftSidePanel: handleOpenLeftSidePanel,
+    closeLeftSidePanel: handleCloseLeftSidePanel,
+  }), [handleSetSidePanelContent, handleClearSidePanel, sidePanelContent, handleOpenSidePanel, handleCloseSidePanel, handleSetLeftPanelContent, handleClearLeftPanel, leftPanelContent, handleOpenLeftSidePanel, handleCloseLeftSidePanel]);
 
   const renderWindowContent = (content: React.ReactNode) => {
     return (

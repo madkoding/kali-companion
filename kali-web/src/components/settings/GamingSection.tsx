@@ -24,6 +24,8 @@ const GAME_AI_DEFAULTS = {
   game_session_path: "",
   game_connection_id: "active",
   game_model: "",
+  game_log_default_open: false,
+  game_reasoning_default_open: false,
 };
 
 export function GamingSection({ systemStatus, onUpdate }: Props) {
@@ -42,6 +44,8 @@ export function GamingSection({ systemStatus, onUpdate }: Props) {
   const timeout2 = systemStatus?.game_retry_timeout_2_ms ?? GAME_AI_DEFAULTS.game_retry_timeout_2_ms;
   const timeout3 = systemStatus?.game_retry_timeout_3_ms ?? GAME_AI_DEFAULTS.game_retry_timeout_3_ms;
   const gameMaxRetries = systemStatus?.game_max_retries ?? GAME_AI_DEFAULTS.game_max_retries;
+  const gameLogDefaultOpen = systemStatus?.game_log_default_open ?? GAME_AI_DEFAULTS.game_log_default_open;
+  const gameReasoningDefaultOpen = systemStatus?.game_reasoning_default_open ?? GAME_AI_DEFAULTS.game_reasoning_default_open;
 
   const activeConnectionId = chat.systemStatus?.llm_connection_id ?? null;
   const activeConnection = connections.find((c) => c.id === activeConnectionId);
@@ -69,6 +73,21 @@ export function GamingSection({ systemStatus, onUpdate }: Props) {
         title={t("settings.section.gaming")}
         description={t("settings.gaming.description")}
       />
+
+      <SettingsCard title={t("settings.gaming.panels_group")}>
+        <ToggleField
+          label={t("settings.game_log_default_open")}
+          checked={gameLogDefaultOpen}
+          onChange={(v) => onUpdate({ game_log_default_open: v })}
+          helperText={t("settings.game_log_default_open_hint")}
+        />
+        <ToggleField
+          label={t("settings.game_reasoning_default_open")}
+          checked={gameReasoningDefaultOpen}
+          onChange={(v) => onUpdate({ game_reasoning_default_open: v })}
+          helperText={t("settings.game_reasoning_default_open_hint")}
+        />
+      </SettingsCard>
 
       <SettingsCard title={t("settings.gaming.storage_group")}>
         <TextField

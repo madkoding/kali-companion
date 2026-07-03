@@ -79,6 +79,8 @@ export interface SettingsEvent {
   game_retry_timeout_2_ms?: number;
   game_retry_timeout_3_ms?: number;
   game_max_retries?: number;
+  game_log_default_open?: boolean;
+  game_reasoning_default_open?: boolean;
 }
 
 export interface ConsentResponseEvent {
@@ -459,6 +461,8 @@ export interface StatusEvent {
   game_retry_timeout_2_ms?: number;
   game_retry_timeout_3_ms?: number;
   game_max_retries?: number;
+  game_log_default_open?: boolean;
+  game_reasoning_default_open?: boolean;
   config_warnings?: string[];
 }
 
