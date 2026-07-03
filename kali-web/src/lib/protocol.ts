@@ -79,7 +79,6 @@ export interface SettingsEvent {
   game_retry_timeout_2_ms?: number;
   game_retry_timeout_3_ms?: number;
   game_max_retries?: number;
-  game_reasoning_max_chars?: number;
 }
 
 export interface ConsentResponseEvent {
@@ -460,7 +459,6 @@ export interface StatusEvent {
   game_retry_timeout_2_ms?: number;
   game_retry_timeout_3_ms?: number;
   game_max_retries?: number;
-  game_reasoning_max_chars?: number;
   config_warnings?: string[];
 }
 
@@ -683,7 +681,6 @@ export interface GameMoveResponseEvent {
   action: GameAction | null;
   error: GameMoveError | null;
   reasoning?: string;
-  reasoning_truncated?: boolean;
 }
 
 // ── Game session events ──────────────────────────────

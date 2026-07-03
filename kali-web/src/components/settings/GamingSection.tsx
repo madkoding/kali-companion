@@ -17,7 +17,6 @@ const GAME_AI_DEFAULTS = {
   game_ai_global_timeout_ms: 20_000,
   game_temperature: 0.4,
   game_max_tokens: 256,
-  game_reasoning_max_chars: 200,
   game_retry_timeout_1_ms: 12_000,
   game_retry_timeout_2_ms: 3_000,
   game_retry_timeout_3_ms: 2_000,
@@ -39,7 +38,6 @@ export function GamingSection({ systemStatus, onUpdate }: Props) {
   const gameModel = systemStatus?.game_model ?? GAME_AI_DEFAULTS.game_model;
   const gameTemperature = systemStatus?.game_temperature ?? GAME_AI_DEFAULTS.game_temperature;
   const gameMaxTokens = systemStatus?.game_max_tokens ?? GAME_AI_DEFAULTS.game_max_tokens;
-  const gameReasoningMaxChars = systemStatus?.game_reasoning_max_chars ?? GAME_AI_DEFAULTS.game_reasoning_max_chars;
   const timeout1 = systemStatus?.game_retry_timeout_1_ms ?? GAME_AI_DEFAULTS.game_retry_timeout_1_ms;
   const timeout2 = systemStatus?.game_retry_timeout_2_ms ?? GAME_AI_DEFAULTS.game_retry_timeout_2_ms;
   const timeout3 = systemStatus?.game_retry_timeout_3_ms ?? GAME_AI_DEFAULTS.game_retry_timeout_3_ms;
@@ -144,6 +142,7 @@ export function GamingSection({ systemStatus, onUpdate }: Props) {
               step={0.1}
               onChange={(v) => onUpdate({ game_temperature: v })}
               displayValue={gameTemperature.toFixed(1)}
+              helperText={t("settings.game_temperature_hint")}
             />
 
             <SliderField
@@ -154,16 +153,7 @@ export function GamingSection({ systemStatus, onUpdate }: Props) {
               step={32}
               onChange={(v) => onUpdate({ game_max_tokens: Math.round(v) })}
               displayValue={String(gameMaxTokens)}
-            />
-
-            <SliderField
-              label={t("settings.game_reasoning_max_chars")}
-              value={gameReasoningMaxChars}
-              min={50}
-              max={2000}
-              step={50}
-              onChange={(v) => onUpdate({ game_reasoning_max_chars: Math.round(v) })}
-              displayValue={gameReasoningMaxChars <= 0 ? t("settings.unlimited") : `${gameReasoningMaxChars} chars`}
+              helperText={t("settings.game_max_tokens_hint")}
             />
 
             <SliderField
@@ -174,6 +164,7 @@ export function GamingSection({ systemStatus, onUpdate }: Props) {
               step={1000}
               onChange={(v) => onUpdate({ game_retry_timeout_1_ms: Math.round(v) })}
               displayValue={`${timeout1}ms`}
+              helperText={t("settings.game_retry_timeout_1_ms_hint")}
             />
 
             <SliderField
@@ -184,6 +175,7 @@ export function GamingSection({ systemStatus, onUpdate }: Props) {
               step={1000}
               onChange={(v) => onUpdate({ game_retry_timeout_2_ms: Math.round(v) })}
               displayValue={`${timeout2}ms`}
+              helperText={t("settings.game_retry_timeout_2_ms_hint")}
             />
 
             <SliderField
@@ -194,6 +186,7 @@ export function GamingSection({ systemStatus, onUpdate }: Props) {
               step={1000}
               onChange={(v) => onUpdate({ game_retry_timeout_3_ms: Math.round(v) })}
               displayValue={`${timeout3}ms`}
+              helperText={t("settings.game_retry_timeout_3_ms_hint")}
             />
 
             <SliderField
@@ -204,6 +197,7 @@ export function GamingSection({ systemStatus, onUpdate }: Props) {
               step={1}
               onChange={(v) => onUpdate({ game_max_retries: Math.round(v) })}
               displayValue={String(gameMaxRetries)}
+              helperText={t("settings.game_max_retries_hint")}
             />
 
             <button

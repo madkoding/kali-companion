@@ -557,7 +557,6 @@ class Server:
             "game_model": settings.game_model,
             "game_temperature": settings.game_temperature,
             "game_max_tokens": settings.game_max_tokens,
-            "game_reasoning_max_chars": settings.game_reasoning_max_chars,
             "game_retry_timeout_1_ms": settings.game_retry_timeouts[0] if len(settings.game_retry_timeouts) > 0 else 12000,
             "game_retry_timeout_2_ms": settings.game_retry_timeouts[1] if len(settings.game_retry_timeouts) > 1 else 3000,
             "game_retry_timeout_3_ms": settings.game_retry_timeouts[2] if len(settings.game_retry_timeouts) > 2 else 2000,
@@ -1343,7 +1342,6 @@ class Server:
         "game_retry_timeout_2_ms",
         "game_retry_timeout_3_ms",
         "game_max_retries",
-        "game_reasoning_max_chars",
     )
 
     def _get_fallback(self, key: str):
@@ -1516,8 +1514,6 @@ class Server:
                 settings.game_temperature = float(value)
             elif key == "game_max_tokens":
                 settings.game_max_tokens = int(value)
-            elif key == "game_reasoning_max_chars":
-                settings.game_reasoning_max_chars = int(value)
             elif key == "game_retry_timeout_1_ms":
                 if len(settings.game_retry_timeouts) > 0:
                     settings.game_retry_timeouts[0] = int(value)
@@ -1980,7 +1976,6 @@ class Connection:
                     "fallback_action": None,
                 },
                 "reasoning": "",
-                "reasoning_truncated": False,
             })
             return
 
@@ -2028,7 +2023,6 @@ class Connection:
                         "fallback_action": None,
                     },
                     "reasoning": "",
-                    "reasoning_truncated": False,
                 })
                 return
 
@@ -2091,11 +2085,9 @@ class Connection:
         final_reasoning = ""
         final_action: dict | None = None
         final_error: dict | None = None
-        reasoning_truncated = False
 
         for idx, attempt in enumerate(attempts):
             is_last_attempt = idx == len(attempts) - 1
-            reasoning_max_chars = settings.game_reasoning_max_chars
             logger.info(
                 "[game_move] attempt %d/%d (%s) | game=%s session=%s game_session=%s",
                 idx + 1, len(attempts), attempt["label"], game_type, session_id, game_session_id,
@@ -2105,7 +2097,6 @@ class Connection:
             text_parts: list[str] = []
             pre_marker_buf: list[str] = []
             seen_move_marker = False
-            reasoning_chars = 0
 
             try:
                 async for ev in llm.stream(
@@ -2116,20 +2107,11 @@ class Connection:
                     reasoning_effort=attempt.get("reasoning_effort"),
                 ):
                     if ev.kind == "reasoning" and ev.text:
-                        if reasoning_chars < reasoning_max_chars:
-                            reasoning_parts.append(ev.text)
-                            if game_session_id:
-                                await self.send({
-                                    "event": f"game_move_reasoning:{game_session_id}",
-                                    "chunk": ev.text,
-                                })
-                        reasoning_chars += len(ev.text)
-                        if reasoning_chars >= reasoning_max_chars and game_session_id:
-                            reasoning_truncated = True
+                        reasoning_parts.append(ev.text)
+                        if game_session_id:
                             await self.send({
                                 "event": f"game_move_reasoning:{game_session_id}",
-                                "chunk": "",
-                                "done": True,
+                                "chunk": ev.text,
                             })
                     elif ev.kind == "delta" and ev.text:
                         if not seen_move_marker:
@@ -2228,7 +2210,6 @@ class Connection:
             "action": final_action,
             "error": final_error,
             "reasoning": final_reasoning,
-            "reasoning_truncated": reasoning_truncated,
         })
 
     def _build_game_messages(self, rules: dict, game_state: dict) -> list[dict]:
@@ -3333,15 +3314,6 @@ class Connection:
                     await self.send({"event": "error", "detail": "game_max_tokens must be between 128 and 2048"})
             except (TypeError, ValueError):
                 await self.send({"event": "error", "detail": "Invalid game_max_tokens"})
-        if "game_reasoning_max_chars" in event:
-            try:
-                value = int(event["game_reasoning_max_chars"])
-                if value >= 0:
-                    settings.game_reasoning_max_chars = value
-                else:
-                    await self.send({"event": "error", "detail": "game_reasoning_max_chars must be non-negative"})
-            except (TypeError, ValueError):
-                await self.send({"event": "error", "detail": "Invalid game_reasoning_max_chars"})
         if "game_retry_timeout_1_ms" in event:
             try:
                 v = int(event["game_retry_timeout_1_ms"])
@@ -3429,7 +3401,6 @@ class Connection:
             game_retry_timeout_2_ms=settings.game_retry_timeouts[1] if len(settings.game_retry_timeouts) > 1 else None,
             game_retry_timeout_3_ms=settings.game_retry_timeouts[2] if len(settings.game_retry_timeouts) > 2 else None,
             game_max_retries=settings.game_max_retries,
-            game_reasoning_max_chars=settings.game_reasoning_max_chars,
             # Per-connection
             stt_enabled=self._stt_enabled,
             stt_language=self._stt_language,
