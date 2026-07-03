@@ -13,6 +13,7 @@ import { ConnectionCard } from "./ConnectionCard";
 interface Props {
   connections: ConnectionSummary[];
   hasActiveProvider: boolean;
+  gameConnectionId?: string;
   onAdd: (kind: "local" | "cloud") => void;
   onEdit: (id: string) => void;
   onModels: (id: string) => void;
@@ -25,6 +26,7 @@ interface Props {
 export function ConnectionsList({
   connections,
   hasActiveProvider,
+  gameConnectionId,
   onAdd,
   onEdit,
   onModels,
@@ -59,6 +61,7 @@ export function ConnectionsList({
           <ConnectionCard
             key={c.id}
             conn={c}
+            gameConnectionId={gameConnectionId}
             onEdit={onEdit}
             onModels={onModels}
             onActivate={onActivate}
@@ -80,6 +83,7 @@ export function ConnectionsList({
           <ConnectionCard
             key={c.id}
             conn={c}
+            gameConnectionId={gameConnectionId}
             onEdit={onEdit}
             onModels={onModels}
             onActivate={onActivate}

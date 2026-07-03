@@ -4,6 +4,7 @@ import type { ConnectionSummary } from "../../../lib/protocol";
 
 interface Props {
   conn: ConnectionSummary;
+  gameConnectionId?: string;
   onEdit: (id: string) => void;
   onModels: (id: string) => void;
   onActivate: (id: string) => void;
@@ -12,9 +13,12 @@ interface Props {
   onChangeModel?: (id: string) => void;
 }
 
-export function ConnectionCard({ conn, onEdit, onModels, onActivate, onDelete, onDisconnect, onChangeModel }: Props) {
+export function ConnectionCard({ conn, gameConnectionId, onEdit, onModels, onActivate, onDelete, onDisconnect, onChangeModel }: Props) {
   const { t } = useTranslation();
   const Icon = conn.kind === "local" ? Server : Cloud;
+
+  const isActive = conn.is_active;
+  const isGame = gameConnectionId === conn.id;
   return (
     <div
       className={`flex items-start gap-3 px-3 py-2.5 rounded-lg bg-surface transition-colors ${
@@ -29,9 +33,14 @@ export function ConnectionCard({ conn, onEdit, onModels, onActivate, onDelete, o
           <span className="text-xs text-foreground font-medium truncate">
             {conn.name}
           </span>
-          {conn.is_active && (
+          {isActive && (
             <span className="text-[10px] font-mono bg-ok/20 text-ok rounded px-1.5 py-0.5 shrink-0">
               {t("connections.active_badge")}
+            </span>
+          )}
+          {isGame && (
+            <span className="text-[10px] font-mono bg-accent/20 text-accent rounded px-1.5 py-0.5 shrink-0">
+              {t("connections.games_badge")}
             </span>
           )}
         </div>

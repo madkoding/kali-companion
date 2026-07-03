@@ -15,7 +15,7 @@ import { ConnectionForm } from "./connections/ConnectionForm";
 import { ActivateModal } from "./connections/ActivateModal";
 import { ModelsModal } from "./connections/ModelsModal";
 import { deleteConnection, listConnections } from "../../lib/api/connections";
-import type { ConnectionKind, ConnectionSummary } from "../../lib/protocol";
+import type { ConnectionKind, ConnectionSummary, StatusEvent } from "../../lib/protocol";
 
 type FormMode = "create" | "edit";
 type FormKind = ConnectionKind;
@@ -29,7 +29,11 @@ interface FormState {
 
 const EMPTY_FORM: FormState = { open: false, mode: "create", kind: "local", existingId: null };
 
-export function ProviderSection() {
+interface Props {
+  systemStatus: StatusEvent | null;
+}
+
+export function ProviderSection({ systemStatus }: Props) {
   const { t } = useTranslation();
   const { connections, activeConnectionId, cloudProviders, activateConnection, deactivateConnection, refreshConnections } = useStage();
 
@@ -123,6 +127,7 @@ export function ProviderSection() {
           onChangeModel={handleActivate}
           onDelete={handleDelete}
           onDisconnect={handleDisconnect}
+          gameConnectionId={systemStatus?.game_connection_id}
         />
       )}
 

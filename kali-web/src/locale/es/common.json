@@ -484,7 +484,7 @@
   "connections.cancel": "Cancelar",
   "connections.unsaved_changes": "Tienes cambios sin guardar",
   "connections.active_badge": "Conectada",
-  "connections.principal": "Conectada",
+  "connections.games_badge": "Juegos",
   "connections.disconnect": "Desconectar",
   "connections.format_openai": "OpenAI-compatible",
   "connections.format_ollama": "Ollama nativo",
