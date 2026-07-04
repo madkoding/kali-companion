@@ -631,6 +631,9 @@
   "stats.completion_tokens": "Tokens salida",
   "stats.reasoning_tokens": "Tokens razonam.",
   "stats.no_data": "Sin datos aún",
+  "stats.voice": "Voz",
+  "stats.mode": "Modo",
+  "stats.auto": "Auto",
 
   "settings.section.stt": "Voz a Texto",
   "settings.stt_provider": "Proveedor STT",

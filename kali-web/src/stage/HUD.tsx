@@ -8,7 +8,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings, Plus, History, Radio, Cpu, Palette, Library, MessageSquare, X, Zap, Mic, LayoutGrid, Menu } from "lucide-react";
+import { Settings, Plus, History, Radio, Cpu, Palette, Library, MessageSquare, X, Zap, Mic, LayoutGrid, Menu, Volume2, Gamepad2 } from "lucide-react";
 import { useStage } from "./StageProvider";
 import { IconButton } from "../components/ui/IconButton";
 import type { StatusEvent, TurnStatsEvent } from "../lib/protocol";
@@ -68,19 +68,23 @@ export function HUD({
 
   const statusKey = !hasProvider ? "status.disconnected" : `status.${chat.status}`;
 
+  // STT dot
   const sttProvider = chat.systemStatus?.stt_provider ?? "vosk";
   const sttEnabled = chat.systemStatus?.stt_enabled ?? false;
   const sttLoaded = chat.systemStatus?.stt_loaded ?? (sttProvider === "vosk");
-  const sttModel = chat.systemStatus?.stt_model ?? "";
-  const sttDevice = chat.systemStatus?.stt_device ?? "";
-  const sttStatusDotClass = (sttEnabled && sttLoaded) ? "bg-ok" : "bg-muted";
-  const sttLabel = !sttEnabled
-    ? `${t(`stt.provider.${sttProvider}`)} · ${t("stt.status.disabled")}`
-    : sttProvider === "vosk"
-      ? `vosk · ${chat.systemStatus?.stt_language ?? "es"}`
-      : sttLoaded
-        ? `${sttModel} · ${sttDevice}`
-        : `${t("stt.provider.qwen3")} · ${t("stt.status.not_loaded")}`;
+  const sttDotClass = (sttEnabled && sttLoaded) ? "bg-ok" : "bg-muted";
+
+  // TTS dot
+  const ttsLoaded = chat.systemStatus?.tts_loaded ?? false;
+  const ttsAvailable = chat.systemStatus?.tts_available ?? true;
+  const ttsError = chat.systemStatus?.tts_error;
+  const ttsDotClass = ttsError ? "bg-err" : (ttsLoaded && ttsAvailable) ? "bg-ok" : "bg-muted";
+  const ttsProvider = chat.systemStatus?.tts_provider ?? "piper";
+
+  // Consolidated label
+  const llmLabel = hasProvider
+    ? (chat.systemStatus!.llm_model || chat.systemStatus!.llm_provider)
+    : "—";
 
   const openArtifacts = artifactsOpenCount;
   const closedArtifacts = artifactsClosedCount;
@@ -157,24 +161,18 @@ export function HUD({
               </span>
             )}
             {chat.systemStatus && (
-              <span className="hud-pill" title={sttLabel}>
-                <span className={`w-1.5 h-1.5 rounded-full ${sttStatusDotClass}`} />
-                {sttLabel}
-              </span>
-            )}
-            {chat.systemStatus && (
               <div className="relative">
                 <button
                   onClick={() => setStatsOpen((v) => !v)}
                   className="hud-pill cursor-pointer"
-                  title={
-                    hasProvider
-                      ? chat.systemStatus!.llm_model
-                      : t("connections.no_provider")
-                  }
+                  title={`${t(statusKey)} · LLM: ${llmLabel}  STT: ${sttProvider}  TTS: ${ttsProvider}`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
-                  {t(statusKey)}{hasProvider ? ` · ${chat.systemStatus!.llm_model}` : ""}
+                  <span className="flex items-center gap-[2px]">
+                    <span className={`w-[5px] h-[5px] rounded-full ${statusDotClass}`} />
+                    <span className={`w-[5px] h-[5px] rounded-full ${sttDotClass}`} />
+                    <span className={`w-[5px] h-[5px] rounded-full ${ttsDotClass}`} />
+                  </span>
+                  {llmLabel} · {sttProvider} · {ttsProvider}
                 </button>
                 {statsOpen && (
                   <ModelStatsPanel
@@ -307,10 +305,14 @@ function ModelStatsPanel({
 
       <div className="p-3 space-y-3">
         <StatsSection title={t("stats.model")} icon={<Cpu size={12} />}>
-          <StatsRow label={t("stats.provider")} value={systemStatus.llm_provider} />
-          <StatsRow label={t("stats.model")} value={systemStatus.llm_model} mono />
-          <StatsRow label={t("stats.api_url")} value={systemStatus.llm_api_url.replace(/^https?:\/\//, "")} mono />
-          <StatsRow label={t("stats.max_tokens")} value={String(systemStatus.llm_max_tokens ?? "-")} />
+          <StatsRow label={t("stats.provider")} value={systemStatus.llm_provider || "—"} />
+          <StatsRow label={t("stats.model")} value={systemStatus.llm_model || "—"} mono />
+          {systemStatus.llm_active && (
+            <>
+              <StatsRow label={t("stats.api_url")} value={systemStatus.llm_api_url.replace(/^https?:\/\//, "")} mono />
+              <StatsRow label={t("stats.max_tokens")} value={String(systemStatus.llm_max_tokens ?? "-")} />
+            </>
+          )}
         </StatsSection>
 
         <StatsSection title="STT" icon={<Mic size={12} />}>
@@ -319,6 +321,23 @@ function ModelStatsPanel({
           <StatsRow label={t("stats.device")} value={systemStatus.stt_device ?? "-"} mono />
           <StatsRow label="Streaming" value={systemStatus.stt_streaming ? "On" : "Off"} />
         </StatsSection>
+
+        <StatsSection title="TTS" icon={<Volume2 size={12} />}>
+          <StatsRow label={t("stats.provider")} value={systemStatus.tts_provider} />
+          <StatsRow label={t("stats.voice")} value={systemStatus.voice} />
+          <StatsRow label={t("stats.model")} value={systemStatus.tts_model ?? "-"} mono />
+          <StatsRow label={t("stats.device")} value={systemStatus.tts_device ?? "-"} mono />
+          <StatsRow label={t("stats.mode")} value={systemStatus.tts_mode} />
+          <StatsRow label={t("stats.auto")} value={systemStatus.auto_tts ? "On" : "Off"} />
+        </StatsSection>
+
+        {systemStatus.game_model && (
+          <StatsSection title="Game" icon={<Gamepad2 size={12} />}>
+            <StatsRow label={t("stats.model")} value={systemStatus.game_model} mono />
+            <StatsRow label="Temperature" value={String(systemStatus.game_temperature ?? "-")} />
+            <StatsRow label={t("stats.max_tokens")} value={String(systemStatus.game_max_tokens ?? "-")} />
+          </StatsSection>
+        )}
 
         <StatsSection title={t("stats.session")} icon={<MessageSquare size={12} />}>
           <StatsRow label={t("stats.messages")} value={String(messageCount)} />

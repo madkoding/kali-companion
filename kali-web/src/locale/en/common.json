@@ -631,6 +631,9 @@
   "stats.completion_tokens": "Completion tokens",
   "stats.reasoning_tokens": "Reasoning tokens",
   "stats.no_data": "No data yet",
+  "stats.voice": "Voice",
+  "stats.mode": "Mode",
+  "stats.auto": "Auto",
 
   "settings.section.stt": "Speech to Text",
   "settings.stt_provider": "STT Provider",
