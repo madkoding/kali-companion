@@ -14,15 +14,16 @@ interface Props {
   manager?: GameSessionManager;
   hasKali?: boolean;
   isMaximized?: boolean;
+  focused?: boolean;
 }
 
-export function GameWindow({ game, manager, hasKali, isMaximized }: Props) {
+export function GameWindow({ game, manager, hasKali, isMaximized, focused }: Props) {
   const { t } = useTranslation();
   switch (game.type) {
     case GameType.SNAKE:
-      return <SnakeView game={game as SnakeGame} isMaximized={isMaximized} />;
+      return <SnakeView game={game as SnakeGame} isMaximized={isMaximized} focused={focused} />;
     case GameType.TWENTY_FORTY_EIGHT:
-      return <TwentyFortyEightView game={game as TwentyFortyEightGame} isMaximized={isMaximized} />;
+      return <TwentyFortyEightView game={game as TwentyFortyEightGame} isMaximized={isMaximized} focused={focused} />;
     case GameType.TIC_TAC_TOE:
       if (!manager) {
         return (
@@ -33,7 +34,7 @@ export function GameWindow({ game, manager, hasKali, isMaximized }: Props) {
           </div>
         );
       }
-      return <TicTacToeView game={game as TicTacToeGame} manager={manager} hasKali={hasKali ?? false} isMaximized={isMaximized} />;
+      return <TicTacToeView game={game as TicTacToeGame} manager={manager} hasKali={hasKali ?? false} isMaximized={isMaximized} focused={focused} />;
     default:
       return (
         <div className="flex flex-col flex-1 min-h-0">

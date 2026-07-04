@@ -19,10 +19,12 @@ import { GameButton, GameHud, GameHudStat, GameMobileActionBar, GameSegmentedCon
 import { computeGameOffsets, computeGameScale } from "./gameViewportSizing";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
 import { useSwipeDirection } from "./useSwipeDirection";
+import { useGameKeyboard } from "../../hooks/useGameKeyboard";
 
 interface Props {
   game: TwentyFortyEightGame;
   isMaximized?: boolean;
+  focused?: boolean;
 }
 
 interface TileItem {
@@ -177,7 +179,7 @@ function AnimatedTile({
   );
 }
 
-export function TwentyFortyEightView({ game, isMaximized }: Props) {
+export function TwentyFortyEightView({ game, isMaximized, focused = true }: Props) {
   const $ = useTwentyFortyEightI18n();
   const [statusVersion, setStatusVersion] = useState(0);
   void statusVersion;
@@ -215,65 +217,62 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
     refresh();
   }, [game, refresh]);
 
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) {
-      const status = game.getStatus();
-      const dirMap: Record<string, Direction> = {
-        ArrowUp: "UP",
-        ArrowDown: "DOWN",
-        ArrowLeft: "LEFT",
-        ArrowRight: "RIGHT",
-        w: "UP",
-        W: "UP",
-        s: "DOWN",
-        S: "DOWN",
-        a: "LEFT",
-        A: "LEFT",
-        d: "RIGHT",
-        D: "RIGHT",
-      };
+  const handleKey = useCallback((e: KeyboardEvent) => {
+    const status = game.getStatus();
+    const dirMap: Record<string, Direction> = {
+      ArrowUp: "UP",
+      ArrowDown: "DOWN",
+      ArrowLeft: "LEFT",
+      ArrowRight: "RIGHT",
+      w: "UP",
+      W: "UP",
+      s: "DOWN",
+      S: "DOWN",
+      a: "LEFT",
+      A: "LEFT",
+      d: "RIGHT",
+      D: "RIGHT",
+    };
 
-      if (status === GameStatus.WAITING) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          startNewGame(pendingSize);
-        }
-        return;
-      }
-
-      if (e.key === "Escape" || e.key === "p" || e.key === "P") {
+    if (status === GameStatus.WAITING) {
+      if (e.key === "Enter") {
         e.preventDefault();
-        if (status === GameStatus.PLAYING) {
-          send(game, GameCommand.PAUSE);
-        } else if (status === GameStatus.PAUSED) {
-          send(game, GameCommand.RESUME);
-        }
-        refresh();
-        return;
+        startNewGame(pendingSize);
       }
-
-      if (status === GameStatus.WON || status === GameStatus.LOST || status === GameStatus.ABANDONED) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          send(game, GameCommand.PLAY_AGAIN);
-          refresh();
-        }
-        return;
-      }
-
-      if (status === GameStatus.PAUSED) return;
-
-      const dir = dirMap[e.key];
-      if (dir) {
-        e.preventDefault();
-        move(game, dir);
-        refresh();
-      }
+      return;
     }
 
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    if (e.key === "Escape" || e.key === "p" || e.key === "P") {
+      e.preventDefault();
+      if (status === GameStatus.PLAYING) {
+        send(game, GameCommand.PAUSE);
+      } else if (status === GameStatus.PAUSED) {
+        send(game, GameCommand.RESUME);
+      }
+      refresh();
+      return;
+    }
+
+    if (status === GameStatus.WON || status === GameStatus.LOST || status === GameStatus.ABANDONED) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        send(game, GameCommand.PLAY_AGAIN);
+        refresh();
+      }
+      return;
+    }
+
+    if (status === GameStatus.PAUSED) return;
+
+    const dir = dirMap[e.key];
+    if (dir) {
+      e.preventDefault();
+      move(game, dir);
+      refresh();
+    }
   }, [game, refresh, pendingSize, startNewGame]);
+
+  useGameKeyboard(focused, handleKey);
 
   useEffect(() => {
     if (statusRef.current !== GameStatus.ABANDONED) return;

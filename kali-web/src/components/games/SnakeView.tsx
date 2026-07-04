@@ -11,6 +11,7 @@ import { useGameViewport } from "./useGameViewport";
 import { GameButton, GameMobileActionBar, GamePauseScreen, GameResultScreen, GameTitleScreen, TouchDPad } from "./GameUI";
 import { computeGameOffsets, computeGameScale } from "./gameViewportSizing";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
+import { useGameKeyboard } from "../../hooks/useGameKeyboard";
 import { useSwipeDirection } from "./useSwipeDirection";
 
 const CELL = 24;
@@ -49,6 +50,7 @@ const PALETTE = {
 interface Props {
   game: SnakeGame;
   isMaximized?: boolean;
+  focused?: boolean;
 }
 
 function send(game: SnakeGame, command: string) {
@@ -179,7 +181,7 @@ function smoothstep(t: number): number {
   return t * t * (3 - 2 * t);
 }
 
-export function SnakeView({ game, isMaximized }: Props) {
+export function SnakeView({ game, isMaximized, focused = true }: Props) {
   const $ = useSnakeI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -326,53 +328,50 @@ export function SnakeView({ game, isMaximized }: Props) {
     canvas.style.height = `${CANVAS_H}px`;
   }, [viewport.dpr]);
 
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) {
-      const dir: Record<string, string> = {
-        ArrowUp: "UP", ArrowDown: "DOWN",
-        ArrowLeft: "LEFT", ArrowRight: "RIGHT",
-      };
+  const handleKey = useCallback((e: KeyboardEvent) => {
+    const dir: Record<string, string> = {
+      ArrowUp: "UP", ArrowDown: "DOWN",
+      ArrowLeft: "LEFT", ArrowRight: "RIGHT",
+    };
 
-      const status = game.getStatus();
+    const status = game.getStatus();
 
-      if (status === GameStatus.WAITING) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          send(game, GameCommand.START);
-        }
-        return;
-      }
-
-      if (e.key === "Escape" || e.key === "p" || e.key === "P") {
+    if (status === GameStatus.WAITING) {
+      if (e.key === "Enter") {
         e.preventDefault();
-        if (status === GameStatus.PLAYING) {
-          send(game, GameCommand.PAUSE);
-        } else if (status === GameStatus.PAUSED) {
-          send(game, GameCommand.RESUME);
-        }
-        return;
+        send(game, GameCommand.START);
       }
-
-      if (status === GameStatus.LOST || status === GameStatus.ABANDONED) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          send(game, GameCommand.PLAY_AGAIN);
-        }
-        return;
-      }
-
-      if (status === GameStatus.PAUSED) return;
-
-      const d = dir[e.key];
-      if (d) {
-        e.preventDefault();
-        game.handleAction({ type: ActionType.MOVE, data: d }, "player");
-      }
+      return;
     }
 
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    if (e.key === "Escape" || e.key === "p" || e.key === "P") {
+      e.preventDefault();
+      if (status === GameStatus.PLAYING) {
+        send(game, GameCommand.PAUSE);
+      } else if (status === GameStatus.PAUSED) {
+        send(game, GameCommand.RESUME);
+      }
+      return;
+    }
+
+    if (status === GameStatus.LOST || status === GameStatus.ABANDONED) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        send(game, GameCommand.PLAY_AGAIN);
+      }
+      return;
+    }
+
+    if (status === GameStatus.PAUSED) return;
+
+    const d = dir[e.key];
+    if (d) {
+      e.preventDefault();
+      game.handleAction({ type: ActionType.MOVE, data: d }, "player");
+    }
   }, [game]);
+
+  useGameKeyboard(focused, handleKey);
 
   const status = statusRef.current;
   const state = game.getState();

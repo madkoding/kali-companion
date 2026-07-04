@@ -14,12 +14,14 @@ import { useGameViewport } from "./useGameViewport";
 import { GameButton, GameHud, GameHudStat, GameMobileActionBar, GamePauseScreen, GameResultScreen, GameSegmentedControl, GameTitleScreen } from "./GameUI";
 import { computeGameOffsets, computeGameScale } from "./gameViewportSizing";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
+import { useGameKeyboard } from "../../hooks/useGameKeyboard";
 
 interface Props {
   game: TicTacToeGame;
   manager: GameSessionManager;
-  hasKali: boolean;
+  hasKali?: boolean;
   isMaximized?: boolean;
+  focused?: boolean;
 }
 
 const PALETTE = {
@@ -37,7 +39,7 @@ const PALETTE = {
 
 type Starter = typeof SlotId.PLAYER | typeof SlotId.OPPONENT;
 
-export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
+export function TicTacToeView({ game, manager, hasKali, isMaximized, focused = true }: Props) {
   const $ = useTicTacToeI18n();
   const [tick, setTick] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -115,40 +117,37 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
     return () => clearTimeout(t);
   }, [game, tick, sendCommand]);
 
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) {
-      const status = game.getStatus();
+  const handleKey = useCallback((e: KeyboardEvent) => {
+    const status = game.getStatus();
 
-      if (status === GameStatus.WAITING) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          startGame();
-        }
-        return;
-      }
-
-      if (e.key === "Escape" || e.key === "p" || e.key === "P") {
+    if (status === GameStatus.WAITING) {
+      if (e.key === "Enter") {
         e.preventDefault();
-        if (status === GameStatus.PLAYING) {
-          sendCommand(GameCommand.PAUSE);
-        } else if (status === GameStatus.PAUSED) {
-          sendCommand(GameCommand.RESUME);
-        }
-        return;
+        startGame();
       }
-
-      if (status === GameStatus.WON || status === GameStatus.LOST || status === GameStatus.DRAW || status === GameStatus.ABANDONED) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          sendCommand(GameCommand.PLAY_AGAIN);
-        }
-        return;
-      }
+      return;
     }
 
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    if (e.key === "Escape" || e.key === "p" || e.key === "P") {
+      e.preventDefault();
+      if (status === GameStatus.PLAYING) {
+        sendCommand(GameCommand.PAUSE);
+      } else if (status === GameStatus.PAUSED) {
+        sendCommand(GameCommand.RESUME);
+      }
+      return;
+    }
+
+    if (status === GameStatus.WON || status === GameStatus.LOST || status === GameStatus.DRAW || status === GameStatus.ABANDONED) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendCommand(GameCommand.PLAY_AGAIN);
+      }
+      return;
+    }
   }, [game, startGame, sendCommand]);
+
+  useGameKeyboard(focused, handleKey);
 
   void tick;
 
