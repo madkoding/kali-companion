@@ -401,48 +401,47 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
             })}
           </div>
         </div>
+
+        {hasCoarsePointer && (statusRef.current === GameStatus.PLAYING || statusRef.current === GameStatus.PAUSED) && (
+          <GameMobileActionBar
+            placement="inline-bottom"
+            actions={
+              <>
+                <GameButton
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    send(game, statusRef.current === GameStatus.PLAYING ? GameCommand.PAUSE : GameCommand.RESUME);
+                    refresh();
+                  }}
+                >
+                  {statusRef.current === GameStatus.PLAYING ? "PAUSE" : "PLAY"}
+                </GameButton>
+                <GameButton
+                  size="sm"
+                  variant="danger"
+                  onClick={() => {
+                    send(game, GameCommand.GIVE_UP);
+                    refresh();
+                  }}
+                >
+                  EXIT
+                </GameButton>
+              </>
+            }
+          />
+        )}
+
+        {hasCoarsePointer && statusRef.current === GameStatus.PLAYING && (
+          <TouchDPad
+            placement="inline-bottom"
+            onDirection={(direction) => {
+              move(game, direction);
+              refresh();
+            }}
+          />
+        )}
       </div>
-
-      {hasCoarsePointer && (statusRef.current === GameStatus.PLAYING || statusRef.current === GameStatus.PAUSED) && (
-        <GameMobileActionBar
-          placement="top-right"
-          actions={
-            <>
-              <GameButton
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  send(game, statusRef.current === GameStatus.PLAYING ? GameCommand.PAUSE : GameCommand.RESUME);
-                  refresh();
-                }}
-              >
-                {statusRef.current === GameStatus.PLAYING ? "PAUSE" : "PLAY"}
-              </GameButton>
-              <GameButton
-                size="sm"
-                variant="danger"
-                onClick={() => {
-                  send(game, GameCommand.GIVE_UP);
-                  refresh();
-                }}
-              >
-                EXIT
-              </GameButton>
-            </>
-          }
-        />
-      )}
-
-      {hasCoarsePointer && statusRef.current === GameStatus.PLAYING && (
-        <TouchDPad
-          placement="bottom-center"
-          bottomOffset={120}
-          onDirection={(direction) => {
-            move(game, direction);
-            refresh();
-          }}
-        />
-      )}
 
       {statusRef.current === GameStatus.WAITING && (
         <GameTitleScreen

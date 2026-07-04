@@ -433,7 +433,8 @@ export function SnakeView({ game, isMaximized }: Props) {
 
       {hasCoarsePointer && (status === GameStatus.PLAYING || status === GameStatus.PAUSED) && (
         <GameMobileActionBar
-          placement="top-right"
+          placement="bottom-center"
+          bottomOffset={176}
           actions={
             <>
               <GameButton
