@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useSnakeI18n } from "../../games/snake/snake-i18n";
 
 const ABANDONED_DELAY_MS = 1500;
 import { SnakeGame } from "../../games/snake/snake-game";
@@ -180,7 +180,7 @@ function smoothstep(t: number): number {
 }
 
 export function SnakeView({ game, isMaximized }: Props) {
-  const { t } = useTranslation();
+  const $ = useSnakeI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scoreSpanRef = useRef<HTMLSpanElement>(null);
@@ -216,8 +216,6 @@ export function SnakeView({ game, isMaximized }: Props) {
 
       const dpr = viewport.dpr;
 
-      // Canvas backing store is fixed at logical 480x480 * dpr; the parent
-      // platform scales it visually via transform: scale(...).
       const targetW = Math.max(1, Math.round(CANVAS_W * dpr));
       const targetH = Math.max(1, Math.round(CANVAS_H * dpr));
       if (canvas.width !== targetW || canvas.height !== targetH) {
@@ -231,7 +229,6 @@ export function SnakeView({ game, isMaximized }: Props) {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Map logical 480x480 board coordinates to the canvas backing store.
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const state = game.getState();
@@ -380,7 +377,6 @@ export function SnakeView({ game, isMaximized }: Props) {
   const status = statusRef.current;
   const state = game.getState();
 
-  // Auto-reset to title screen after the player abandons the game.
   useEffect(() => {
     if (status !== GameStatus.ABANDONED) return;
     const t = setTimeout(() => {
@@ -422,13 +418,13 @@ export function SnakeView({ game, isMaximized }: Props) {
             className="text-[10px] tracking-wider"
             style={{ ...pixelFont, color: PALETTE.head }}
           >
-            {t("game_view.score")}: <span ref={scoreSpanRef}>{state.score}</span>
+            {$.score}: <span ref={scoreSpanRef}>{state.score}</span>
           </span>
           <span
             className="text-[10px] tracking-wider"
             style={{ ...pixelFont, color: PALETTE.head }}
           >
-            {t("game_view.level")}: <span ref={levelSpanRef}>{(state.data as DrawState | null)?.level ?? 1}</span>
+            {$.level}: <span ref={levelSpanRef}>{(state.data as DrawState | null)?.level ?? 1}</span>
           </span>
         </div>
       </div>
@@ -444,10 +440,10 @@ export function SnakeView({ game, isMaximized }: Props) {
                 variant="secondary"
                 onClick={() => send(game, status === GameStatus.PLAYING ? GameCommand.PAUSE : GameCommand.RESUME)}
               >
-                {status === GameStatus.PLAYING ? t("game_view.pause") : t("game_view.play")}
+                {status === GameStatus.PLAYING ? $.pause : $.play}
               </GameButton>
               <GameButton size="sm" variant="danger" onClick={() => send(game, GameCommand.GIVE_UP)}>
-                {t("game_view.exit")}
+                {$.exit}
               </GameButton>
             </>
           }
@@ -456,11 +452,11 @@ export function SnakeView({ game, isMaximized }: Props) {
 
       {status === GameStatus.WAITING && (
         <GameTitleScreen
-          icon={"🐍"}
-          title={t("game_view.snake.title")}
-          subtitle={t("game_view.snake.subtitle")}
-          primaryAction={<GameButton onClick={() => send(game, GameCommand.START)}>{t("game_view.start")}</GameButton>}
-          footer={hasCoarsePointer ? t("game_view.tap_to_start") : t("game_view.or_press_enter")}
+          icon={"\u{1F40D}"}
+          title={$.title}
+          subtitle={$.subtitle}
+          primaryAction={<GameButton onClick={() => send(game, GameCommand.START)}>{$.start}</GameButton>}
+          footer={hasCoarsePointer ? $.tap_to_start : $.or_press_enter}
         />
       )}
 
@@ -468,40 +464,45 @@ export function SnakeView({ game, isMaximized }: Props) {
         <GamePauseScreen
           actions={
             <>
-              <GameButton onClick={() => send(game, GameCommand.RESUME)}>{t("game_view.resume")}</GameButton>
-              <GameButton variant="secondary" onClick={() => send(game, GameCommand.RESTART)}>{t("game_view.restart")}</GameButton>
-              <GameButton variant="danger" onClick={() => send(game, GameCommand.GIVE_UP)}>{t("game_view.quit")}</GameButton>
+              <GameButton onClick={() => send(game, GameCommand.RESUME)}>{$.resume}</GameButton>
+              <GameButton variant="secondary" onClick={() => send(game, GameCommand.RESTART)}>{$.restart}</GameButton>
+              <GameButton variant="danger" onClick={() => send(game, GameCommand.GIVE_UP)}>{$.quit}</GameButton>
             </>
           }
-          footer={hasCoarsePointer ? t("game_view.tap_resume") : t("game_view.esc_to_resume")}
+          footer={hasCoarsePointer ? $.tap_resume : $.esc_to_resume}
         />
       )}
 
       {status === GameStatus.ABANDONED && (
         <GameResultScreen
-          title={t("game_view.abandoned")}
+          title={$.abandoned}
           tone="danger"
-          subtitle={`${t("game_view.score")}: ${state.score}`}
-          footer={t("game_view.returning_to_title")}
+          subtitle={`${$.score}: ${state.score}`}
+          footer={$.returning_to_title}
         />
       )}
 
       {status === GameStatus.LOST && (
         <GameResultScreen
-          title={t("game_view.game_over")}
+          title={$.game_over}
           tone="danger"
-          subtitle={`${t("game_view.score")}: ${state.score}`}
+          subtitle={`${$.score}: ${state.score}`}
           actions={
             <>
-              <GameButton onClick={() => send(game, GameCommand.PLAY_AGAIN)}>{t("game_view.play_again")}</GameButton>
-              <GameButton variant="secondary" onClick={() => send(game, GameCommand.TO_TITLE)}>{t("game_view.title_screen")}</GameButton>
+              <GameButton onClick={() => send(game, GameCommand.PLAY_AGAIN)}>{$.play_again}</GameButton>
+              <GameButton variant="secondary" onClick={() => send(game, GameCommand.TO_TITLE)}>{$.title_screen}</GameButton>
             </>
           }
-          footer={hasCoarsePointer ? t("game_view.tap_to_continue") : t("game_view.enter_to_retry")}
+          footer={hasCoarsePointer ? $.tap_to_continue : $.enter_to_retry}
         />
       )}
 
-      {hasCoarsePointer && status === GameStatus.PLAYING && <TouchDPad onDirection={sendDirection} />}
+      {hasCoarsePointer && status === GameStatus.PLAYING && (
+        <TouchDPad
+          onDirection={sendDirection}
+          ariaLabels={{ up: $.move_up, down: $.move_down, left: $.move_left, right: $.move_right }}
+        />
+      )}
     </div>
   );
 }

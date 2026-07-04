@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useTwentyFortyEightI18n } from "../../games/twenty-forty-eight/twenty-forty-eight-i18n";
 
 const ABANDONED_DELAY_MS = 1500;
 
@@ -178,7 +178,7 @@ function AnimatedTile({
 }
 
 export function TwentyFortyEightView({ game, isMaximized }: Props) {
-  const { t } = useTranslation();
+  const $ = useTwentyFortyEightI18n();
   const [statusVersion, setStatusVersion] = useState(0);
   void statusVersion;
   const statusRef = useRef<GameStatusValue>(game.getStatus());
@@ -275,7 +275,6 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [game, refresh, pendingSize, startNewGame]);
 
-  // Auto-reset to title screen after the player abandons the game.
   useEffect(() => {
     if (statusRef.current !== GameStatus.ABANDONED) return;
     const t = setTimeout(() => {
@@ -343,11 +342,11 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
             className="text-sm tracking-widest font-bold"
             style={{ fontFamily: "var(--font-game)", color: "#22d3ee", lineHeight: 1 }}
           >
-             {t("game_view.twenty_forty_eight.title")}
+            {$.title}
           </span>
           <div className="flex gap-3">
-            <GameHudStat label={t("game_view.score")} value={score} minWidth={76} />
-            <GameHudStat label={t("game_view.twenty_forty_eight.moves")} value={moves} tone="secondary" minWidth={66} />
+            <GameHudStat label={$.score} value={score} minWidth={76} />
+            <GameHudStat label={$.moves} value={moves} tone="secondary" minWidth={66} />
           </div>
         </GameHud>
 
@@ -417,7 +416,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                     refresh();
                   }}
                 >
-                  {statusRef.current === GameStatus.PLAYING ? t("game_view.pause") : t("game_view.play")}
+                  {statusRef.current === GameStatus.PLAYING ? $.pause : $.play}
                 </GameButton>
                 <GameButton
                   size="sm"
@@ -427,7 +426,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                     refresh();
                   }}
                 >
-                  {t("game_view.exit")}
+                  {$.exit}
                 </GameButton>
               </>
             }
@@ -441,18 +440,19 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
               move(game, direction);
               refresh();
             }}
+            ariaLabels={{ up: $.move_up, down: $.move_down, left: $.move_left, right: $.move_right }}
           />
         )}
       </div>
 
       {statusRef.current === GameStatus.WAITING && (
         <GameTitleScreen
-          icon={"🧮"}
-          title={t("game_view.twenty_forty_eight.title")}
-          subtitle={t("game_view.twenty_forty_eight.subtitle")}
+          icon={"\u{1F9EE}"}
+          title={$.title}
+          subtitle={$.subtitle}
           controls={
             <>
-              <p className="text-[10px] font-game" style={{ color: "#94a3b8" }}>{t("game_view.twenty_forty_eight.board_size")}</p>
+              <p className="text-[10px] font-game" style={{ color: "#94a3b8" }}>{$.board_size}</p>
               <GameSegmentedControl
                 options={SIZES.map((s) => ({ value: String(s.value), label: s.label }))}
                 value={String(pendingSize)}
@@ -460,8 +460,8 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
               />
             </>
           }
-          primaryAction={<GameButton onClick={() => startNewGame(pendingSize)}>{t("game_view.start")}</GameButton>}
-          footer={hasCoarsePointer ? t("game_view.tap_to_start") : t("game_view.enter_to_start")}
+          primaryAction={<GameButton onClick={() => startNewGame(pendingSize)}>{$.start}</GameButton>}
+          footer={hasCoarsePointer ? $.tap_to_start : $.enter_to_start}
         />
       )}
 
@@ -475,7 +475,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              {t("game_view.resume")}
+              {$.resume}
             </GameButton>
             <GameButton
               variant="secondary"
@@ -484,7 +484,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              {t("game_view.restart")}
+              {$.restart}
             </GameButton>
             <GameButton
               variant="danger"
@@ -493,28 +493,28 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              {t("game_view.quit")}
+              {$.quit}
             </GameButton>
             </>
           }
-          footer={hasCoarsePointer ? t("game_view.tap_resume") : t("game_view.esc_to_resume")}
+          footer={hasCoarsePointer ? $.tap_resume : $.esc_to_resume}
         />
       )}
 
       {statusRef.current === GameStatus.ABANDONED && (
         <GameResultScreen
-          title={t("game_view.abandoned")}
+          title={$.abandoned}
           tone="danger"
-          subtitle={`${t("game_view.score")}: ${score}`}
-          footer={t("game_view.returning_to_title")}
+          subtitle={`${$.score}: ${score}`}
+          footer={$.returning_to_title}
         />
       )}
 
       {(statusRef.current === GameStatus.WON || statusRef.current === GameStatus.LOST) && (
         <GameResultScreen
-          title={statusRef.current === GameStatus.WON ? t("game_view.twenty_forty_eight.you_win") : t("game_view.game_over")}
+          title={statusRef.current === GameStatus.WON ? $.you_win : $.game_over}
           tone={statusRef.current === GameStatus.WON ? "primary" : "danger"}
-          subtitle={`${t("game_view.score")}: ${score}`}
+          subtitle={`${$.score}: ${score}`}
           actions={
             <>
             <GameButton
@@ -523,7 +523,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              {t("game_view.play_again")}
+              {$.play_again}
             </GameButton>
             <GameButton
               variant="secondary"
@@ -532,11 +532,11 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              {t("game_view.title_screen")}
+              {$.title_screen}
             </GameButton>
             </>
           }
-          footer={hasCoarsePointer ? t("game_view.tap_to_retry") : t("game_view.enter_to_retry")}
+          footer={hasCoarsePointer ? $.tap_to_retry : $.enter_to_retry}
         />
       )}
 

@@ -1,14 +1,16 @@
 import { GameType, type GameTypeValue } from "./core/constants/game-types";
+import { SNAKE_I18N } from "./snake/snake-i18n";
+import { TIC_TAC_TOE_I18N } from "./tic-tac-toe/tic-tac-toe-i18n";
+import { TWENTY_FORTY_EIGHT_I18N } from "./twenty-forty-eight/twenty-forty-eight-i18n";
 
 export interface GameEntry {
   id: GameTypeValue;
   name: string;
-  nameKey: string;
   icon: string;
   description: string;
-  descriptionKey: string;
   category: Category;
   players: string;
+  getStrings?: (lang: string) => Record<string, string>;
 }
 
 export type Category = "single" | "versus" | "coop" | "trivia";
@@ -20,194 +22,162 @@ export const CATEGORIES: { id: Category; label: string; labelKey: string }[] = [
   { id: "trivia", label: "Trivia", labelKey: "game_catalog.category.trivia" },
 ];
 
+const enStrings = (m: Record<string, Record<string, string>>) => (lang: string) =>
+  m[lang] ?? m.en;
+
 export const GAME_CATALOG: GameEntry[] = [
   {
     id: GameType.SNAKE,
     name: "Snake",
-    nameKey: "game_catalog.snake.name",
     icon: "\u{1F40D}",
     description: "Classic snake game. Eat food, grow, don't crash into walls or yourself.",
-    descriptionKey: "game_catalog.snake.description",
     category: "single",
     players: "1P",
+    getStrings: enStrings(SNAKE_I18N),
   },
   {
     id: GameType.TWENTY_FORTY_EIGHT,
     name: "2048",
-    nameKey: "game_catalog.twenty_forty_eight.name",
     icon: "\u{1F9EE}",
     description: "Merge tiles to reach 2048. Slide and combine numbers.",
-    descriptionKey: "game_catalog.twenty_forty_eight.description",
     category: "single",
     players: "1P",
+    getStrings: enStrings(TWENTY_FORTY_EIGHT_I18N),
   },
   {
     id: GameType.MEMORY,
     name: "Memory",
-    nameKey: "game_catalog.memory.name",
     icon: "\u{1F52E}",
     description: "Flip cards and match pairs. Test your memory.",
-    descriptionKey: "game_catalog.memory.description",
     category: "single",
     players: "1P",
   },
   {
     id: GameType.MINESWEEPER,
     name: "Minesweeper",
-    nameKey: "game_catalog.minesweeper.name",
     icon: "\u{1F4A3}",
     description: "Clear a minefield without detonating any mines.",
-    descriptionKey: "game_catalog.minesweeper.description",
     category: "single",
     players: "1P",
   },
   {
     id: GameType.BREAKOUT,
     name: "Breakout",
-    nameKey: "game_catalog.breakout.name",
     icon: "\u{1F3D0}",
     description: "Break all the bricks with a ball and paddle.",
-    descriptionKey: "game_catalog.breakout.description",
     category: "single",
     players: "1P",
   },
   {
     id: GameType.PUZZLE_SLIDE,
     name: "Slide Puzzle",
-    nameKey: "game_catalog.puzzle_slide.name",
     icon: "\u{1F9E9}",
     description: "Slide tiles to recreate the image.",
-    descriptionKey: "game_catalog.puzzle_slide.description",
     category: "single",
     players: "1P",
   },
   {
     id: GameType.TIC_TAC_TOE,
     name: "Tic-Tac-Toe",
-    nameKey: "game_catalog.tic_tac_toe.name",
     icon: "\u{2B1C}",
     description: "Classic 3-in-a-row. Play against Kali or a friend.",
-    descriptionKey: "game_catalog.tic_tac_toe.description",
     category: "versus",
     players: "1-2P",
+    getStrings: enStrings(TIC_TAC_TOE_I18N),
   },
   {
     id: GameType.CONNECT4,
     name: "Connect 4",
-    nameKey: "game_catalog.connect4.name",
     icon: "\u{1F535}",
     description: "Drop discs and connect 4 in a row. Play against Kali.",
-    descriptionKey: "game_catalog.connect4.description",
     category: "versus",
     players: "1-2P",
   },
   {
     id: GameType.CHESS,
     name: "Chess",
-    nameKey: "game_catalog.chess.name",
     icon: "\u265E",
     description: "Classic chess against Kali.",
-    descriptionKey: "game_catalog.chess.description",
     category: "versus",
     players: "1P",
   },
   {
     id: GameType.RPS,
     name: "Rock Paper Scissors",
-    nameKey: "game_catalog.rps.name",
     icon: "\u{1F44A}",
     description: "Rock paper scissors against Kali. Best of 3.",
-    descriptionKey: "game_catalog.rps.description",
     category: "versus",
     players: "1P",
   },
   {
     id: GameType.WORDLE,
     name: "Wordle",
-    nameKey: "game_catalog.wordle.name",
     icon: "\u{1F520}",
     description: "Guess the 5-letter word in 6 tries.",
-    descriptionKey: "game_catalog.wordle.description",
     category: "single",
     players: "1P",
   },
   {
     id: GameType.STORY_BUILDER,
     name: "Story Builder",
-    nameKey: "game_catalog.story_builder.name",
     icon: "\u{1F4D6}",
     description: "Build a story together with Kali, sentence by sentence.",
-    descriptionKey: "game_catalog.story_builder.description",
     category: "coop",
     players: "1P+Kali",
   },
   {
     id: GameType.MATH_CHALLENGE,
     name: "Math Challenge",
-    nameKey: "game_catalog.math_challenge.name",
     icon: "\u{1F522}",
     description: "Solve math problems. Kali adapts the difficulty.",
-    descriptionKey: "game_catalog.math_challenge.description",
     category: "coop",
     players: "1P+Kali",
   },
   {
     id: GameType.CODE_GUESS,
     name: "Code Guess",
-    nameKey: "game_catalog.code_guess.name",
     icon: "\u{1F4BB}",
     description: "Guess the secret code. Kali gives you hints.",
-    descriptionKey: "game_catalog.code_guess.description",
     category: "coop",
     players: "1P+Kali",
   },
   {
     id: GameType.TRIVIA,
     name: "Trivia",
-    nameKey: "game_catalog.trivia.name",
     icon: "\u{1F3AF}",
     description: "General knowledge quiz with Kali as host.",
-    descriptionKey: "game_catalog.trivia.description",
     category: "trivia",
     players: "1P+Kali",
   },
   {
     id: GameType.TRUE_FALSE,
     name: "True or False",
-    nameKey: "game_catalog.true_false.name",
     icon: "\u2705",
     description: "Decide if statements are true or false. Kali scores you.",
-    descriptionKey: "game_catalog.true_false.description",
     category: "trivia",
     players: "1P+Kali",
   },
   {
     id: GameType.PREGUNTADOS,
     name: "Preguntados",
-    nameKey: "game_catalog.preguntados.name",
     icon: "\u{1F30D}",
     description: "Category-based trivia game. Answer questions to earn points.",
-    descriptionKey: "game_catalog.preguntados.description",
     category: "trivia",
     players: "1P+Kali",
   },
   {
     id: GameType.FILL_BLANK,
     name: "Fill the Blank",
-    nameKey: "game_catalog.fill_blank.name",
     icon: "\u{1F3B6}",
     description: "Complete the sentence with the right word. Kali helps.",
-    descriptionKey: "game_catalog.fill_blank.description",
     category: "trivia",
     players: "1P+Kali",
   },
   {
     id: GameType.WORD_HINT,
     name: "Word Hint",
-    nameKey: "game_catalog.word_hint.name",
     icon: "\u{1F4DD}",
     description: "Guess the word from clues. Ask Kali for hints.",
-    descriptionKey: "game_catalog.word_hint.description",
     category: "trivia",
     players: "1P+Kali",
   },

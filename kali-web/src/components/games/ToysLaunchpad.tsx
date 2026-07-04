@@ -19,7 +19,9 @@ interface Props {
 }
 
 function GameCard({ game, onPlay }: { game: GameEntry; onPlay: (g: GameEntry) => void }) {
-  const { t } = useTranslation();
+  const { i18n } = useTranslation();
+  const lang = i18n.language?.startsWith("es") ? "es" : "en";
+  const strings = game.getStrings?.(lang);
   const available = GameRegistry.isRegistered(game.id);
 
   return (
@@ -30,10 +32,10 @@ function GameCard({ game, onPlay }: { game: GameEntry; onPlay: (g: GameEntry) =>
     >
       <span className="text-xl">{game.icon}</span>
       <span className="text-sm font-medium text-fg group-hover:text-accent transition-colors">
-        {t(game.nameKey)}
+        {strings?.name ?? game.name}
       </span>
       <span className="text-[11px] text-muted leading-tight line-clamp-2">
-        {t(game.descriptionKey)}
+        {strings?.description ?? game.description}
       </span>
       <span className="text-[10px] text-muted/60 mt-1">{game.players}</span>
     </button>
@@ -41,7 +43,8 @@ function GameCard({ game, onPlay }: { game: GameEntry; onPlay: (g: GameEntry) =>
 }
 
 export function ToysLaunchpad({ api }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language?.startsWith("es") ? "es" : "en";
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -51,8 +54,9 @@ export function ToysLaunchpad({ api }: Props) {
 
   const handlePlay = useCallback((game: GameEntry) => {
     if (!api) return;
+    const strings = game.getStrings?.(lang);
     api.createWindow("game", {
-      title: t(game.nameKey),
+      title: strings?.name ?? game.name,
       icon: game.icon,
       content: { mode: "game", gameType: game.id },
       width: 520,
@@ -61,7 +65,7 @@ export function ToysLaunchpad({ api }: Props) {
       minW: 320,
       minH: 360,
     });
-  }, [api, t]);
+  }, [api, lang]);
 
   const handleSavedGames = useCallback(() => {
     if (!api) return;

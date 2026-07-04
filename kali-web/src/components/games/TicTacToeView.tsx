@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useTicTacToeI18n } from "../../games/tic-tac-toe/tic-tac-toe-i18n";
 
 const ABANDONED_DELAY_MS = 1500;
 
@@ -38,7 +38,7 @@ const PALETTE = {
 type Starter = typeof SlotId.PLAYER | typeof SlotId.OPPONENT;
 
 export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
-  const { t } = useTranslation();
+  const $ = useTicTacToeI18n();
   const [tick, setTick] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewport = useGameViewport(containerRef, isMaximized);
@@ -107,7 +107,6 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
     manager.giveUp();
   }, [manager]);
 
-  // Auto-reset to title screen after the player abandons the game.
   useEffect(() => {
     if (game.getStatus() !== GameStatus.ABANDONED) return;
     const t = setTimeout(() => {
@@ -151,7 +150,6 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [game, startGame, sendCommand]);
 
-  // Trigger a render tick whenever the component re-renders from subscription.
   void tick;
 
   const state = game.getState();
@@ -192,23 +190,20 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
             className="text-sm tracking-widest font-bold"
             style={{ fontFamily: "var(--font-game)", color: PALETTE.x, lineHeight: 1 }}
           >
-            {t("game_view.tic_tac_toe.title")}
+            {$.title}
           </span>
           <GameHudStat
-            label={t("game_view.tic_tac_toe.state")}
+            label={$.state}
             value={
               currentSlot === SlotId.PLAYER
-                ? t("game_view.tic_tac_toe.your_turn")
-                : kaliStatus === KaliStatus.THINKING
-                  ? t("game_view.tic_tac_toe.thinking")
-                  : t("game_view.tic_tac_toe.thinking")
+                ? $.your_turn
+                : $.thinking
             }
             tone={currentSlot === SlotId.PLAYER ? "primary" : "secondary"}
             minWidth={92}
           />
         </GameHud>
 
-      {/* Board grid */}
       <div
         className="grid rounded-xl p-2"
         style={{
@@ -266,10 +261,10 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
                 variant="secondary"
                 onClick={() => sendCommand(status === GameStatus.PLAYING ? GameCommand.PAUSE : GameCommand.RESUME)}
               >
-                {status === GameStatus.PLAYING ? t("game_view.pause") : t("game_view.play")}
+                {status === GameStatus.PLAYING ? $.pause : $.play}
               </GameButton>
               <GameButton size="sm" variant="danger" onClick={() => sendCommand(GameCommand.GIVE_UP)}>
-                {t("game_view.exit")}
+                {$.exit}
               </GameButton>
             </>
           }
@@ -278,17 +273,17 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
 
       {status === GameStatus.WAITING && (
         <GameTitleScreen
-          icon={"✚"}
-          title={t("game_view.tic_tac_toe.title")}
-          subtitle={t("game_view.tic_tac_toe.subtitle")}
+          icon={"\u{271A}"}
+          title={$.title}
+          subtitle={$.subtitle}
           controls={
             <>
               <div className="flex flex-col items-center gap-2">
-                <span className="text-[10px] font-game" style={{ color: "#94a3b8" }}>{t("game_view.tic_tac_toe.mode")}</span>
+                <span className="text-[10px] font-game" style={{ color: "#94a3b8" }}>{$.mode}</span>
                 <GameSegmentedControl
                   options={[
-                    { value: GameMode.CPU, label: t("game_view.tic_tac_toe.vs_cpu") },
-                    { value: GameMode.KALI, label: t("game_view.tic_tac_toe.vs_kali") },
+                    { value: GameMode.CPU, label: $.vs_cpu },
+                    { value: GameMode.KALI, label: $.vs_kali },
                   ]}
                   value={mode}
                   onChange={(value) => setMode(value)}
@@ -296,18 +291,18 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
                 />
                 {!hasKali && (
                   <span className="text-[8px] font-game" style={{ color: "#64748b" }}>
-                    {t("game_view.tic_tac_toe.connect_ai_hint")}
+                    {$.connect_ai_hint}
                   </span>
                 )}
               </div>
               {mode === GameMode.CPU && (
                 <div className="flex flex-col items-center gap-2">
-                  <span className="text-[10px] font-game" style={{ color: "#94a3b8" }}>{t("game_view.tic_tac_toe.difficulty")}</span>
+                  <span className="text-[10px] font-game" style={{ color: "#94a3b8" }}>{$.difficulty}</span>
                   <GameSegmentedControl
                     options={[
-                      { value: "easy", label: t("game_view.tic_tac_toe.easy") },
-                      { value: "medium", label: t("game_view.tic_tac_toe.medium") },
-                      { value: "hard", label: t("game_view.tic_tac_toe.hard") },
+                      { value: "easy", label: $.easy },
+                      { value: "medium", label: $.medium },
+                      { value: "hard", label: $.hard },
                     ]}
                     value={difficulty}
                     onChange={(value) => setDifficulty(value)}
@@ -315,11 +310,11 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
                 </div>
               )}
               <div className="flex flex-col items-center gap-2">
-                <span className="text-[10px] font-game" style={{ color: "#94a3b8" }}>{t("game_view.tic_tac_toe.starter")}</span>
+                <span className="text-[10px] font-game" style={{ color: "#94a3b8" }}>{$.starter}</span>
                 <GameSegmentedControl
                   options={[
-                    { value: SlotId.PLAYER, label: t("game_view.tic_tac_toe.you_label") },
-                    { value: SlotId.OPPONENT, label: t("game_view.tic_tac_toe.opponent") },
+                    { value: SlotId.PLAYER, label: $.you_label },
+                    { value: SlotId.OPPONENT, label: $.opponent },
                   ]}
                   value={starter}
                   onChange={(value) => setStarter(value)}
@@ -327,8 +322,8 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
               </div>
             </>
           }
-          primaryAction={<GameButton onClick={startGame}>{t("game_view.start")}</GameButton>}
-          footer={hasCoarsePointer ? t("game_view.tap_to_start") : t("game_view.enter_to_start")}
+          primaryAction={<GameButton onClick={startGame}>{$.start}</GameButton>}
+          footer={hasCoarsePointer ? $.tap_to_start : $.enter_to_start}
         />
       )}
 
@@ -336,26 +331,25 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
         <GamePauseScreen
           actions={
             <>
-              <GameButton onClick={() => sendCommand(GameCommand.RESUME)}>{t("game_view.resume")}</GameButton>
-              <GameButton variant="secondary" onClick={() => sendCommand(GameCommand.RESTART)}>{t("game_view.restart")}</GameButton>
-              <GameButton variant="danger" onClick={() => sendCommand(GameCommand.GIVE_UP)}>{t("game_view.quit")}</GameButton>
+              <GameButton onClick={() => sendCommand(GameCommand.RESUME)}>{$.resume}</GameButton>
+              <GameButton variant="secondary" onClick={() => sendCommand(GameCommand.RESTART)}>{$.restart}</GameButton>
+              <GameButton variant="danger" onClick={() => sendCommand(GameCommand.GIVE_UP)}>{$.quit}</GameButton>
             </>
           }
-          footer={hasCoarsePointer ? t("game_view.tap_resume") : t("game_view.esc_to_resume")}
+          footer={hasCoarsePointer ? $.tap_resume : $.esc_to_resume}
         />
       )}
 
-      {/* Error overlay */}
       {kaliStatus === KaliStatus.ERROR && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#02040a]/92 rounded-xl z-30 backdrop-blur-[2px]">
           <span className="text-4xl mb-3" style={{ filter: "drop-shadow(0 0 14px rgba(244,63,94,0.8))" }}>
             {"\u26A0"}
           </span>
           <h2 className="text-sm mb-2 text-center px-4" style={{ fontFamily: "'Press Start 2P', monospace", color: "#f43f5e" }}>
-            {t("game_view.tic_tac_toe.error")}
+            {$.error}
           </h2>
           <p className="text-[9px] mb-1 text-center px-6" style={{ fontFamily: "'Press Start 2P', monospace", color: "#fca5a5" }}>
-            {kaliError?.message ?? t("game_view.tic_tac_toe.unknown_error")}
+            {kaliError?.message ?? $.unknown_error}
           </p>
           {kaliError?.code && (
             <p className="text-[8px] mb-4 text-center" style={{ fontFamily: "'Press Start 2P', monospace", color: "#737373" }}>
@@ -368,11 +362,11 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
               className="px-5 py-2 rounded-lg transition-all text-xs tracking-wider hover:brightness-110 hover:scale-105"
               style={{ fontFamily: "'Press Start 2P', monospace", backgroundColor: PALETTE.x, color: "#020617", boxShadow: `0 0 14px ${PALETTE.xGlow}` }}
             >
-              {t("game_view.tic_tac_toe.retry")}
+              {$.retry}
             </button>
             {retryCount >= 1 && (
               <p className="text-[8px] text-center" style={{ fontFamily: "'Press Start 2P', monospace", color: "#f59e0b" }}>
-                {t("game_view.tic_tac_toe.last_attempt")}
+                {$.last_attempt}
               </p>
             )}
             <button
@@ -380,39 +374,38 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
               className="px-5 py-2 rounded-lg transition-all text-xs tracking-wider hover:brightness-110 hover:scale-105"
               style={{ fontFamily: "'Press Start 2P', monospace", backgroundColor: "#1e3a8a", color: "#e0f2fe", border: "1px solid #38bdf8" }}
             >
-              {t("game_view.tic_tac_toe.continue_cpu")}
+              {$.continue_cpu}
             </button>
             <button
               onClick={handleGiveUp}
               className="px-5 py-2 rounded-lg transition-all text-xs tracking-wider hover:brightness-110 hover:scale-105"
               style={{ fontFamily: "'Press Start 2P', monospace", color: "#e0f2fe", backgroundColor: "#7f1d1d", border: "1px solid #f87171" }}
             >
-              {t("game_view.tic_tac_toe.give_up")}
+              {$.give_up}
             </button>
           </div>
         </div>
       )}
 
-      {/* Abandoned transition overlay */}
       {status === GameStatus.ABANDONED && (
         <GameResultScreen
-          title={t("game_view.abandoned")}
+          title={$.abandoned}
           tone="danger"
-          footer={t("game_view.returning_to_title")}
+          footer={$.returning_to_title}
         />
       )}
 
       {(status === GameStatus.WON || status === GameStatus.LOST || status === GameStatus.DRAW) && (
         <GameResultScreen
-          title={status === GameStatus.WON ? t("game_view.tic_tac_toe.won") : status === GameStatus.LOST ? t("game_view.tic_tac_toe.lost") : t("game_view.tic_tac_toe.draw")}
+          title={status === GameStatus.WON ? $.won : status === GameStatus.LOST ? $.lost : $.draw}
           tone={status === GameStatus.WON ? "primary" : status === GameStatus.LOST ? "danger" : "secondary"}
           actions={
             <>
-              <GameButton onClick={() => sendCommand(GameCommand.PLAY_AGAIN)}>{t("game_view.play_again")}</GameButton>
-              <GameButton variant="secondary" onClick={() => sendCommand(GameCommand.TO_TITLE)}>{t("game_view.title_screen")}</GameButton>
+              <GameButton onClick={() => sendCommand(GameCommand.PLAY_AGAIN)}>{$.play_again}</GameButton>
+              <GameButton variant="secondary" onClick={() => sendCommand(GameCommand.TO_TITLE)}>{$.title_screen}</GameButton>
             </>
           }
-          footer={hasCoarsePointer ? t("game_view.tap_to_continue") : t("game_view.enter_to_continue")}
+          footer={hasCoarsePointer ? $.tap_to_continue : $.enter_to_continue}
         />
       )}
       </div>
