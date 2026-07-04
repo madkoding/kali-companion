@@ -71,6 +71,7 @@ export interface SettingsEvent {
   voice_instructions?: string;
   voice_seed?: number;
   game_ai_global_timeout_ms?: number;
+  game_ai_enabled?: boolean;
   game_connection_id?: string;
   game_model?: string;
   game_temperature?: number;
@@ -414,6 +415,7 @@ export interface StatusEvent {
   llm_provider: string;
   llm_api_url: string;
   llm_api_key_set: boolean;
+  llm_active: boolean;
   llm_model: string;
   llm_max_tokens?: number;
   llm_connection_id?: string | null;
@@ -453,6 +455,7 @@ export interface StatusEvent {
   artifact_diff_preview?: boolean;
   game_session_path?: string;
   game_ai_global_timeout_ms?: number;
+  game_ai_enabled?: boolean;
   game_connection_id?: string;
   game_model?: string;
   game_temperature?: number;
