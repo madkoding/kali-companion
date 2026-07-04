@@ -7,12 +7,12 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import type { ArtifactWindowData } from "../workspace/types";
+import type { WindowData } from "../workspace/types";
 import { TETHER_COLORS } from "../workspace/types";
 import { computeTetherPath } from "../workspace/windowManager";
 
 interface Props {
-  windows: ArtifactWindowData[];
+  windows: WindowData[];
 }
 
 interface TetherState {
@@ -68,7 +68,10 @@ export function TetherLayer({ windows }: Props) {
       for (const id of lastPositionsRef.current.keys()) {
         if (!visibleIds.has(id)) lastPositionsRef.current.delete(id);
       }
-      if (changed) {
+      // Always update tethers when the visible window set changes so that
+      // stale tethers (e.g. after a session change clears the workspace) are
+      // removed immediately.
+      if (changed || tethers.length !== next.length) {
         setTethers(next);
       }
     };

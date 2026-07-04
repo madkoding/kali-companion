@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useBodyScrollLock } from "../../hooks/useBodyScrollLock";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
@@ -16,6 +17,7 @@ interface Props {
   size?: "sm" | "md" | "lg" | "xl";
   bare?: boolean;
   showHandle?: boolean;
+  panelClassName?: string;
 }
 
 const BACKDROP = "fixed inset-0 z-50";
@@ -58,6 +60,7 @@ export function Overlay({
   size = "md",
   bare = false,
   showHandle = false,
+  panelClassName,
 }: Props) {
   const { t } = useTranslation();
   const { isMobile } = useBreakpoint();
@@ -110,12 +113,12 @@ export function Overlay({
   const isModal = effectiveVariant === "modal" || effectiveVariant === "drawer";
 
   const panelClasses = isModal
-    ? `bg-elevated border-border rounded-xl shadow-xl ${sizeMap[size]} h-[85vh] overflow-hidden flex flex-col`
+    ? `bg-elevated border-border rounded-xl shadow-xl ${sizeMap[size]} max-h-[85vh] h-full overflow-hidden flex flex-col ${panelClassName ?? ""}`
     : effectiveVariant === "sheet-bottom"
-      ? "bg-elevated border-t border-border rounded-t-sheet max-h-[85vh] overflow-auto scrollbar-thin"
-      : `bg-elevated border-border w-[80vw] ${size === 'lg' ? 'max-w-sidebar-wide' : 'max-w-sidebar'} h-full overflow-auto scrollbar-thin ${
+      ? "bg-elevated border-t border-border rounded-t-sheet max-h-[85vh] h-auto overflow-auto scrollbar-thin"
+      : `bg-elevated border-border w-[80vw] ${size === 'lg' ? 'max-w-sidebar-wide' : 'max-w-sidebar'} h-auto max-h-[85vh] overflow-auto scrollbar-thin ${
           effectiveVariant === "sheet-left" ? "border-r" : "border-l"
-        }`;
+        } ${panelClassName ?? ""}`;
 
   const anim =
     isModal
@@ -170,15 +173,15 @@ export function Overlay({
                 <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
                   <h2 className="text-sm font-semibold text-foreground m-0">{title}</h2>
                   <button
-                    className="bg-transparent border-none text-muted text-base cursor-pointer hover:text-foreground transition-colors p-1 rounded-md focus-visible:ring-2 focus-visible:ring-accent outline-none"
+                    className="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted cursor-pointer hover:text-foreground hover:bg-white/5 transition-colors rounded-md focus-visible:ring-2 focus-visible:ring-accent outline-none"
                     onClick={onClose}
                     aria-label={closeLabel}
                   >
-                    ✕
+                    <X size={18} />
                   </button>
                 </div>
               )}
-              <div className={bare ? "flex-1 overflow-hidden" : "flex-1 overflow-y-auto p-5 scrollbar-thin"}>
+              <div className={bare ? "flex-1 overflow-hidden min-h-0" : "flex-1 overflow-y-auto p-5 scrollbar-thin"}>
                 {children}
               </div>
             </div>
