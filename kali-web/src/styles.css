@@ -1353,7 +1353,28 @@ html.kali-perf-low .kw {
 }
 .kw.mobile-game-shell .kw-body {
   height: calc(100dvh - var(--titlebar-h) - max(8px, env(safe-area-inset-top)));
-  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  padding-bottom: calc(112px + env(safe-area-inset-bottom));
+}
+html.kali-mobile-stage .kw.mobile-game-shell .kw-body {
+  padding-bottom: calc(118px + env(safe-area-inset-bottom));
+}
+html.kali-mobile-stage #minimize-dock {
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 24px);
+}
+html.kali-mobile-stage .hud-corner {
+  opacity: 1;
+}
+html.kali-mobile-stage .hud-pill {
+  max-width: calc(42vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.kali-mobile-stage .mobile-sheet-panel {
+  max-height: calc(88dvh - env(safe-area-inset-top));
 }
 
 /* Side panel — lives inside the window wrapper, external to .kw */

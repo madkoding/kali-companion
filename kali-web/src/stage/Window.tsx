@@ -405,7 +405,12 @@ function WindowImpl({
                     borderRadius: 0,
                     zIndex: 9999,
                   }
-                : { width: (w.size.width * winScale) + "px", maxWidth: "100%" }
+                : {
+                    width: `min(${w.size.width * winScale}px, calc(100vw - 12px))`,
+                    maxWidth: "calc(100vw - 12px)",
+                    maxHeight: "calc(100dvh - 176px)",
+                    margin: "0 auto",
+                  }
             }
             onPointerDown={onFocus}
             role="region"

@@ -14,7 +14,7 @@ import { GameStatus } from "../../games/core/constants/game-status";
 import type { GameStatusValue } from "../../games/core/constants/game-status";
 import { ActionType, GameCommand } from "../../games/core/constants/action-types";
 import { useGameViewport } from "./useGameViewport";
-import { GameButton, GameHud, GameHudStat, GameMobileActionBar, GameSegmentedControl, GameTitleScreen, GamePauseScreen, GameResultScreen } from "./GameUI";
+import { GameButton, GameHud, GameHudStat, GameMobileActionBar, GameSegmentedControl, GameTitleScreen, GamePauseScreen, GameResultScreen, TouchDPad } from "./GameUI";
 import { computeGameOffsets, computeGameScale } from "./gameViewportSizing";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
 import { useSwipeDirection } from "./useSwipeDirection";
@@ -405,6 +405,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
 
       {hasCoarsePointer && (statusRef.current === GameStatus.PLAYING || statusRef.current === GameStatus.PAUSED) && (
         <GameMobileActionBar
+          placement="top-right"
           actions={
             <>
               <GameButton
@@ -429,6 +430,17 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
               </GameButton>
             </>
           }
+        />
+      )}
+
+      {hasCoarsePointer && statusRef.current === GameStatus.PLAYING && (
+        <TouchDPad
+          placement="bottom-center"
+          bottomOffset={120}
+          onDirection={(direction) => {
+            move(game, direction);
+            refresh();
+          }}
         />
       )}
 

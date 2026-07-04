@@ -47,6 +47,7 @@ import { ConfigWarningsBanner } from "../components/ConfigWarningsBanner";
 import { ConsentModal } from "../components/ConsentModal";
 import { JobsPanel } from "../components/JobsPanel";
 import { DebugPad } from "./DebugPad";
+import { Overlay } from "../components/ui/Overlay";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import type { PerformanceProfile } from "../App";
 import { usePerfMetrics } from "../hooks/usePerfMetrics";
@@ -89,6 +90,8 @@ export function NeuralCanvas({
   const [conversationOpen, setConversationOpen] = useState(false);
   const [customizerOpen, setCustomizerOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSwitcherOpen, setMobileSwitcherOpen] = useState(false);
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(() => loadAvatarConfig());
   const reasoningWindowIdRef = useRef<number | null>(null);
 
@@ -105,6 +108,11 @@ export function NeuralCanvas({
 
   // Mood engine — derives state + emotion from runtime context
   const { state: avatarState, emotion: avatarEmotion } = useAvatarMoodEngine(typing, overrideEmotion);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("kali-mobile-stage", isMobile);
+    return () => document.documentElement.classList.remove("kali-mobile-stage");
+  }, [isMobile]);
 
   // NOTE (perf, docs/PERFORMANCE.md §0.5): the avatar mouth is now driven
   // by AvatarSVG's own rAF reading the TTS analyser directly — we no
@@ -142,6 +150,8 @@ export function NeuralCanvas({
     setArtifactsOpen(false);
     setConversationOpen(false);
     setJobsOpen(false);
+    setMobileMenuOpen(false);
+    setMobileSwitcherOpen(false);
     setTyping(false);
     setOverrideEmotion(null);
     firstCharRef.current = "";
@@ -267,6 +277,32 @@ export function NeuralCanvas({
     setOverrideEmotion({ emotion: "ronroneando", until: Date.now() + 3000 });
   }, []);
 
+  const closeMobileSheets = useCallback(() => {
+    setMobileMenuOpen(false);
+    setMobileSwitcherOpen(false);
+  }, []);
+
+  const minimizeFocusedWindow = useCallback(() => {
+    const focused = api.windows.find((w) => w.focused && !w.closed && !w.minimized);
+    if (focused) {
+      api.toggleMinimize(focused.id);
+    }
+    api.unfocusAll();
+    closeMobileSheets();
+  }, [api, closeMobileSheets]);
+
+  const openMobileSwitcher = useCallback(() => {
+    setMobileMenuOpen(false);
+    setMobileSwitcherOpen(true);
+  }, []);
+
+  const openMobileMenu = useCallback(() => {
+    setMobileSwitcherOpen(false);
+    setMobileMenuOpen(true);
+  }, []);
+
+  const openWindows = useMemo(() => api.windows.filter((w) => !w.closed), [api.windows]);
+
   // Unfocus all windows when clicking the canvas background
   const canvasRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -353,6 +389,7 @@ export function NeuralCanvas({
 
       {/* HUD — top bar */}
       <HUD
+        isMobile={isMobile}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenJobs={() => { chat.listJobs(); setJobsOpen(true); }}
         onOpenHistory={() => setHistoryOpen(true)}
@@ -360,6 +397,8 @@ export function NeuralCanvas({
         onOpenArtifacts={() => setArtifactsOpen(true)}
         onOpenConversation={() => setConversationOpen(true)}
         onNewSession={newSession}
+        onOpenWindowSwitcher={openMobileSwitcher}
+        onOpenMobileMenu={openMobileMenu}
         artifactsOpenCount={api.windows.filter((w) => w.artifactId && !w.closed).length}
         artifactsClosedCount={api.windows.filter((w) => w.artifactId && w.closed).length}
       />
@@ -398,6 +437,9 @@ export function NeuralCanvas({
         api={api}
         onToggleDebug={() => setDebugOpen((d) => !d)}
         onOpenTextInput={() => setTyping(true)}
+        onOpenWindowSwitcher={openMobileSwitcher}
+        onReturnHome={minimizeFocusedWindow}
+        isMobile={isMobile}
       />
 
       {/* Stopped toast */}
@@ -440,6 +482,130 @@ export function NeuralCanvas({
 
       {/* Config warnings banner — settings that couldn't be restored */}
       <ConfigWarningsBanner warnings={configWarnings} onOpenSettings={() => setSettingsOpen(true)} />
+
+      {isMobile && (
+        <>
+          <Overlay
+            open={mobileSwitcherOpen}
+            onClose={() => setMobileSwitcherOpen(false)}
+            variant="sheet-bottom"
+            title={t("stage.windows")}
+            showHandle
+            panelClassName="mobile-sheet-panel"
+          >
+            <div className="flex flex-col gap-3">
+              <button
+                className="dock-btn w-full justify-start gap-2 px-3 py-3"
+                onClick={minimizeFocusedWindow}
+              >
+                <span className="text-base">⌂</span>
+                <span className="text-sm">{t("stage.return_home")}</span>
+              </button>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted uppercase tracking-wider">{t("stage.open_windows")}</span>
+                <span className="badge text-muted">{openWindows.length}</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {openWindows.length === 0 && (
+                  <p className="text-sm text-muted py-6 text-center">{t("stage.no_open_windows")}</p>
+                )}
+                {openWindows.map((w) => {
+                  const focused = w.focused && !w.minimized;
+                  return (
+                    <div key={w.id} className={`rounded-xl border px-3 py-3 flex items-center gap-3 ${focused ? "border-accent bg-accent/10" : "border-border bg-white/[0.03]"}`}>
+                      <button
+                        className="flex-1 min-w-0 text-left flex items-center gap-3"
+                        onClick={() => {
+                          if (w.minimized) {
+                            api.restoreWindow(w.id);
+                          } else {
+                            api.focusWindow(w.id);
+                          }
+                          closeMobileSheets();
+                        }}
+                      >
+                        <span className="text-lg shrink-0">{w.icon}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm text-fg truncate">{w.title}</span>
+                          <span className="block text-[11px] text-muted uppercase tracking-wider">{w.type}</span>
+                        </span>
+                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          className="dock-btn w-8 h-8"
+                          onClick={() => {
+                            api.toggleMinimize(w.id);
+                            closeMobileSheets();
+                          }}
+                          aria-label={t("dock.minimize.restore", { title: w.title }) as string}
+                        >
+                          {w.minimized ? "↺" : "–"}
+                        </button>
+                        <button
+                          className="dock-btn w-8 h-8 text-red-300"
+                          onClick={() => {
+                            api.closeWindow(w.id);
+                            closeMobileSheets();
+                          }}
+                          aria-label={t("common.close") as string}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </Overlay>
+
+          <Overlay
+            open={mobileMenuOpen}
+            onClose={() => setMobileMenuOpen(false)}
+            variant="sheet-bottom"
+            title={t("stage.mobile_menu")}
+            showHandle
+            panelClassName="mobile-sheet-panel"
+          >
+            <div className="grid grid-cols-2 gap-2">
+              <button className="dock-btn justify-start gap-2 px-3 py-3" onClick={() => { setHistoryOpen(true); closeMobileSheets(); }}>
+                <span>🕘</span>
+                <span className="text-sm">{t("stage.history")}</span>
+              </button>
+              <button className="dock-btn justify-start gap-2 px-3 py-3" onClick={() => { setConversationOpen(true); closeMobileSheets(); }}>
+                <span>💬</span>
+                <span className="text-sm">{t("dock.conversation")}</span>
+              </button>
+              <button className="dock-btn justify-start gap-2 px-3 py-3" onClick={() => { setArtifactsOpen(true); closeMobileSheets(); }}>
+                <span>📦</span>
+                <span className="text-sm">{t("dock.artifacts")}</span>
+              </button>
+              <button className="dock-btn justify-start gap-2 px-3 py-3" onClick={() => { setSettingsOpen(true); closeMobileSheets(); }}>
+                <span>⚙</span>
+                <span className="text-sm">{t("stage.settings")}</span>
+              </button>
+              <button className="dock-btn justify-start gap-2 px-3 py-3" onClick={() => { setCustomizerOpen(true); closeMobileSheets(); }}>
+                <span>🎨</span>
+                <span className="text-sm">{t("dock.customizer")}</span>
+              </button>
+              <button className="dock-btn justify-start gap-2 px-3 py-3" onClick={() => { chat.listJobs(); setJobsOpen(true); closeMobileSheets(); }}>
+                <span>⏳</span>
+                <span className="text-sm">{t("stage.jobs")}</span>
+              </button>
+              <button className="dock-btn justify-start gap-2 px-3 py-3" onClick={() => { newSession(); closeMobileSheets(); }}>
+                <span>＋</span>
+                <span className="text-sm">{t("stage.new_chat")}</span>
+              </button>
+              {import.meta.env.DEV && (
+                <button className="dock-btn justify-start gap-2 px-3 py-3" onClick={() => { setDebugOpen(true); closeMobileSheets(); }}>
+                  <span>🐞</span>
+                  <span className="text-sm">{t("dock.debug")}</span>
+                </button>
+              )}
+            </div>
+          </Overlay>
+        </>
+      )}
 
       {/* Modals — preserved from Stage */}
       <SessionDrawer

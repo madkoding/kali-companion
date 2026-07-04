@@ -256,6 +256,7 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
 
       {hasCoarsePointer && (status === GameStatus.PLAYING || status === GameStatus.PAUSED) && (
         <GameMobileActionBar
+          placement="top-right"
           actions={
             <>
               <GameButton

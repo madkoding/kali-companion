@@ -289,14 +289,24 @@ export function GameResultScreen({
 
 export function TouchDPad({
   onDirection,
+  placement = "bottom-center",
+  bottomOffset = 110,
 }: {
   onDirection: (direction: "UP" | "DOWN" | "LEFT" | "RIGHT") => void;
+  placement?: "bottom-center" | "top-right" | "top-left";
+  bottomOffset?: number;
 }) {
+  const placementClass =
+    placement === "top-right"
+      ? "top-[max(12px,env(safe-area-inset-top))] right-[max(12px,env(safe-area-inset-right))]"
+      : placement === "top-left"
+        ? "top-[max(12px,env(safe-area-inset-top))] left-[max(12px,env(safe-area-inset-left))]"
+        : `bottom-[calc(${bottomOffset}px + env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2`;
   const buttonClassName =
     "min-w-11 min-h-11 w-11 h-11 rounded-xl border border-accent/30 bg-elevated/90 text-foreground text-lg font-bold flex items-center justify-center active:scale-95 active:bg-accent/20";
 
   return (
-    <div className="absolute bottom-[max(16px,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+    <div className={`absolute ${placementClass} z-20 pointer-events-auto`}>
       <div className="grid grid-cols-3 gap-2">
         <div />
         <button type="button" className={buttonClassName} onClick={() => onDirection("UP")} aria-label="Move up">↑</button>
@@ -311,11 +321,20 @@ export function TouchDPad({
 
 export function GameMobileActionBar({
   actions,
+  placement = "bottom-center",
 }: {
   actions: ReactNode;
+  placement?: "bottom-center" | "top-right" | "top-left";
 }) {
+  const placementClass =
+    placement === "top-right"
+      ? "top-[max(12px,env(safe-area-inset-top))] right-[max(12px,env(safe-area-inset-right))]"
+      : placement === "top-left"
+        ? "top-[max(12px,env(safe-area-inset-top))] left-[max(12px,env(safe-area-inset-left))]"
+        : "bottom-[calc(116px+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2";
+
   return (
-    <div className="absolute top-[max(12px,env(safe-area-inset-top))] right-[max(12px,env(safe-area-inset-right))] z-20 pointer-events-auto">
+    <div className={`absolute ${placementClass} z-20 pointer-events-auto`}>
       <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-panel/90 px-2 py-2 shadow-lg backdrop-blur-md">
         {actions}
       </div>
