@@ -19,8 +19,7 @@ interface Props {
 }
 
 function GameCard({ game, onPlay }: { game: GameEntry; onPlay: (g: GameEntry) => void }) {
-  const { i18n } = useTranslation();
-  const isEs = i18n.language?.startsWith("es");
+  const { t } = useTranslation();
   const available = GameRegistry.isRegistered(game.id);
 
   return (
@@ -31,10 +30,10 @@ function GameCard({ game, onPlay }: { game: GameEntry; onPlay: (g: GameEntry) =>
     >
       <span className="text-xl">{game.icon}</span>
       <span className="text-sm font-medium text-fg group-hover:text-accent transition-colors">
-        {isEs ? game.nameEs : game.name}
+        {t(game.nameKey)}
       </span>
       <span className="text-[11px] text-muted leading-tight line-clamp-2">
-        {isEs ? game.descriptionEs : game.description}
+        {t(game.descriptionKey)}
       </span>
       <span className="text-[10px] text-muted/60 mt-1">{game.players}</span>
     </button>
@@ -42,8 +41,7 @@ function GameCard({ game, onPlay }: { game: GameEntry; onPlay: (g: GameEntry) =>
 }
 
 export function ToysLaunchpad({ api }: Props) {
-  const { t, i18n } = useTranslation();
-  const isEs = i18n.language?.startsWith("es");
+  const { t } = useTranslation();
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -54,7 +52,7 @@ export function ToysLaunchpad({ api }: Props) {
   const handlePlay = useCallback((game: GameEntry) => {
     if (!api) return;
     api.createWindow("game", {
-      title: isEs ? game.nameEs : game.name,
+      title: t(game.nameKey),
       icon: game.icon,
       content: { mode: "game", gameType: game.id },
       width: 520,
@@ -63,12 +61,12 @@ export function ToysLaunchpad({ api }: Props) {
       minW: 320,
       minH: 360,
     });
-  }, [api, isEs]);
+  }, [api, t]);
 
   const handleSavedGames = useCallback(() => {
     if (!api) return;
     api.createWindow("game", {
-      title: isEs ? "Partidas Guardadas" : "Saved Games",
+      title: t("game_launchpad.saved_games"),
       icon: "\u{1F4CB}",
       content: { mode: "saved-games" },
       width: 480,
@@ -77,14 +75,14 @@ export function ToysLaunchpad({ api }: Props) {
       minW: 320,
       minH: 360,
     });
-  }, [api, isEs]);
+  }, [api, t]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 p-4 gap-4 overflow-y-auto scrollbar-thin">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
           <span>{'\u{1F3AE}'}</span>
-          {t("game_launchpad.title", "Juegos")}
+          {t("game_launchpad.title")}
         </h2>
         <button
           onClick={handleSavedGames}
@@ -92,11 +90,11 @@ export function ToysLaunchpad({ api }: Props) {
           style={{ border: "1px solid rgba(56, 189, 248, 0.2)" }}
         >
           <Save size={14} />
-          {isEs ? "Partidas Guardadas" : "Saved Games"}
+          {t("game_launchpad.saved_games")}
         </button>
       </div>
       <p className="text-sm text-muted/80 -mt-2">
-        {t("game_launchpad.subtitle", "Seleccioná un juego. Kali puede ocupar cualquier rol.")}
+        {t("game_launchpad.subtitle")}
       </p>
       {CATEGORIES.map((cat) => {
         const games = GAME_CATALOG.filter((g) => g.category === cat.id);
@@ -104,7 +102,7 @@ export function ToysLaunchpad({ api }: Props) {
         return (
           <section key={cat.id}>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted/60 mb-2">
-              {isEs ? cat.labelEs : cat.label}
+              {t(cat.labelKey)}
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {games.map((game) => (

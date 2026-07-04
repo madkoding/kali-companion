@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const ABANDONED_DELAY_MS = 1500;
 
@@ -177,6 +178,7 @@ function AnimatedTile({
 }
 
 export function TwentyFortyEightView({ game, isMaximized }: Props) {
+  const { t } = useTranslation();
   const [statusVersion, setStatusVersion] = useState(0);
   void statusVersion;
   const statusRef = useRef<GameStatusValue>(game.getStatus());
@@ -341,11 +343,11 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
             className="text-sm tracking-widest font-bold"
             style={{ fontFamily: "var(--font-game)", color: "#22d3ee", lineHeight: 1 }}
           >
-            2048
+             {t("game_view.twenty_forty_eight.title")}
           </span>
           <div className="flex gap-3">
-            <GameHudStat label="SCORE" value={score} minWidth={76} />
-            <GameHudStat label="MOVES" value={moves} tone="secondary" minWidth={66} />
+            <GameHudStat label={t("game_view.score")} value={score} minWidth={76} />
+            <GameHudStat label={t("game_view.twenty_forty_eight.moves")} value={moves} tone="secondary" minWidth={66} />
           </div>
         </GameHud>
 
@@ -415,7 +417,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                     refresh();
                   }}
                 >
-                  {statusRef.current === GameStatus.PLAYING ? "PAUSE" : "PLAY"}
+                  {statusRef.current === GameStatus.PLAYING ? t("game_view.pause") : t("game_view.play")}
                 </GameButton>
                 <GameButton
                   size="sm"
@@ -425,7 +427,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                     refresh();
                   }}
                 >
-                  EXIT
+                  {t("game_view.exit")}
                 </GameButton>
               </>
             }
@@ -446,11 +448,11 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
       {statusRef.current === GameStatus.WAITING && (
         <GameTitleScreen
           icon={"🧮"}
-          title="2048"
-          subtitle="Merge. Glow. Win."
+          title={t("game_view.twenty_forty_eight.title")}
+          subtitle={t("game_view.twenty_forty_eight.subtitle")}
           controls={
             <>
-              <p className="text-[10px] font-game" style={{ color: "#94a3b8" }}>BOARD SIZE</p>
+              <p className="text-[10px] font-game" style={{ color: "#94a3b8" }}>{t("game_view.twenty_forty_eight.board_size")}</p>
               <GameSegmentedControl
                 options={SIZES.map((s) => ({ value: String(s.value), label: s.label }))}
                 value={String(pendingSize)}
@@ -458,8 +460,8 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
               />
             </>
           }
-          primaryAction={<GameButton onClick={() => startNewGame(pendingSize)}>START</GameButton>}
-          footer={hasCoarsePointer ? "Tap to start" : "ENTER to start"}
+          primaryAction={<GameButton onClick={() => startNewGame(pendingSize)}>{t("game_view.start")}</GameButton>}
+          footer={hasCoarsePointer ? t("game_view.tap_to_start") : t("game_view.enter_to_start")}
         />
       )}
 
@@ -473,7 +475,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              RESUME
+              {t("game_view.resume")}
             </GameButton>
             <GameButton
               variant="secondary"
@@ -482,7 +484,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              RESTART
+              {t("game_view.restart")}
             </GameButton>
             <GameButton
               variant="danger"
@@ -491,28 +493,28 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              QUIT
+              {t("game_view.quit")}
             </GameButton>
             </>
           }
-          footer={hasCoarsePointer ? "Tap resume to continue" : "ESC to resume"}
+          footer={hasCoarsePointer ? t("game_view.tap_resume") : t("game_view.esc_to_resume")}
         />
       )}
 
       {statusRef.current === GameStatus.ABANDONED && (
         <GameResultScreen
-          title="ABANDONED"
+          title={t("game_view.abandoned")}
           tone="danger"
-          subtitle={`SCORE: ${score}`}
-          footer="Returning to title screen..."
+          subtitle={`${t("game_view.score")}: ${score}`}
+          footer={t("game_view.returning_to_title")}
         />
       )}
 
       {(statusRef.current === GameStatus.WON || statusRef.current === GameStatus.LOST) && (
         <GameResultScreen
-          title={statusRef.current === GameStatus.WON ? "YOU WIN" : "GAME OVER"}
+          title={statusRef.current === GameStatus.WON ? t("game_view.twenty_forty_eight.you_win") : t("game_view.game_over")}
           tone={statusRef.current === GameStatus.WON ? "primary" : "danger"}
-          subtitle={`SCORE: ${score}`}
+          subtitle={`${t("game_view.score")}: ${score}`}
           actions={
             <>
             <GameButton
@@ -521,7 +523,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              PLAY AGAIN
+              {t("game_view.play_again")}
             </GameButton>
             <GameButton
               variant="secondary"
@@ -530,11 +532,11 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
                 refresh();
               }}
             >
-              TITLE SCREEN
+              {t("game_view.title_screen")}
             </GameButton>
             </>
           }
-          footer={hasCoarsePointer ? "Tap to retry" : "ENTER to retry"}
+          footer={hasCoarsePointer ? t("game_view.tap_to_retry") : t("game_view.enter_to_retry")}
         />
       )}
 

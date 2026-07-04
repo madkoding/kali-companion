@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const ABANDONED_DELAY_MS = 1500;
 import { SnakeGame } from "../../games/snake/snake-game";
@@ -179,6 +180,7 @@ function smoothstep(t: number): number {
 }
 
 export function SnakeView({ game, isMaximized }: Props) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scoreSpanRef = useRef<HTMLSpanElement>(null);
@@ -420,13 +422,13 @@ export function SnakeView({ game, isMaximized }: Props) {
             className="text-[10px] tracking-wider"
             style={{ ...pixelFont, color: PALETTE.head }}
           >
-            SCORE: <span ref={scoreSpanRef}>{state.score}</span>
+            {t("game_view.score")}: <span ref={scoreSpanRef}>{state.score}</span>
           </span>
           <span
             className="text-[10px] tracking-wider"
             style={{ ...pixelFont, color: PALETTE.head }}
           >
-            LEVEL: <span ref={levelSpanRef}>{(state.data as DrawState | null)?.level ?? 1}</span>
+            {t("game_view.level")}: <span ref={levelSpanRef}>{(state.data as DrawState | null)?.level ?? 1}</span>
           </span>
         </div>
       </div>
@@ -442,10 +444,10 @@ export function SnakeView({ game, isMaximized }: Props) {
                 variant="secondary"
                 onClick={() => send(game, status === GameStatus.PLAYING ? GameCommand.PAUSE : GameCommand.RESUME)}
               >
-                {status === GameStatus.PLAYING ? "PAUSE" : "PLAY"}
+                {status === GameStatus.PLAYING ? t("game_view.pause") : t("game_view.play")}
               </GameButton>
               <GameButton size="sm" variant="danger" onClick={() => send(game, GameCommand.GIVE_UP)}>
-                EXIT
+                {t("game_view.exit")}
               </GameButton>
             </>
           }
@@ -455,10 +457,10 @@ export function SnakeView({ game, isMaximized }: Props) {
       {status === GameStatus.WAITING && (
         <GameTitleScreen
           icon={"🐍"}
-          title="SNAKE"
-          subtitle="Eat. Grow. Survive."
-          primaryAction={<GameButton onClick={() => send(game, GameCommand.START)}>START</GameButton>}
-          footer={hasCoarsePointer ? "Tap to start" : "or press ENTER"}
+          title={t("game_view.snake.title")}
+          subtitle={t("game_view.snake.subtitle")}
+          primaryAction={<GameButton onClick={() => send(game, GameCommand.START)}>{t("game_view.start")}</GameButton>}
+          footer={hasCoarsePointer ? t("game_view.tap_to_start") : t("game_view.or_press_enter")}
         />
       )}
 
@@ -466,36 +468,36 @@ export function SnakeView({ game, isMaximized }: Props) {
         <GamePauseScreen
           actions={
             <>
-              <GameButton onClick={() => send(game, GameCommand.RESUME)}>RESUME</GameButton>
-              <GameButton variant="secondary" onClick={() => send(game, GameCommand.RESTART)}>RESTART</GameButton>
-              <GameButton variant="danger" onClick={() => send(game, GameCommand.GIVE_UP)}>QUIT</GameButton>
+              <GameButton onClick={() => send(game, GameCommand.RESUME)}>{t("game_view.resume")}</GameButton>
+              <GameButton variant="secondary" onClick={() => send(game, GameCommand.RESTART)}>{t("game_view.restart")}</GameButton>
+              <GameButton variant="danger" onClick={() => send(game, GameCommand.GIVE_UP)}>{t("game_view.quit")}</GameButton>
             </>
           }
-          footer={hasCoarsePointer ? "Tap resume to continue" : "ESC to resume"}
+          footer={hasCoarsePointer ? t("game_view.tap_resume") : t("game_view.esc_to_resume")}
         />
       )}
 
       {status === GameStatus.ABANDONED && (
         <GameResultScreen
-          title="ABANDONED"
+          title={t("game_view.abandoned")}
           tone="danger"
-          subtitle={`SCORE: ${state.score}`}
-          footer="Returning to title screen..."
+          subtitle={`${t("game_view.score")}: ${state.score}`}
+          footer={t("game_view.returning_to_title")}
         />
       )}
 
       {status === GameStatus.LOST && (
         <GameResultScreen
-          title="GAME OVER"
+          title={t("game_view.game_over")}
           tone="danger"
-          subtitle={`SCORE: ${state.score}`}
+          subtitle={`${t("game_view.score")}: ${state.score}`}
           actions={
             <>
-              <GameButton onClick={() => send(game, GameCommand.PLAY_AGAIN)}>PLAY AGAIN</GameButton>
-              <GameButton variant="secondary" onClick={() => send(game, GameCommand.TO_TITLE)}>TITLE SCREEN</GameButton>
+              <GameButton onClick={() => send(game, GameCommand.PLAY_AGAIN)}>{t("game_view.play_again")}</GameButton>
+              <GameButton variant="secondary" onClick={() => send(game, GameCommand.TO_TITLE)}>{t("game_view.title_screen")}</GameButton>
             </>
           }
-          footer={hasCoarsePointer ? "Tap to continue" : "ENTER to retry"}
+          footer={hasCoarsePointer ? t("game_view.tap_to_continue") : t("game_view.enter_to_retry")}
         />
       )}
 
