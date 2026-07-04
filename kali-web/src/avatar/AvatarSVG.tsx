@@ -224,6 +224,9 @@ export function AvatarSVG({ state, emotion, analyser, audioLevel, config, onClic
       headPivotRef.current.setAttribute("data-animal", cfg.species);
       headPivotRef.current.setAttribute("data-ears", cfg.ears);
     }
+    if (svgRef.current) {
+      svgRef.current.setAttribute("data-animal", cfg.species);
+    }
 
     // Pattern visibility
     ALL_PATTERNS.forEach((id) => {
