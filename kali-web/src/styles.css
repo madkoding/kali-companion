@@ -1197,8 +1197,11 @@
 #avatar-svg .left-ear,
 #avatar-svg .right-ear,
 #avatar-svg .shine-main,
-#avatar-svg .shine-sub { transition: transform 0.2s ease; }
+#avatar-svg .shine-sub,
+#avatar-svg .angry-eyelid { transition: transform 0.2s ease; }
 
+#avatar-svg .angry-eyelid { display: none; }
+#avatar-svg[data-mood="enojado"] .angry-eyelid { display: block; }
 #avatar-svg[data-animal="gato"][data-mood="enojado"] .pupil-core { transform: scaleX(0.12); }
 #avatar-svg[data-mood="enojado"] .left-ear { transform: rotate(-38deg) translateY(10px); animation: none; }
 #avatar-svg[data-mood="enojado"] .right-ear { transform: rotate(38deg) translateY(10px); animation: none; }
