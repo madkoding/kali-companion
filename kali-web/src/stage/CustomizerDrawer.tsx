@@ -414,7 +414,7 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                         { value: "bufanda", label: t("customizer.neck.scarf") },
                         { value: "ninguno", label: t("customizer.neck.none") },
                       ]}
-                      className="w-full"
+                      buttonClassName="bg-white/5 border-white/10 rounded-xl px-4 py-3 text-sm text-fg focus:border-accent focus:ring-1 focus:ring-accent"
                     />
                   </div>
 
@@ -458,7 +458,7 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                             { value: "round", label: t("customizer.hats.round") },
                             { value: "square", label: t("customizer.hats.square") },
                           ]}
-                          className="flex-1"
+                          buttonClassName="bg-white/5 border-white/10 rounded-xl px-4 py-3 text-sm text-fg focus:border-accent focus:ring-1 focus:ring-accent"
                         />
                         <ColorSwatchPicker label={t("customizer.glasses_color")} value={config.glassesColor} onChange={(v) => onChange({ ...config, glassesColor: v })} />
                       </div>
@@ -476,7 +476,7 @@ export function CustomizerDrawer({ open, onClose, config, onChange }: Props) {
                             { value: "copa", label: t("customizer.hats.top_hat") },
                             { value: "fiesta", label: t("customizer.hats.party") },
                           ]}
-                          className="flex-1"
+                          buttonClassName="bg-white/5 border-white/10 rounded-xl px-4 py-3 text-sm text-fg focus:border-accent focus:ring-1 focus:ring-accent"
                         />
                         <ColorSwatchPicker label={t("customizer.hat_color")} value={config.hatColor} onChange={(v) => onChange({ ...config, hatColor: v })} />
                       </div>

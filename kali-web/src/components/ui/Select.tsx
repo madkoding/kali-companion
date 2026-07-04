@@ -12,10 +12,23 @@ interface SelectProps {
   onChange: (value: string) => void;
   options: SelectOption[];
   className?: string;
+  buttonClassName?: string;
   placeholder?: string;
+  disabled?: boolean;
 }
 
-export function Select({ value, onChange, options, className = "", placeholder }: SelectProps) {
+const DEFAULT_BUTTON_CLASSES =
+  "w-full bg-surface text-foreground border border-border rounded-md px-2.5 py-2 text-sm outline-none transition flex items-center justify-between gap-2 cursor-pointer focus:border-accent-dim";
+
+export function Select({
+  value,
+  onChange,
+  options,
+  className = "",
+  buttonClassName = "",
+  placeholder,
+  disabled = false,
+}: SelectProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -37,9 +50,10 @@ export function Select({ value, onChange, options, className = "", placeholder }
   }, []);
 
   const handleToggle = useCallback(() => {
+    if (disabled) return;
     if (!open) updatePosition();
     setOpen((prev) => !prev);
-  }, [open, updatePosition]);
+  }, [open, updatePosition, disabled]);
 
   const handleSelect = useCallback(
     (val: string) => {
@@ -79,18 +93,30 @@ export function Select({ value, onChange, options, className = "", placeholder }
     };
   }, [open, handleClose]);
 
+  const mergedButtonClasses = [
+    DEFAULT_BUTTON_CLASSES,
+    buttonClassName,
+    disabled ? "opacity-50 cursor-not-allowed" : "",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className={`relative ${className}`}>
+    <div className="relative">
       <button
         ref={triggerRef}
         type="button"
         onClick={handleToggle}
-        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-fg flex items-center justify-between gap-2 cursor-pointer outline-none focus:border-accent focus:ring-1 focus:ring-accent transition"
+        disabled={disabled}
+        className={mergedButtonClasses}
       >
         <span className="truncate">{label}</span>
         <ChevronDown
           size={14}
-          className={`shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}
+          className={`shrink-0 text-muted transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
         />
       </button>
 
@@ -99,17 +125,17 @@ export function Select({ value, onChange, options, className = "", placeholder }
             <div
               ref={dropdownRef}
               style={dropdownStyle}
-              className="bg-elevated border border-border rounded-xl shadow-xl overflow-hidden py-1"
+              className="bg-elevated border border-border rounded-lg shadow-xl overflow-hidden py-1 z-[9999]"
               onMouseDown={(e) => e.stopPropagation()}
             >
               {options.map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
-                  className={`w-full px-4 py-2.5 text-sm text-left transition cursor-pointer outline-none ${
+                  className={`w-full px-3 py-2 text-sm text-left transition cursor-pointer outline-none ${
                     opt.value === value
                       ? "bg-accent/10 text-accent font-semibold"
-                      : "text-fg hover:bg-white/5 hover:text-fg"
+                      : "text-foreground hover:bg-white/5 hover:text-foreground"
                   }`}
                   onClick={() => handleSelect(opt.value)}
                 >
@@ -117,7 +143,9 @@ export function Select({ value, onChange, options, className = "", placeholder }
                 </button>
               ))}
               {options.length === 0 && (
-                <div className="px-4 py-2.5 text-sm text-muted">No options</div>
+                <div className="px-3 py-2 text-sm text-muted">
+                  No options
+                </div>
               )}
             </div>,
             document.body,
