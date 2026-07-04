@@ -462,6 +462,7 @@ export function SnakeView({ game, isMaximized }: Props) {
 
       {status === GameStatus.PAUSED && (
         <GamePauseScreen
+          title={$.paused}
           actions={
             <>
               <GameButton onClick={() => send(game, GameCommand.RESUME)}>{$.resume}</GameButton>

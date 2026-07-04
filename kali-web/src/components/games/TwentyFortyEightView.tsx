@@ -467,6 +467,7 @@ export function TwentyFortyEightView({ game, isMaximized }: Props) {
 
       {statusRef.current === GameStatus.PAUSED && (
         <GamePauseScreen
+          title={$.paused}
           actions={
             <>
             <GameButton

@@ -329,6 +329,7 @@ export function TicTacToeView({ game, manager, hasKali, isMaximized }: Props) {
 
       {status === GameStatus.PAUSED && (
         <GamePauseScreen
+          title={$.paused}
           actions={
             <>
               <GameButton onClick={() => sendCommand(GameCommand.RESUME)}>{$.resume}</GameButton>

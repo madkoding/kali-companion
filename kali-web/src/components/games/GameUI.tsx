@@ -252,11 +252,11 @@ export function GameTitleScreen({
 }
 
 export function GamePauseScreen({
-  title = "PAUSED",
+  title,
   actions,
   footer,
 }: {
-  title?: string;
+  title: string;
   actions: ReactNode;
   footer?: ReactNode;
 }) {
@@ -296,9 +296,9 @@ export function TouchDPad({
   onDirection: (direction: "UP" | "DOWN" | "LEFT" | "RIGHT") => void;
   placement?: "bottom-center" | "top-right" | "top-left" | "inline-bottom";
   bottomOffset?: number;
-  ariaLabels?: { up: string; down: string; left: string; right: string };
+  ariaLabels: { up: string; down: string; left: string; right: string };
 }) {
-  const a = ariaLabels ?? { up: "Move up", down: "Move down", left: "Move left", right: "Move right" };
+  const a = ariaLabels;
   if (placement === "inline-bottom") {
     return (
       <div className="mt-4 w-full flex justify-center pointer-events-auto">

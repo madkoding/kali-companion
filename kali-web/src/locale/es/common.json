@@ -741,6 +741,9 @@
   "about.made_with": "Hecho con",
   "about.made_by": "por fr4j4",
 
+  "game_window.no_manager": "Gestor de sesión de juego no disponible",
+  "game_window.fallback_score": "Juego: {{type}} — Puntaje: {{score}}",
+
   "game_catalog.category.single": "Un Jugador",
   "game_catalog.category.versus": "Versus",
   "game_catalog.category.coop": "Cooperativo",

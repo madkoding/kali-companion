@@ -15,11 +15,11 @@ export interface GameEntry {
 
 export type Category = "single" | "versus" | "coop" | "trivia";
 
-export const CATEGORIES: { id: Category; label: string; labelKey: string }[] = [
-  { id: "single", label: "Single Player", labelKey: "game_catalog.category.single" },
-  { id: "coop", label: "Cooperativo", labelKey: "game_catalog.category.coop" },
-  { id: "versus", label: "Versus", labelKey: "game_catalog.category.versus" },
-  { id: "trivia", label: "Trivia", labelKey: "game_catalog.category.trivia" },
+export const CATEGORIES: { id: Category; labelKey: string }[] = [
+  { id: "single", labelKey: "game_catalog.category.single" },
+  { id: "coop", labelKey: "game_catalog.category.coop" },
+  { id: "versus", labelKey: "game_catalog.category.versus" },
+  { id: "trivia", labelKey: "game_catalog.category.trivia" },
 ];
 
 const enStrings = (m: Record<string, Record<string, string>>) => (lang: string) =>
