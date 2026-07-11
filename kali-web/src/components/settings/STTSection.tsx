@@ -62,25 +62,14 @@ async function fetchWithRetry(
   return null;
 }
 
-async function getSidecarPort(): Promise<number | null> {
-  try {
-    const resp = await fetch("/api/sidecar-port");
-    if (resp.ok) {
-      const data = await resp.json();
-      return data.port ?? null;
-    }
-  } catch {
-    // not running in Tauri shell
-  }
-  return null;
-}
+import { getSidecarPort } from "../../lib/sidecar";
 
 export function STTSection({ systemStatus, onUpdate, downloadSttModel, downloadProgress, downloadError }: Props) {
   const { t } = useTranslation();
   const { sttLanguage, ptt } = useStage();
 
-  const activeProvider = (systemStatus?.stt_provider ?? "vosk") as SttProvider;
-  const sttLoaded = systemStatus?.stt_loaded ?? (activeProvider === "vosk");
+  const activeProvider = (systemStatus?.stt_provider ?? "") as SttProvider;
+  const sttLoaded = systemStatus?.stt_loaded ?? false;
   const sttModel = systemStatus?.stt_model ?? "";
   const sttDevice = systemStatus?.stt_device ?? "";
   const sttStreaming = systemStatus?.stt_streaming ?? true;
@@ -301,17 +290,11 @@ export function STTSection({ systemStatus, onUpdate, downloadSttModel, downloadP
 
   const compatibleDevices = devices.filter((d) => d.id === "cpu" || tab === "qwen3");
 
-  const activeDotClass = activeProvider === "vosk"
-    ? "bg-ok"
-    : sttLoaded
-      ? "bg-ok"
-      : "bg-muted";
+  const activeDotClass = sttLoaded ? "bg-ok" : "bg-muted";
 
-  const activeLabel = activeProvider === "vosk"
-    ? t("stt.provider.vosk")
-    : sttLoaded
-      ? `${sttModel} · ${sttDevice}`
-      : `${t("stt.provider.qwen3")} · ${t("stt.status.not_loaded")}`;
+  const activeLabel = sttLoaded
+    ? `${sttModel} · ${sttDevice}`
+    : `${t("stt.provider." + activeProvider)} · ${t("stt.status.not_loaded")}`;
 
   const qwenHasLoadedModel = models.some((m) => m.loaded);
 
@@ -356,7 +339,7 @@ export function STTSection({ systemStatus, onUpdate, downloadSttModel, downloadP
               >
                 <Mic size={13} />
                 {t(`stt.provider.${p}`)}
-                {activeProvider === p && (
+                {activeProvider === p && sttLoaded && (
                   <span className="text-[9px] font-mono bg-ok/20 text-ok rounded px-1 py-0.5">
                     {t("settings.stt_active")}
                   </span>

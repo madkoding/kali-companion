@@ -1,20 +1,22 @@
 """Command execution tool — run_command.
 
-Executes shell commands via asyncio.subprocess. Risk level is dangerous
-so it always requires consent. The active profile's command_whitelist
-allows specific commands to run without consent.
+Executes commands via asyncio.subprocess with shlex.split (no shell).
+Risk level is dangerous so it always requires consent. The active
+profile's command_whitelist allows specific commands to run without
+consent.
 """
 
 from __future__ import annotations
 
 import asyncio
+import shlex
 
 from .base import ToolContext, ToolResult
 
 
 class RunCommandTool:
     name = "run_command"
-    description = "Run a shell command (subject to whitelist + consent)."
+    description = "Run a command (subject to whitelist + consent)."
     schema = {
         "type": "object",
         "properties": {
@@ -39,8 +41,13 @@ class RunCommandTool:
             return ToolResult(error="Missing 'command' parameter.")
 
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
+            args = shlex.split(command)
+        except ValueError as e:
+            return ToolResult(error=f"Invalid command: {e}")
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
                 cwd=cwd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

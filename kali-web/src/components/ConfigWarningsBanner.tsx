@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, X } from "lucide-react";
@@ -11,6 +11,10 @@ interface Props {
 export function ConfigWarningsBanner({ warnings, onOpenSettings }: Props) {
   const { t } = useTranslation();
   const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    setDismissed(false);
+  }, [warnings]);
 
   if (warnings.length === 0 || dismissed) return null;
 

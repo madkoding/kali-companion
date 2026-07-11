@@ -1,13 +1,12 @@
 """Tests for QwenTTSProvider model management (subprocess respawn on switch)."""
 
 import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from kali_core.voice.providers import qwen as qwen_mod
-from kali_core.voice.providers.qwen import QwenTTSProvider, QWEN_MODELS
-from kali_core.voice.providers.base import TTSModelInfo
+from kali_core.voice.providers.qwen import QWEN_MODELS, QwenTTSProvider
 
 
 @pytest.fixture

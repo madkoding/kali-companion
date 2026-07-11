@@ -314,7 +314,7 @@ class DotaLiveState:
                 ypos = elem.get("ypos", "?")
                 if "npc_dota_hero_" in unitname:
                     h_name = _clean_name(unitname)
-                    team_lbl = "R" if team == 2 else ("D" if team == 3 else f"?")
+                    team_lbl = "R" if team == 2 else ("D" if team == 3 else "?")
                     heroes_on_map.append(f"{h_name}({team_lbl})@({xpos},{ypos})")
                 elif "ward" in unitname.lower():
                     w_type = "Obs" if "observer" in unitname else "Sentry"

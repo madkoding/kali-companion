@@ -1,7 +1,6 @@
 """Tests for HTTPTTSProvider model management (no-op surface)."""
 
 from kali_core.voice.providers.http import HTTPTTSProvider
-from kali_core.voice.providers.base import TTSModelInfo
 
 
 def test_http_provider_name():

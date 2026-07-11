@@ -8,7 +8,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useChat, getSidecarPort, type ChatState } from "../hooks/useChat";
+import { useChat, type ChatState } from "../hooks/useChat";
+import { getSidecarPort } from "../lib/sidecar";
 import { useTTS, type TtsPlaybackState } from "../hooks/useTTS";
 import { usePTT, type PTTControls } from "../hooks/usePTT";
 import type {

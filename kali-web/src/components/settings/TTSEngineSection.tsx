@@ -280,7 +280,7 @@ export function TTSEngineSection({ systemStatus, onUpdate, downloadTtsModel, dow
             }`}
           >
             {t(`tts.engine.${p}`)}
-            {activeProvider === p && (
+            {activeProvider === p && ttsLoaded && (
               <span className="text-[9px] font-mono bg-ok/20 text-ok rounded px-1 py-0.5">
                 {t("settings.tts_active")}
               </span>

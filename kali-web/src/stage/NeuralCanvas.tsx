@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
-import { marked } from "marked";
+import { renderMarkdown } from "../lib/markdownSafe";
 import { useStage } from "./StageProvider";
 import { useAvatarMoodEngine } from "../avatar/AvatarMoodEngine";
 import { AvatarSVG } from "../avatar/AvatarSVG";
@@ -29,6 +29,7 @@ import { loadAvatarConfig, saveAvatarConfig, type AvatarConfig, type AvatarEmoti
 import { useWorkspace } from "../workspace/useWorkspace";
 import type { SelectedArtifactRef } from "../lib/protocol";
 import { HUD } from "./HUD";
+import { ErrorToast } from "../components/ErrorToast";
 import { PresenceLayer } from "./PresenceLayer";
 import { NeuralDock } from "./NeuralDock";
 import { TetherLayer } from "./TetherLayer";
@@ -456,21 +457,29 @@ export function NeuralCanvas({
         )}
       </AnimatePresence>
 
-      {/* Error toasts */}
+      {/* Error toasts — structured via ErrorToast, staggered to avoid overlap */}
       <AnimatePresence>
         {chat.error && (
-          <motion.div
-            className="fixed top-16 left-1/2 -translate-x-1/2 bg-err text-white px-4 py-2 rounded-md text-sm z-50 max-w-[90vw]"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-          >
-            {chat.error}
-          </motion.div>
+          <ErrorToast
+            error={chat.error}
+            onDismiss={chat.clearError}
+            onRetry={
+              chat.error.retryable && chat.lastUserInput
+                ? () => {
+                    const last = chat.lastUserInput!;
+                    chat.clearError();
+                    chat.send(last);
+                  }
+                : undefined
+            }
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
         )}
         {ptt.error && (
           <motion.div
-            className="fixed top-16 left-1/2 -translate-x-1/2 bg-err text-white px-4 py-2 rounded-md text-sm z-50 max-w-[90vw]"
+            className="fixed top-[22rem] left-1/2 -translate-x-1/2
+                       bg-err text-white px-4 py-2 rounded-md text-sm
+                       z-50 max-w-[90vw]"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
@@ -745,7 +754,7 @@ function FloatingTranscript({ messages }: { messages: import("../hooks/useChat")
   const html = useMemo(() => {
     if (isStreaming || !text) return null;
     try {
-      return marked.parse(text, { async: false }) as string;
+      return renderMarkdown(text);
     } catch {
       return `<p>${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
     }

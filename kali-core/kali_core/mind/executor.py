@@ -108,10 +108,12 @@ class Executor:
         # Build context and run.
         gaze = getattr(self, "gaze_client", None)
         llm = getattr(self, "llm_provider", None)
+        prof = self.gateway.get_profile(self.profile) or {}
         ctx = ToolContext(
             session_id=session_id,
             working_dir=self.working_dir,
             profile=self.profile,
+            working_dirs=prof.get("working_dirs"),
             gaze_client=gaze,
             llm_provider=llm,
             job_mgr=getattr(self, "job_mgr", None),

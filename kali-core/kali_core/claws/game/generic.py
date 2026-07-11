@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from ..base import ToolContext, ToolResult
-from .spoiler_filter import SPOILER_DOMAINS, filter_text, is_spoiler_domain
+from .spoiler_filter import filter_text, is_spoiler_domain
 
 logger = logging.getLogger("kali_core.claws.game.generic")
 

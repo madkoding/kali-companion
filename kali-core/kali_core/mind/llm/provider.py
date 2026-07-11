@@ -31,8 +31,10 @@ class StreamEvent:
     - `reasoning`: the model's chain-of-thought (if the provider exposes it)
     - `done`: the stream is complete
     - `step`: signals the start of a new step in the multi-step loop
+    - `error`: the provider failed; see `code`, `category`, `i18n_key`,
+      `retryable`, `correlation_id`, `detail` for structured context.
     """
-    kind: Literal["delta", "tool_call", "reasoning", "done", "step", "usage"]
+    kind: Literal["delta", "tool_call", "reasoning", "done", "step", "usage", "error"]
     text: str | None = None
     tool_name: str | None = None
     tool_args: dict | None = None
@@ -41,6 +43,14 @@ class StreamEvent:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     reasoning_tokens: int | None = None
+    # Error event fields (only when kind == "error")
+    code: str | None = None
+    category: str | None = None
+    i18n_key: str | None = None
+    params: dict | None = None
+    retryable: bool | None = None
+    correlation_id: str | None = None
+    detail: str | None = None
 
 
 @runtime_checkable

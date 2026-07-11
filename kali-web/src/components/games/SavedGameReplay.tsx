@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useGameWS } from "../../lib/gameWSClient";
 import { GAME_SESSION_WS_EVENT } from "../../games/core/game-session-constants";
-import type { GameSessionData, GameTurnData } from "../../games/core/game-session-types";
+import type { GameSessionData, GameTurnData } from "../../lib/game-session-types";
 import type { TicTacToeData } from "../../games/tic-tac-toe/tic-tac-toe-game";
 
 interface Props {

@@ -77,7 +77,7 @@ async def _socket_open(host: str, port: int, timeout: float) -> bool:
         except Exception:
             pass
         return True
-    except (OSError, asyncio.TimeoutError, ConnectionRefusedError):
+    except (TimeoutError, OSError, ConnectionRefusedError):
         return False
     except Exception:
         return False
@@ -133,7 +133,7 @@ async def scan_local(
     open_results = await asyncio.gather(
         *[_wrapped_socket(p) for p in ports], return_exceptions=True
     )
-    open_ports = [p for p, ok in zip(ports, open_results) if ok is True]
+    open_ports = [p for p, ok in zip(ports, open_results, strict=False) if ok is True]
     logger.info("Socket sweep: %d open ports in range %d-%d: %s", len(open_ports), port_from, port_to, open_ports)
 
     if not open_ports:

@@ -15,17 +15,69 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx
+import openai
 from openai import AsyncOpenAI
 
 from kali_core.config import settings
+from kali_core.errors import (
+    CATEGORY_TO_I18N_KEY,
+    RETRYABLE,
+    ErrorCategory,
+    redact_secrets,
+)
 
 from ..json_stream_extractor import StreamingArtifactArgParser
 from .provider import StreamEvent, ToolDef
 
 logger = logging.getLogger("kali_core.mind.direct")
+
+
+def _categorize_llm_error(exc: Exception) -> ErrorCategory:
+    """Map a provider exception to a stable ErrorCategory.
+
+    Checks OpenAI SDK exception subclasses first, then falls back to
+    substring matching for less specific errors.
+    """
+    if isinstance(exc, openai.AuthenticationError):
+        return ErrorCategory.AUTH
+    if isinstance(exc, openai.PermissionDeniedError):
+        return ErrorCategory.BILLING
+    if isinstance(exc, openai.RateLimitError):
+        return ErrorCategory.RATE_LIMIT
+    if isinstance(exc, openai.NotFoundError):
+        return ErrorCategory.NOT_FOUND
+    if isinstance(exc, (openai.APITimeoutError, httpx.TimeoutException, asyncio.TimeoutError)):
+        return ErrorCategory.NETWORK
+    if isinstance(exc, (openai.APIConnectionError, httpx.ConnectError, ConnectionError)):
+        return ErrorCategory.NETWORK
+    if isinstance(exc, openai.InternalServerError):
+        return ErrorCategory.SERVER
+    if isinstance(exc, openai.UnprocessableEntityError):
+        return ErrorCategory.CONTENT_FILTER
+    if isinstance(exc, openai.BadRequestError):
+        return ErrorCategory.BAD_REQUEST
+    s = str(exc).lower()
+    if "context_length" in s or "context length" in s:
+        return ErrorCategory.BAD_REQUEST
+    if "timeout" in s:
+        return ErrorCategory.NETWORK
+    if "connection" in s:
+        return ErrorCategory.NETWORK
+    return ErrorCategory.INTERNAL
+
+
+def _network_localized(self_api_url: str) -> str:
+    if self_api_url and not self_api_url.startswith("http://localhost") and not self_api_url.startswith("http://127."):
+        return (
+            "No pude conectar con el modelo de IA. "
+            "Verifica que el endpoint esté activo y accesible."
+        )
+    return "No pude conectar con el modelo de IA. Verifica que el servidor local esté corriendo."
 
 # Ollama and some other backends expose chain-of-thought via a non-standard
 # ``reasoning`` (or ``reasoning_content``) field on the streaming delta.
@@ -374,18 +426,26 @@ class DirectLLMProvider:
             yield StreamEvent(kind="done")
         except Exception as exc:
             logger.error("LLM error: %s", exc)
-            # Provide a user-friendly message instead of raw exception text.
-            if "connection" in str(exc).lower() or "timeout" in str(exc).lower():
-                msg = (
-                    "No pude conectar con el modelo de IA. "
-                    "Verifica que el endpoint esté activo y accesible."
-                    if self._api_url and not self._api_url.startswith("http://localhost")
-                    else "No pude conectar con el modelo de IA. "
-                    "Verifica que el servidor local esté corriendo."
-                )
+            category = _categorize_llm_error(exc)
+            safe_detail = redact_secrets(str(exc))
+            # The frontend uses i18n_key for display, not text.
+            # text is only for the legacy error event (which we no longer
+            # emit for LLM errors), so keep it empty for known categories.
+            if category == ErrorCategory.NETWORK:
+                short = _network_localized(self._api_url)
             else:
-                msg = f"Error del modelo de IA: {exc}"
-            yield StreamEvent(kind="delta", text=msg)
+                short = ""
+            yield StreamEvent(
+                kind="error",
+                text=short,
+                code=category.name,
+                category=category.value,
+                i18n_key=CATEGORY_TO_I18N_KEY[category],
+                params={"model": self._model or "?"},
+                retryable=category in RETRYABLE,
+                correlation_id=uuid.uuid4().hex,
+                detail=safe_detail,
+            )
             yield StreamEvent(kind="done")
 
     def _maybe_stream_artifact_tool(
@@ -515,6 +575,19 @@ class DirectLLMProvider:
             }
         except Exception as exc:
             logger.error("LLM error: %s", exc)
-            if "connection" in str(exc).lower() or "timeout" in str(exc).lower():
-                return {"text": "No pude conectar con el modelo de IA. Verifica que el endpoint esté activo."}
-            return {"text": f"Error del modelo de IA: {exc}"}
+            category = _categorize_llm_error(exc)
+            safe_detail = redact_secrets(str(exc))
+            if category == ErrorCategory.NETWORK:
+                short = _network_localized(self._api_url)
+            else:
+                short = ""
+            return {
+                "text": short,
+                "error": True,
+                "code": category.name,
+                "category": category.value,
+                "i18n_key": CATEGORY_TO_I18N_KEY[category],
+                "retryable": category in RETRYABLE,
+                "correlation_id": uuid.uuid4().hex,
+                "detail": safe_detail,
+            }

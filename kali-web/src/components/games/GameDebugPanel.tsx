@@ -12,7 +12,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { gameSessionStore } from "../../games/core/game-session-store";
-import type { GameLogEntry } from "../../games/core/game-session-types";
+import type { GameLogEntry } from "../../lib/game-session-types";
 
 interface Props {
   getSessionId?: () => string;

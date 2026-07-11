@@ -10,7 +10,6 @@ Supports two modes:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import random
@@ -22,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from kali_core.voice.providers.base import StartupError, TTSProvider, TTSResult
+from kali_core.voice.providers.base import StartupError, TTSResult
 
 logger = logging.getLogger("kali_core.voice.qwen")
 

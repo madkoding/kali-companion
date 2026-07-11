@@ -6,7 +6,7 @@ import {
   PLACEHOLDER_AI_ACTION,
 } from "../game-session-constants";
 import { ActionType } from "../constants/action-types";
-import type { GameTurnData, GameEventData } from "../game-session-types";
+import type { GameTurnData, GameEventData } from "../../../lib/game-session-types";
 import type { WSClient } from "../../../lib/wsClient";
 
 describe("GameSessionStore", () => {

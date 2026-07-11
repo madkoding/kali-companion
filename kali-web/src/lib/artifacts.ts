@@ -8,6 +8,7 @@
 // sidecar port via window.kali, or the Vite proxy in browser dev).
 
 import type { ArtifactEvent } from "./protocol";
+import { getSidecarPort } from "./sidecar";
 
 /** Response shape of GET /sessions/{sid}/artifacts/{aid}. */
 interface ArtifactResponse {
@@ -23,19 +24,12 @@ let baseUrlCache: string | null = null;
 
 async function baseUrl(): Promise<string> {
   if (baseUrlCache) return baseUrlCache;
-  const kali = (window as unknown as { kali?: { getSidecarPort: () => Promise<unknown> } }).kali;
-  if (kali?.getSidecarPort) {
-    try {
-      const port = await kali.getSidecarPort();
-      if (typeof port === "number") {
-        baseUrlCache = `http://127.0.0.1:${port}`;
-        return baseUrlCache;
-      }
-    } catch {
-      // fall through
-    }
+  const port = await getSidecarPort();
+  // In Electron the port is dynamic; in browser dev Vite proxies everything.
+  if (port !== 8900) {
+    baseUrlCache = `http://127.0.0.1:${port}`;
+    return baseUrlCache;
   }
-  // Browser dev: same origin, Vite proxy forwards /sessions to the core.
   baseUrlCache = "";
   return baseUrlCache;
 }

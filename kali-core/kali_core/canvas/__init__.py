@@ -15,9 +15,9 @@ The UI side lives in kali-web's ``components/widgets/``.
 from __future__ import annotations
 
 from .registry import (
-    ArtifactEnvelope,
     NON_STREAMABLE_TYPES,
     STREAMABLE_TYPES,
+    ArtifactEnvelope,
     diff_artifact,
     html_artifact,
     is_game_resource,

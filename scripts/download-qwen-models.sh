@@ -46,11 +46,7 @@ _dl() {
     return
   fi
   echo "[Download] $file"
-  wget -c -q "$url" -O "$MODEL_DIR/$file"
-  if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to download $file"
-    return 1
-  fi
+  wget -c -q "$url" -O "$MODEL_DIR/$file" || { echo "ERROR: Failed to download $file"; return 1; }
 }
 
 _validate_quant() {

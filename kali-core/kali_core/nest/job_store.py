@@ -8,7 +8,6 @@ the UI can show progress, logs, and allow cancellation.
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any

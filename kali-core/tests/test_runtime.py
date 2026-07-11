@@ -64,6 +64,9 @@ class FakeGateway:
     def check(self, tool_name: str, risk_level: str, params: dict, profile: str) -> SimpleNamespace:
         return SimpleNamespace(allow=True, needs_consent=False)
 
+    def get_profile(self, profile_id: str) -> dict | None:
+        return {"id": profile_id, "working_dirs": ["/tmp/**", "/private/tmp/**"]}
+
     def list_profiles(self) -> list[dict]:
         return [{"id": "dev"}, {"id": "general"}]
 

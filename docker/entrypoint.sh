@@ -7,7 +7,7 @@
 # 3. Arranca nginx + kali-core
 # 4. Captura SIGTERM/SIGINT para graceful shutdown
 # =============================================================================
-set -uo pipefail
+set -euo pipefail
 
 APP_DIR="/app"
 MODELS_DIR="/app/models"

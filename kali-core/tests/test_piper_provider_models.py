@@ -1,12 +1,11 @@
 """Tests for PiperTTSProvider model management."""
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from kali_core.voice.providers.piper import PiperTTSProvider
-from kali_core.voice.providers.base import TTSModelInfo, TTSModelVoice
 
 
 @pytest.fixture

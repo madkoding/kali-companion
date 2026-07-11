@@ -32,8 +32,8 @@ import difflib
 import logging
 from typing import Any
 
-from kali_core.claws.base import ToolContext, ToolResult
 from kali_core.canvas.registry import is_streamable_type
+from kali_core.claws.base import ToolContext, ToolResult
 
 logger = logging.getLogger("kali_core.claws.manage_artifacts")
 

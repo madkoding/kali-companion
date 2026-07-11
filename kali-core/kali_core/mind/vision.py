@@ -109,6 +109,7 @@ class VisionProcessor:
         """Downscale to max 1024px and compress as JPEG to reduce token usage."""
         try:
             import io
+
             from PIL import Image
 
             img = Image.open(io.BytesIO(image_bytes))

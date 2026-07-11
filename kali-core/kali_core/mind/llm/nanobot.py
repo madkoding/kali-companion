@@ -15,11 +15,18 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from collections.abc import AsyncIterator
 
 import websockets
 
 from kali_core.config import settings
+from kali_core.errors import (
+    CATEGORY_TO_I18N_KEY,
+    RETRYABLE,
+    ErrorCategory,
+    redact_secrets,
+)
 
 from .provider import StreamEvent, ToolDef
 
@@ -89,11 +96,31 @@ class NanobotLLMProvider:
                     elif event_type == "error":
                         err = event.get("message", "unknown nanobot error")
                         logger.error("nanobot error: %s", err)
-                        yield StreamEvent(kind="delta", text=f"[nanobot error: {err}]")
+                        safe = redact_secrets(str(err))
+                        yield StreamEvent(
+                            kind="error",
+                            text=f"[nanobot error: {safe[:200]}]",
+                            code="INTERNAL",
+                            category=ErrorCategory.INTERNAL.value,
+                            i18n_key=CATEGORY_TO_I18N_KEY[ErrorCategory.INTERNAL],
+                            retryable=ErrorCategory.INTERNAL in RETRYABLE,
+                            correlation_id=uuid.uuid4().hex,
+                            detail=safe,
+                        )
                         break
         except Exception as exc:
             logger.error("nanobot stream error: %s", exc)
-            yield StreamEvent(kind="delta", text=f"[nanobot error: {exc}]")
+            safe = redact_secrets(str(exc))
+            yield StreamEvent(
+                kind="error",
+                text=f"[nanobot error: {safe[:200]}]",
+                code="NETWORK",
+                category=ErrorCategory.NETWORK.value,
+                i18n_key=CATEGORY_TO_I18N_KEY[ErrorCategory.NETWORK],
+                retryable=ErrorCategory.NETWORK in RETRYABLE,
+                correlation_id=uuid.uuid4().hex,
+                detail=safe,
+            )
         finally:
             yield StreamEvent(kind="done")
 

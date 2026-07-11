@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from kali_core.config import settings
+
 from .game_session_constants import (
     DEFAULT_GAME_SESSION_PATH,
     GAME_SESSION_FILE_EXTENSION,

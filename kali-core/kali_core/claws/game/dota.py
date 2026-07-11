@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from ..base import ToolContext, ToolResult
 from ...canvas import widget_artifact
+from ..base import ToolContext, ToolResult
 from .dota2_adapter import Dota2Adapter
-from .image_cache import download_game_images_handler
 
 logger = logging.getLogger("kali_core.claws.game.dota")
 

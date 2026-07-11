@@ -13,9 +13,15 @@ suite. Detection order:
 from __future__ import annotations
 
 import asyncio
+import re
+import shlex
+import sys
 from pathlib import Path
 
 from .base import ToolContext, ToolResult
+
+# ponytail: simple path validation — only allow safe characters
+_SAFE_PATH_RE = re.compile(r"^[\w./\-\\]+$")
 
 
 class RunTestsTool:
@@ -85,27 +91,27 @@ class RunTestsTool:
         # Default: pytest
         return "pytest"
 
-    def _build_command(self, framework: str, path: str | None) -> str:
-        """Build the shell command for the detected framework."""
+    def _build_command(self, framework: str, path: str | None) -> list[str]:
+        """Build the argv list for the detected framework."""
         if framework == "pytest":
-            cmd = "python -m pytest"
+            args = [sys.executable, "-m", "pytest"]
             if path:
-                cmd += f" {path}"
-            cmd += " -v --tb=short"
+                args.append(path)
+            args.extend(["-v", "--tb=short"])
         elif framework == "jest":
-            cmd = "npm test"
+            args = ["npm", "test"]
             if path:
-                cmd += f" -- {path}"
+                args.extend(["--", path])
         elif framework == "go":
-            cmd = "go test"
+            args = ["go", "test"]
             if path:
-                cmd += f" {path}"
-            cmd += " -v"
+                args.append(path)
+            args.append("-v")
         elif framework == "cargo":
-            cmd = "cargo test"
+            args = ["cargo", "test"]
         else:
-            cmd = "python -m pytest"
-        return cmd
+            args = [sys.executable, "-m", "pytest"]
+        return args
 
     async def run(self, params: dict, ctx: ToolContext) -> ToolResult:
         framework = params.get("framework", "")
@@ -115,11 +121,14 @@ class RunTestsTool:
         if not framework:
             framework = self._detect_framework(ctx.working_dir)
 
-        command = self._build_command(framework, path or None)
+        if path and not _SAFE_PATH_RE.match(path):
+            return ToolResult(error=f"Invalid path: {path}")
+
+        args = self._build_command(framework, path or None)
 
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
+            proc = await asyncio.create_subprocess_exec(
+                *args,
                 cwd=ctx.working_dir,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -140,7 +149,7 @@ class RunTestsTool:
         return ToolResult(
             output={
                 "framework": framework,
-                "command": command,
+                "command": " ".join(shlex.quote(a) for a in args),
                 "exit_code": proc.returncode,
                 "stdout": stdout_text[:10000],
                 "stderr": stderr_text[:5000],

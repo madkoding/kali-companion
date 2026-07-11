@@ -69,9 +69,9 @@ export function HUD({
   const statusKey = !hasProvider ? "status.disconnected" : `status.${chat.status}`;
 
   // STT dot
-  const sttProvider = chat.systemStatus?.stt_provider ?? "vosk";
+  const sttProvider = chat.systemStatus?.stt_provider ?? "";
   const sttEnabled = chat.systemStatus?.stt_enabled ?? false;
-  const sttLoaded = chat.systemStatus?.stt_loaded ?? (sttProvider === "vosk");
+  const sttLoaded = chat.systemStatus?.stt_loaded ?? false;
   const sttDotClass = (sttEnabled && sttLoaded) ? "bg-ok" : "bg-muted";
 
   // TTS dot
@@ -317,19 +317,31 @@ function ModelStatsPanel({
         </StatsSection>
 
         <StatsSection title="STT" icon={<Mic size={12} />}>
-          <StatsRow label={t("stats.provider")} value={systemStatus.stt_provider} />
-          <StatsRow label={t("stats.model")} value={systemStatus.stt_model ?? "-"} mono />
-          <StatsRow label={t("stats.device")} value={systemStatus.stt_device ?? "-"} mono />
-          <StatsRow label="Streaming" value={systemStatus.stt_streaming ? "On" : "Off"} />
+          {systemStatus.stt_loaded ? (
+            <>
+              <StatsRow label={t("stats.provider")} value={systemStatus.stt_provider} />
+              <StatsRow label={t("stats.model")} value={systemStatus.stt_model ?? "-"} mono />
+              <StatsRow label={t("stats.device")} value={systemStatus.stt_device ?? "-"} mono />
+              <StatsRow label="Streaming" value={systemStatus.stt_streaming ? "On" : "Off"} />
+            </>
+          ) : (
+            <StatsRow label={t("stats.provider")} value="—" />
+          )}
         </StatsSection>
 
         <StatsSection title="TTS" icon={<Volume2 size={12} />}>
-          <StatsRow label={t("stats.provider")} value={systemStatus.tts_provider} />
-          <StatsRow label={t("stats.voice")} value={systemStatus.voice} />
-          <StatsRow label={t("stats.model")} value={systemStatus.tts_model ?? "-"} mono />
-          <StatsRow label={t("stats.device")} value={systemStatus.tts_device ?? "-"} mono />
-          <StatsRow label={t("stats.mode")} value={systemStatus.tts_mode} />
-          <StatsRow label={t("stats.auto")} value={systemStatus.auto_tts ? "On" : "Off"} />
+          {systemStatus.tts_loaded ? (
+            <>
+              <StatsRow label={t("stats.provider")} value={systemStatus.tts_provider} />
+              <StatsRow label={t("stats.voice")} value={systemStatus.voice} />
+              <StatsRow label={t("stats.model")} value={systemStatus.tts_model ?? "-"} mono />
+              <StatsRow label={t("stats.device")} value={systemStatus.tts_device ?? "-"} mono />
+              <StatsRow label={t("stats.mode")} value={systemStatus.tts_mode} />
+              <StatsRow label={t("stats.auto")} value={systemStatus.auto_tts ? "On" : "Off"} />
+            </>
+          ) : (
+            <StatsRow label={t("stats.provider")} value="—" />
+          )}
         </StatsSection>
 
         {systemStatus.game_ai_enabled && (

@@ -11,7 +11,6 @@ import pytest
 
 from kali_core.claws.base import ToolContext, available_tools
 from kali_core.claws.game.dota import DotaBuildsTool
-from kali_core.claws.game.dota2_adapter import Dota2Adapter
 from kali_core.claws.game.generic import GameInfoTool
 from kali_core.claws.game.spoiler_filter import filter_text, is_spoiler_domain
 from kali_core.server import _register_tools
@@ -618,9 +617,8 @@ def test_match_is_win_dire_loses():
 
 
 async def test_resolve_item_ids_with_keys():
-    from kali_core.claws.game.dota2_adapter import _resolve_item_ids_with_keys
-
     import kali_core.claws.game.dota2_adapter as _dota_mod
+    from kali_core.claws.game.dota2_adapter import _resolve_item_ids_with_keys
     _dota_mod._ID_TO_DNAME = {
         "1": "Blink Dagger",
         "13": "Gauntlets of Strength",
@@ -782,8 +780,8 @@ async def test_find_item_by_dname_prefix():
 
 async def test_fetch_game_resource_uses_adapter_for_dota():
     """When game is Dota 2, the dedicated Dota2Adapter is used."""
-    from kali_core.claws.game.fetch_resource import FetchGameResourceTool
     import kali_core.claws.game.dota2_adapter as _dota_mod
+    from kali_core.claws.game.fetch_resource import FetchGameResourceTool
     _saved_constants = _dota_mod._ITEM_CONSTANTS
     _saved_id_map = _dota_mod._ID_TO_DNAME
     _saved_hero_const = _dota_mod._HERO_CONSTANTS

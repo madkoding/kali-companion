@@ -1,11 +1,12 @@
 """Tests for the TTS provider registry factory and fallback chain."""
 
 import pytest
+
 from kali_core.voice.providers import (
+    TTS_FALLBACK_CHAIN,
+    get_tts_fallback,
     get_tts_provider,
     list_tts_providers,
-    get_tts_fallback,
-    TTS_FALLBACK_CHAIN,
     reset_registry,
 )
 

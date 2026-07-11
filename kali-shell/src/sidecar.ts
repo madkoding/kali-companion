@@ -19,11 +19,6 @@ const DISPLAY_VARS = [
   "DISPLAY",
 ];
 
-export interface SidecarHandle {
-  child: ChildProcess;
-  port: number;
-}
-
 export function sidecarPort(): number {
   const v = process.env.KALI_CORE_PORT ?? process.env.KALI_WS_PORT;
   const parsed = v ? Number(v) : NaN;
@@ -121,6 +116,11 @@ export function superviseSidecar(port: number): {
       if (timer) clearTimeout(timer);
       if (current && !current.killed) {
         current.kill("SIGTERM");
+        // ponytail: SIGKILL escalation after 3s if SIGTERM ignored
+        const sigkillTimer = setTimeout(() => {
+          if (current && !current.killed) current.kill("SIGKILL");
+        }, 3000);
+        current.once("close", () => clearTimeout(sigkillTimer));
       }
     },
   };

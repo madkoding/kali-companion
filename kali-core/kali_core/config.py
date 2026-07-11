@@ -22,6 +22,10 @@ def _env_bool(key: str, default: bool) -> bool:
 # ── Server ────────────────────────────────────────────────
 port: int = int(os.getenv("KALI_PORT", "8900"))
 host: str = os.getenv("KALI_HOST", "0.0.0.0")
+cors_origins: list[str] = [
+    o.strip()
+    for o in os.getenv("KALI_CORS_ORIGINS", "http://localhost:5173,http://localhost:8900").split(",")
+]
 
 # ── Game sessions ────────────────────────────────────────
 game_session_path: str = os.getenv(
@@ -409,6 +413,7 @@ class _Settings:
 
     port = port
     host = host
+    cors_origins = cors_origins
 
     llm_provider = llm_provider
     llm_api_url = llm_api_url

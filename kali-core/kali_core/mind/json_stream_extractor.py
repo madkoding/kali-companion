@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Literal, Union
+from typing import Literal
 
 from .artifact_stream import STREAMABLE_TYPES
 

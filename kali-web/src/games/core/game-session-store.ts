@@ -4,7 +4,7 @@ import type {
   GameTurnData,
   GameEventData,
   GameLogEntry,
-} from "./game-session-types";
+} from "../../lib/game-session-types";
 import type { GameAction } from "./types/game-action";
 import { GAME_SESSION_WS_EVENT } from "./game-session-constants";
 

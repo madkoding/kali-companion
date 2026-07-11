@@ -9,9 +9,8 @@ Qwen3 identically.
 from __future__ import annotations
 
 import logging
-import os
-
 from pathlib import Path
+
 from kali_core.ear.manager import STTManager, model_for_language
 from kali_core.ear.vosk_engine import DEFAULT_MODEL_DIR, get_model
 from kali_core.lang_map import normalize

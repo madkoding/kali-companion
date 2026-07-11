@@ -56,7 +56,7 @@ class TTSProvider(Protocol):
         voice: str,
         mode: str = "normal",
         language: str = "auto",
-    ) -> "TTSResult":
+    ) -> TTSResult:
         ...
 
     async def list_voices(self) -> list[dict]:

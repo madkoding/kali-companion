@@ -36,15 +36,22 @@ export function ConnectionCard({ conn, gameConnectionId, health, onEdit, onModel
           : "border border-border hover:border-accent/30"
       }`}
     >
-      <Icon size={16} className={`mt-0.5 ${conn.is_active ? "text-ok" : "text-muted"}`} />
+      <Icon size={16} className={`mt-0.5 ${conn.is_active && health === "online" ? "text-ok" : "text-muted"}`} />
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-2">
           <span className="text-xs text-foreground font-medium truncate">
             {conn.name}
           </span>
           {isActive && (
-            <span className="text-[10px] font-mono bg-ok/20 text-ok rounded px-1.5 py-0.5 shrink-0">
+            <span className={`text-[10px] font-mono rounded px-1.5 py-0.5 shrink-0 ${
+              health === "online"
+                ? "bg-ok/20 text-ok"
+                : health === "offline"
+                  ? "bg-amber-500/20 text-amber-300"
+                  : "bg-ok/20 text-ok"
+            }`}>
               {t("connections.active_badge")}
+              {health === "offline" && ` (${t("settings.game_ai_offline")})`}
             </span>
           )}
           {isGame && (
@@ -68,7 +75,7 @@ export function ConnectionCard({ conn, gameConnectionId, health, onEdit, onModel
         <div className="flex items-center gap-1.5 text-[10px] text-muted/80">
           <span>{conn.vendor_detected || conn.api_format}</span>
           <span>·</span>
-          <span>{t("ai.models", { defaultValue: "models" })}: {conn.model_count}</span>
+          <span>{t("ai.models", { defaultValue: "models" })}: {health === "online" ? conn.model_count : "—"}</span>
           {conn.is_active && conn.active_model && (
             <>
               <span>·</span>

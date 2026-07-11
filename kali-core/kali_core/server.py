@@ -34,9 +34,9 @@ import os
 import re
 import subprocess
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
-import urllib.request
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -52,6 +52,7 @@ from kali_core.claws.game.adapter import get_adapter
 from kali_core.claws.game.dota_live import DotaLiveStateTool
 from kali_core.claws.game.fetch_resource import FetchGameResourceTool
 from kali_core.claws.game.image_cache import download_game_images_handler
+from kali_core.claws.games import GameActionTool, GameEndTool, GameStartTool
 from kali_core.claws.git import GitDiffTool, GitWorktreeTool
 from kali_core.claws.launcher import LaunchAppTool
 from kali_core.claws.list_monitors import ListMonitorsTool
@@ -64,15 +65,14 @@ from kali_core.claws.manage_artifacts import (
 from kali_core.claws.organize import OrganizeFolderTool
 from kali_core.claws.screenshot import ScreenshotTool
 from kali_core.claws.stt_corrector import SttCorrectorTool, correct_stt_text
-from kali_core.claws.games import GameStartTool, GameActionTool, GameEndTool
 from kali_core.claws.tests import RunTestsTool
 from kali_core.claws.web import WebFetchTool, WebSearchTool
 from kali_core.collar.consent import ConsentManager as ConsentMgr
 from kali_core.collar.gateway import PermissionGateway
 from kali_core.config import settings
+from kali_core.errors import redact_secrets
 from kali_core.ear.manager import WakeWordDetector
 from kali_core.ear.providers import get_stt_provider
-from kali_core.user_config import UserConfig, load_or_default as load_user_config, save as save_user_config
 from kali_core.game.gsi import gsi_state
 from kali_core.gaze import GazeClient
 from kali_core.lang_map import normalize
@@ -80,27 +80,30 @@ from kali_core.mind.ai_config import AIConfig
 from kali_core.mind.ai_config import load as load_ai_config
 from kali_core.mind.ai_config import save as save_ai_config
 from kali_core.mind.cloud_providers import CLOUD_PROVIDERS
-from kali_core.mind.console_requester import ConsoleRequester
 from kali_core.mind.connections_store import Connection as SavedConnection
 from kali_core.mind.connections_store import ConnectionsStore
+from kali_core.mind.console_requester import ConsoleRequester
 from kali_core.mind.executor import Executor
-from kali_core.mind.game_session_service import (
-    GameSessionRecord,
-    GameSessionService,
-)
 from kali_core.mind.game_session_constants import (
     GameParadigm,
     GameSessionStatus,
     GameSessionWSEvent,
 )
+from kali_core.mind.game_session_service import (
+    GameSessionRecord,
+    GameSessionService,
+)
 from kali_core.mind.jobs import JobManager
 from kali_core.mind.llm.direct import DirectLLMProvider
 from kali_core.mind.llm.nanobot import NanobotLLMProvider
-from kali_core.mind.llm.provider import LLMProvider, StreamEvent, ToolDef
+from kali_core.mind.llm.provider import LLMProvider, ToolDef
 from kali_core.mind.llm.scanner import probe_endpoint, verify_api_key
 from kali_core.mind.runtime import AgentRuntime
 from kali_core.nest.job_store import JobStore
 from kali_core.nest.store import SessionStore
+from kali_core.user_config import UserConfig
+from kali_core.user_config import load_or_default as load_user_config
+from kali_core.user_config import save as save_user_config
 from kali_core.voice.pipeline import TTSPipeline
 from kali_core.voice.providers.http import HTTPTTSProvider
 from kali_core.voice.providers.inproc import InProcTTSProvider
@@ -242,7 +245,7 @@ def _build_tts_provider_with_fallback(configured_id: str | None = None):
     to the UI via config_warnings. The qwen3-voicedesign env id maps to qwen3
     with an immediate load_model("1.7b-voicedesign") call for backward compat.
     """
-    from kali_core.voice.providers import get_tts_provider, get_tts_fallback
+    from kali_core.voice.providers import get_tts_fallback, get_tts_provider
 
     configured_id = configured_id or settings.tts_provider
     if configured_id == "qwen3-voicedesign":
@@ -391,7 +394,7 @@ class Server:
         self.app = FastAPI(title="Kali Core")
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=settings.cors_origins,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -472,7 +475,6 @@ class Server:
         # Config warnings collected on startup replay (setting_key → message).
         # Surfaced to the frontend via the `config_warnings` status field so
         # the UI can show a banner about settings that couldn't be restored.
-        self._config_warnings: dict[str, str] = {}
         self._apply_server_level_user_config()
         self._register_routes()
 
@@ -529,29 +531,32 @@ class Server:
             "llm_model": getattr(self.llm_provider, "_model", "") if self.llm_provider else "",
             "llm_max_tokens": getattr(self.llm_provider, "_max_tokens", None) if self.llm_provider else None,
             "llm_connection_id": cfg.connection_id,
-            "llm_connection_name": next(
-                (c.name for c in conns if c.id == cfg.connection_id), None
+            "llm_connection_name": (
+                next((c.name for c in conns if c.id == cfg.connection_id), None)
+                if self.llm_provider is not None else None
             ),
-            "llm_vendor_detected": next(
-                (c.vendor_detected for c in conns if c.id == cfg.connection_id), None
+            "llm_vendor_detected": (
+                next((c.vendor_detected for c in conns if c.id == cfg.connection_id), None)
+                if self.llm_provider is not None else None
             ),
             "connections": summaries,
-            "tts_provider": self.tts_provider.provider_name,
+            "tts_provider": self.tts_provider.provider_name if getattr(self.tts_provider, "is_available", True) else "",
             "voice": self.tts_pipeline.voice,
             "tts_mode": self.tts_pipeline.mode,
             "auto_tts": self.tts_pipeline.auto_tts,
             "tts_loaded": getattr(self.tts_provider, "is_loaded", False),
-            "tts_model": getattr(self.tts_provider, "loaded_model", None),
-            "tts_device": getattr(self.tts_provider, "device", None),
+            "tts_model": getattr(self.tts_provider, "loaded_model", None) if getattr(self.tts_provider, "is_loaded", False) else None,
+            "tts_device": getattr(self.tts_provider, "device", None) if getattr(self.tts_provider, "is_loaded", False) else None,
             "tts_available": self.tts_available,
             "tts_error": self.tts_error,
             "tts_variant": getattr(self.tts_provider, "tts_variant", None),
             "capture_backend": "mss" if self.gaze_client.connected else "none",
             "profile": self.executor.profile,
-            "stt_provider": self.stt_provider.provider_name,
-            "stt_model": self.stt_provider.loaded_model,
-            "stt_device": self.stt_provider.device,
-            "stt_loaded": self.stt_provider.is_loaded,
+            "stt_provider": self.stt_provider.provider_name if getattr(self.stt_provider, "is_available", True) else "",
+            "stt_model": self.stt_provider.loaded_model if getattr(self.stt_provider, "is_loaded", False) else None,
+            "stt_device": self.stt_provider.device if getattr(self.stt_provider, "is_loaded", False) else None,
+            "stt_loaded": getattr(self.stt_provider, "is_loaded", False),
+            "stt_enabled": settings.stt_provider != "disabled",
             "stt_streaming": getattr(self.stt_provider, "_streaming", True),
             "stt_models_dir": str(getattr(self.stt_provider, "_models_dir", "")),
             "tts_models_dir": str(getattr(self.tts_provider, "_talker_models_dir", settings.tts_models_dir)),
@@ -795,7 +800,7 @@ class Server:
                 )
             except Exception as exc:
                 logger.error("tts preview failed: %s", exc)
-                return JSONResponse(content={"error": f"TTS engine error: {exc}"}, status_code=500)
+                return JSONResponse(content={"error": f"TTS engine error: {redact_secrets(str(exc))}"}, status_code=500)
             return Response(content=audio, media_type="audio/wav")
 
         @self.app.post("/api/tts/voice-design")
@@ -823,7 +828,7 @@ class Server:
                 )
             except Exception as exc:
                 logger.error("voice-design preview failed: %s", exc)
-                return JSONResponse(content={"error": f"TTS engine error: {exc}"}, status_code=500)
+                return JSONResponse(content={"error": f"TTS engine error: {redact_secrets(str(exc))}"}, status_code=500)
             return Response(content=audio, media_type="audio/wav")
 
         @self.app.get("/profiles")
@@ -918,7 +923,7 @@ class Server:
                     models=list(body.get("models", []) or []),
                 )
             except ValueError as exc:
-                return JSONResponse(content={"error": str(exc)}, status_code=400)
+                return JSONResponse(content={"error": redact_secrets(str(exc))}, status_code=400)
             await self.broadcast_status()
             return _connection_summary(conn, load_ai_config().connection_id)
 
@@ -997,7 +1002,7 @@ class Server:
                 await self._activate_connection(conn, model)
             except Exception as exc:
                 logger.exception("Activate connection failed")
-                return JSONResponse(content={"error": str(exc)}, status_code=500)
+                return JSONResponse(content={"error": redact_secrets(str(exc))}, status_code=500)
             await self.broadcast_status()
             return {"ok": True}
 
@@ -1125,7 +1130,7 @@ class Server:
                 await self.broadcast_status()
                 return {"status": "unloaded"}
             except Exception as exc:
-                return JSONResponse(content={"error": str(exc)}, status_code=500)
+                return JSONResponse(content={"error": redact_secrets(str(exc))}, status_code=500)
 
         @self.app.post("/stt/models/{model_id}/delete")
         async def stt_delete_model(model_id: str, provider: str | None = None) -> dict[str, Any]:
@@ -1144,7 +1149,7 @@ class Server:
                 return {"status": "deleted", "model": model_id}
             except Exception as exc:
                 logger.exception("STT model deletion failed")
-                return JSONResponse(content={"error": str(exc)}, status_code=500)
+                return JSONResponse(content={"error": redact_secrets(str(exc))}, status_code=500)
 
         @self.app.get("/stt/status")
         async def stt_status() -> dict[str, Any]:
@@ -1168,7 +1173,7 @@ class Server:
 
         @self.app.get("/models/catalog")
         async def models_catalog(provider: str) -> dict[str, Any]:
-            from kali_core.model_catalog import get_catalog_dict, get_all_languages
+            from kali_core.model_catalog import get_all_languages, get_catalog_dict
             kwargs = {}
             target_provider = provider
             if provider == "vosk":
@@ -1274,7 +1279,7 @@ class Server:
                 return {"status": "ready", "model": model_id, "device": device}
             except Exception as exc:
                 logger.exception("TTS model load failed")
-                return JSONResponse(content={"error": str(exc)}, status_code=500)
+                return JSONResponse(content={"error": redact_secrets(str(exc))}, status_code=500)
 
         @self.app.post("/tts/models/unload")
         async def tts_unload_model(provider: str | None = None) -> dict[str, Any]:
@@ -1291,7 +1296,7 @@ class Server:
                 await self.broadcast_status()
                 return {"status": "unloaded"}
             except Exception as exc:
-                return JSONResponse(content={"error": str(exc)}, status_code=500)
+                return JSONResponse(content={"error": redact_secrets(str(exc))}, status_code=500)
 
         @self.app.post("/tts/models/{model_id}/delete")
         async def tts_delete_model(model_id: str, provider: str | None = None) -> dict[str, Any]:
@@ -1310,7 +1315,7 @@ class Server:
                 return {"status": "deleted", "model": model_id}
             except Exception as exc:
                 logger.exception("TTS model deletion failed")
-                return JSONResponse(content={"error": str(exc)}, status_code=500)
+                return JSONResponse(content={"error": redact_secrets(str(exc))}, status_code=500)
 
         @self.app.get("/tts/status")
         async def tts_status() -> dict[str, Any]:
@@ -1564,7 +1569,7 @@ class Server:
                 logger.warning("Fallback for '%s' also failed: %s", key, exc)
                 return
             logger.warning("User config '%s' could not be applied (%s) — using default", key, exc)
-            self._config_warnings[key] = str(exc)
+            self._config_warnings[key] = redact_secrets(str(exc))
             fallback = self._get_fallback(key)
             if fallback is not None and fallback != value:
                 self._apply_server_setting(key, fallback, _is_fallback=True)
@@ -1808,7 +1813,7 @@ class Connection:
                     models=list(event.get("models", []) or []),
                 )
             except ValueError as exc:
-                await self.send({"event": "error", "detail": str(exc)})
+                await self.send({"event": "error", "detail": redact_secrets(str(exc))})
                 return
             await self.server.broadcast_status()
 
@@ -1845,7 +1850,7 @@ class Connection:
                 await self.server._activate_connection(conn, model)
             except Exception as exc:
                 logger.exception("activate_connection failed")
-                await self.send({"event": "error", "detail": str(exc)})
+                await self.send({"event": "error", "detail": redact_secrets(str(exc))})
                 return
             await self.server.broadcast_status()
 
@@ -2316,9 +2321,7 @@ class Connection:
                 if line.strip().startswith("```"):
                     in_code = not in_code
                     continue
-                if in_code:
-                    json_lines.append(line)
-                elif json_lines and line.strip():
+                if in_code or json_lines and line.strip():
                     json_lines.append(line)
             if json_lines:
                 return "\n".join(json_lines).strip()
@@ -2612,10 +2615,10 @@ class Connection:
             await self.send({"event": "download_tts_model_complete", "model_id": model_id})
         except Exception as exc:
             logger.exception("Failed to download TTS model %s", model_id)
-            await self.send({"event": "download_tts_model_error", "model_id": model_id, "detail": str(exc)})
+            await self.send({"event": "download_tts_model_error", "model_id": model_id, "detail": redact_secrets(str(exc))})
 
     async def _download_piper_voice(self, voice_key: str) -> None:
-        from kali_core.model_catalog import piper_voice_urls, piper_voice_filenames
+        from kali_core.model_catalog import piper_voice_filenames, piper_voice_urls
 
         urls = piper_voice_urls(voice_key)
         names = piper_voice_filenames(voice_key)
@@ -2630,7 +2633,7 @@ class Connection:
         loop = asyncio.get_event_loop()
 
         try:
-            for url, name in zip(urls, names):
+            for url, name in zip(urls, names, strict=False):
                 target = voices_dir / name
                 if not target.exists():
                     await loop.run_in_executor(None, self._make_downloader(voice_key, "voice"), url, target)
@@ -2639,7 +2642,7 @@ class Connection:
             await self.send({"event": "download_tts_model_complete", "model_id": voice_key})
         except Exception as exc:
             logger.exception("Failed to download Piper voice %s", voice_key)
-            await self.send({"event": "download_tts_model_error", "model_id": voice_key, "detail": str(exc)})
+            await self.send({"event": "download_tts_model_error", "model_id": voice_key, "detail": redact_secrets(str(exc))})
 
     async def _handle_download_stt_model(self, event: dict[str, Any]) -> None:
         """Download an STT model (Vosk zip or Qwen3-ASR from HuggingFace)."""
@@ -2679,7 +2682,7 @@ class Connection:
             await self.send({"event": "download_stt_model_complete", "model_id": model_id})
         except Exception as exc:
             logger.exception("Failed to download Qwen3-ASR model %s", model_id)
-            await self.send({"event": "download_stt_model_error", "model_id": model_id, "detail": str(exc)})
+            await self.send({"event": "download_stt_model_error", "model_id": model_id, "detail": redact_secrets(str(exc))})
 
     async def _download_vosk_model(self, model_id: str) -> None:
         """Download a Vosk STT model (zip) and extract it."""
@@ -2698,7 +2701,7 @@ class Connection:
         loop = asyncio.get_event_loop()
 
         try:
-            import tempfile, zipfile
+            import zipfile
             tmp_zip = stt_dir / f"{model_id}.zip"
 
             if not (stt_dir / model_id / "am" / "final.mdl").exists():
@@ -2707,6 +2710,10 @@ class Connection:
                 # Extract zip
                 def _extract():
                     with zipfile.ZipFile(str(tmp_zip), "r") as zf:
+                        for name in zf.namelist():
+                            resolved = (stt_dir / name).resolve()
+                            if not str(resolved).startswith(str(stt_dir.resolve())):
+                                raise ValueError(f"Zip slip blocked: {name}")
                         zf.extractall(str(stt_dir))
                     tmp_zip.unlink(missing_ok=True)
 
@@ -2716,7 +2723,7 @@ class Connection:
             await self.send({"event": "download_stt_model_complete", "model_id": model_id})
         except Exception as exc:
             logger.exception("Failed to download STT model %s", model_id)
-            await self.send({"event": "download_stt_model_error", "model_id": model_id, "detail": str(exc)})
+            await self.send({"event": "download_stt_model_error", "model_id": model_id, "detail": redact_secrets(str(exc))})
 
     def _make_downloader(self, model_id: str, kind: str):
         """Return a callable that downloads a URL to a path, emitting progress."""
@@ -3043,6 +3050,21 @@ class Connection:
                         "completion_tokens": event.completion_tokens,
                         "reasoning_tokens": event.reasoning_tokens,
                     }
+                elif event.kind == "error":
+                    # Structured LLM error. Forward as a user_error event
+                    # for the frontend to render as a proper toast.
+                    await self.send({
+                        "event": "user_error",
+                        "code": event.code or "INTERNAL",
+                        "category": event.category or "internal",
+                        "i18n_key": event.i18n_key or "error.unknown",
+                        "params": event.params or {},
+                        "detail": event.detail or "",
+                        "retryable": bool(event.retryable),
+                        "correlation_id": event.correlation_id or "",
+                    })
+                    await self.send({"event": "turn_end", "session_id": session_id})
+                    return
                 elif event.kind == "done":
                     break
         except asyncio.CancelledError:
@@ -3052,7 +3074,7 @@ class Connection:
             return
         except Exception as exc:
             logger.exception("agent turn error")
-            await self.send({"event": "error", "detail": str(exc)})
+            await self.send({"event": "error", "detail": redact_secrets(str(exc))})
             return
 
         elapsed = time.monotonic() - turn_start_ts
@@ -3129,7 +3151,7 @@ class Connection:
                 )
         except Exception as exc:
             logger.exception("TTS pipeline error")
-            await self.send({"event": "error", "detail": f"TTS failed: {exc}"})
+            await self.send({"event": "error", "detail": f"TTS failed: {redact_secrets(str(exc))}"})
 
     # ── Settings ───────────────────────────────────────────
 
@@ -3168,7 +3190,7 @@ class Connection:
                     await self.server.broadcast_status()
                 except Exception as exc:
                     self.server.tts_provider = old_provider
-                    await self.send({"event": "error", "detail": f"Failed to switch TTS provider to {new_id}: {exc}"})
+                    await self.send({"event": "error", "detail": f"Failed to switch TTS provider to {new_id}: {redact_secrets(str(exc))}"})
         if "tts_model" in event:
             try:
                 device = event.get("tts_device", getattr(self.server.tts_provider, "device", None) or "cpu")
@@ -3178,7 +3200,7 @@ class Connection:
                 self.server.tts_error = getattr(self.server.tts_provider, "last_error", None)
                 await self.server.broadcast_status()
             except Exception as exc:
-                await self.send({"event": "error", "detail": f"Failed to load TTS model: {exc}"})
+                await self.send({"event": "error", "detail": f"Failed to load TTS model: {redact_secrets(str(exc))}"})
         if "tts_device" in event:
             try:
                 if getattr(self.server.tts_provider, "is_loaded", False):
@@ -3188,13 +3210,13 @@ class Connection:
                     await loop.run_in_executor(None, self.server.tts_provider.load_model, current, event["tts_device"])
                     await self.server.broadcast_status()
             except Exception as exc:
-                await self.send({"event": "error", "detail": f"Failed to switch TTS device: {exc}"})
+                    await self.send({"event": "error", "detail": f"Failed to switch TTS device: {redact_secrets(str(exc))}"})
         if "voice" in event:
             try:
                 sanitized = _validate_voice_for_provider(event["voice"], self.server.tts_provider)
                 self.server.tts_pipeline.set_voice(voice=sanitized)
             except ValueError as exc:
-                await self.send({"event": "error", "detail": str(exc)})
+                await self.send({"event": "error", "detail": redact_secrets(str(exc))})
         if "tts_mode" in event:
             self.server.tts_pipeline.set_voice(mode=event["tts_mode"])
         if "auto_tts" in event:

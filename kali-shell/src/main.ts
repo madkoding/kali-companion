@@ -21,66 +21,90 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let win: BrowserWindow | null = null;
 let sidecar: ReturnType<typeof superviseSidecar> | null = null;
 
-async function createWindow(): Promise<BrowserWindow> {
-  const window = new BrowserWindow({
-    title: "Kali — AI Companion",
-    width: 1280,
-    height: 800,
-    minWidth: 800,
-    minHeight: 600,
-    resizable: true,
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+// ponytail: single instance — second launch focuses the existing window
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
   });
 
-  // Auto-allow microphone (getUserMedia). WebKitGTK needed a custom
-  // permission handler; Chromium uses the session permission API.
-  session.defaultSession.setPermissionRequestHandler(
-    (_wc, permission, callback) => {
-      callback(permission === "media");
-    },
-  );
+  async function createWindow(): Promise<BrowserWindow> {
+    const window = new BrowserWindow({
+      title: "Kali — AI Companion",
+      width: 1280,
+      height: 800,
+      minWidth: 800,
+      minHeight: 600,
+      resizable: true,
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: join(__dirname, "preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
 
-  // Block window.open() / target="_blank" from sandboxed artifact iframes.
-  // Without this, an artifact calling window.open() (allowed by the
-  // sandbox="allow-popups" flag) spawns a native Electron window, whose
-  // focus/blur cycle triggers a content-visibility:auto re-measure of
-  // sibling windows and visibly misaligns the Kali UI.
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    session.defaultSession.setPermissionRequestHandler(
+      (_wc, permission, callback) => {
+        callback(permission === "media");
+      },
+    );
 
-  return window;
-}
+    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
-app.whenReady().then(async () => {
-  const port = sidecarPort();
-  console.log(`[kali-shell] sidecar WS will listen on 127.0.0.1:${port}`);
-
-  // Register the IPC handler so the renderer can ask for the sidecar port.
-  ipcMain.handle("get-sidecar-port", () => port);
-
-  // Start the sidecar supervisor.
-  sidecar = superviseSidecar(port);
-
-  // Wait (up to 10s) for the sidecar WS to be listening before loading
-  // the frontend, so the first render has a backend to talk to.
-  const ready = await waitForPort(port, 10000);
-  if (!ready) {
-    console.warn("[kali-shell] sidecar WS not ready after 10s; loading anyway");
+    return window;
   }
 
-  win = await createWindow();
-  win.loadURL("http://localhost:5173");
-});
+  app.whenReady().then(async () => {
+    const port = sidecarPort();
+    console.log(`[kali-shell] sidecar WS will listen on 127.0.0.1:${port}`);
 
-app.on("window-all-closed", () => {
-  sidecar?.stop();
+    // Register the IPC handler so the renderer can ask for the sidecar port.
+    ipcMain.handle("get-sidecar-port", () => port);
+
+    // Start the sidecar supervisor.
+    sidecar = superviseSidecar(port);
+
+    // Wait (up to 10s) for the sidecar WS to be listening before loading
+    // the frontend, so the first render has a backend to talk to.
+    const ready = await waitForPort(port, 10000);
+    if (!ready) {
+      console.warn("[kali-shell] sidecar WS not ready after 10s; loading anyway");
+    }
+
+    win = await createWindow();
+    try {
+      await win.loadURL("http://localhost:5173");
+    } catch (err) {
+      console.error("[kali-shell] failed to load frontend:", err);
+    }
+  }).catch((err) => {
+    console.error("[kali-shell] app initialization failed:", err);
+    app.quit();
+    process.exit(1);
+  });
+
+  app.on("window-all-closed", () => {
+    sidecar?.stop();
+    app.quit();
+  });
+
+  app.on("before-quit", () => {
+    sidecar?.stop();
+  });
+}
+
+// ponytail: global error handlers — log and quit instead of limping
+process.on("unhandledRejection", (reason) => {
+  console.error("[kali-shell] unhandled rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[kali-shell] uncaught exception:", err);
   app.quit();
-});
-
-app.on("before-quit", () => {
-  sidecar?.stop();
+  process.exit(1);
 });

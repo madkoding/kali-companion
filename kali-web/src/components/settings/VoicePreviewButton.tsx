@@ -6,7 +6,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getSidecarPort } from "../../hooks/useChat";
+import { getSidecarPort } from "../../lib/sidecar";
 
 export function VoicePreviewButton({
   voiceId,

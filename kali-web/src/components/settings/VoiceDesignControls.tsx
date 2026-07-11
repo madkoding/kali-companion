@@ -5,7 +5,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getSidecarPort } from "../../hooks/useChat";
+import { getSidecarPort } from "../../lib/sidecar";
 import type { CustomVoice, VoiceDesignPreset } from "../../lib/protocol";
 import { Select } from "../ui/Select";
 

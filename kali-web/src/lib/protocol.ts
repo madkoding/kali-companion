@@ -475,6 +475,31 @@ export interface ErrorEvent {
   detail: string;
 }
 
+export type ErrorCategory =
+  | "auth"
+  | "billing"
+  | "rate_limit"
+  | "not_found"
+  | "bad_request"
+  | "content_filter"
+  | "server"
+  | "network"
+  | "tool"
+  | "config"
+  | "internal";
+
+export interface UserErrorEvent {
+  event: "user_error";
+  code: string;
+  category: ErrorCategory;
+  i18n_key: string;
+  params?: Record<string, string>;
+  detail: string;
+  retryable: boolean;
+  doc_url?: string;
+  correlation_id: string;
+}
+
 export interface DisconnectedEvent {
   event: "disconnected";
 }
@@ -698,7 +723,7 @@ import type {
   GameTurnData,
   GameEventData,
   GameSessionMeta,
-} from "../games/core/game-session-types";
+} from "./game-session-types";
 
 export interface GameSessionStartEvent {
   event: "game_session_start";
@@ -817,6 +842,7 @@ export type OutgoingEvent =
   | StatusEvent
   | ConnectionsListEvent
   | ErrorEvent
+  | UserErrorEvent
   | DisconnectedEvent
   | JobStartEvent
   | JobProgressEvent

@@ -74,7 +74,7 @@ def _read_raw(path: Path) -> dict:
     if not path.exists():
         return {"version": _SCHEMA_VERSION, "connections": []}
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except Exception as exc:
         logger.warning("Could not read %s (%s) — starting from empty list", path, exc)

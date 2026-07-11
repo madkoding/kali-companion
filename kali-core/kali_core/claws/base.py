@@ -36,6 +36,7 @@ class ToolContext:
     session_id: str
     working_dir: str
     profile: str
+    working_dirs: list[str] | None = None  # glob patterns from the active profile
     consent_callback: Any = None  # callable that emits consent_request
     gaze_client: Any = None  # GazeClient instance for screen capture
     llm_provider: Any = None  # LLM provider for vision/multimodal

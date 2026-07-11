@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 logger = logging.getLogger("kali_core.user_config")
@@ -77,7 +77,7 @@ def load_or_default() -> UserConfig:
         logger.info("No user_config.json found — using env-var defaults")
         return UserConfig()
     try:
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+        with open(_CONFIG_PATH, encoding="utf-8") as fh:
             raw = json.load(fh)
         known = {k: v for k, v in raw.items() if k in UserConfig.__dataclass_fields__}
         logger.info("Loaded user config from %s", _CONFIG_PATH)

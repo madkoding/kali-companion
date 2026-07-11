@@ -1,6 +1,7 @@
 """Tests for runtime TTS provider/model switch + voice validation."""
 
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 
@@ -37,7 +38,7 @@ def test_validate_voice_for_provider_piper_accepts_any():
 
 @pytest.mark.asyncio
 async def test_apply_settings_tts_provider_switch_rolls_back_on_failure():
-    from kali_core.server import Server, Connection
+    from kali_core.server import Connection, Server
     from kali_core.voice.providers import reset_registry
     reset_registry()
     server = MagicMock(spec=Server)

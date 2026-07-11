@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from ..base import ToolContext, ToolResult
 from ...game.gsi import gsi_state
+from ..base import ToolContext, ToolResult
 
 logger = logging.getLogger("kali_core.claws.game.dota_live")
 

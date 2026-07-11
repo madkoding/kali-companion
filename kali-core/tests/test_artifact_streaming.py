@@ -7,18 +7,17 @@ event emission) and the runtime integration (WS artifact events with phase).
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
 
 from kali_core.mind.artifact_stream import (
-    ArtifactStreamProcessor,
-    STREAMABLE_TYPES,
     NON_STREAMABLE_TYPES,
+    STREAMABLE_TYPES,
+    ArtifactStreamProcessor,
 )
-from kali_core.mind.llm.provider import LLMProvider, StreamEvent, ToolDef
+from kali_core.mind.llm.provider import StreamEvent, ToolDef
 from kali_core.mind.runtime import AgentRuntime
-
 
 # ── ArtifactStreamProcessor unit tests ────────────────────────
 
@@ -415,7 +414,6 @@ async def test_native_tool_call_non_streamable_stays_batch():
 @pytest.mark.asyncio
 async def test_streamed_artifact_persists_on_close():
     """A streamed artifact (via synthetic deltas) is persisted to session_store."""
-    from kali_core.mind.artifact_stream import ArtifactStreamProcessor
 
     # Simulate the runtime flow: feed synthetic BEGIN/END deltas through
     # the processor (as the runtime does) and verify close triggers persist.

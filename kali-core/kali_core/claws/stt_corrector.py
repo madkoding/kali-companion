@@ -8,7 +8,6 @@ valid Spanish word, avoiding false positives in regular conversation.
 from __future__ import annotations
 
 import logging
-import re
 
 from rapidfuzz import fuzz
 
@@ -34,29 +33,27 @@ _GAME_TERMS: set[str] = {
     "void", "storm", "spirit", "crystal", "vengeful", "lina",
     "zeus", "axe", "ursa", "riki", "slark", "timber", "tinker",
     "gyrocopter", "spectre", "morphling", "antimage", "bloodseeker",
-    "drow", "windranger", "faceless", "bounty", "phantom", "slardar",
+    "drow", "windranger", "faceless", "bounty", "slardar",
     "sand", "earth", "ember", "templar", "obsidian", "outworld",
     "puck", "pugna", "necrophos", "viper", "clinkz", "brood",
     "weaver", "skitter", "night", "bane", "enigma", "warlock",
-    "witch", "lich", "lich", "leshrac", "death", "prophet",
+    "witch", "lich", "leshrac", "death", "prophet",
     "nature", "chen", "enchantress", "keeper", "kotl", "jakiro",
     "oracle", "winter", "wyvern", "dark", "willow", "hoodwink",
     "mars", "dawnbreaker", "primal", "beast", "snapfire",
-    "void", "spectre", "faceless", "morphling", "terror",
+    "terror",
     "chaos", "illusion", "naga", "siren", "tidehunter", "kunkka",
-    "centaur", "bristleback", "axe", "legion", "commander",
+    "centaur", "bristleback", "legion", "commander",
     "tusk", "earthshaker", "tiny", "clockwerk", "timbersaw",
-    "phoenix", "io", "wisp", "chen", "enchantress", "nature",
-    "prophet", "lone", "druid", "lycan", "beastmaster",
+    "phoenix", "io", "wisp", "lone", "druid", "lycan", "beastmaster",
     "visage", "brewmaster", "disruptor", "kaldr", "ancient",
-    "apparition", "gyrocopter", "sniper", "tinker", "clockwerk",
+    "apparition",
 }
 
 # Common Spanish words that could collide with game terms above.
 # These should NEVER be "corrected".
 _SPANISH_SAFE: set[str] = {
-    "luna", "tiny", "sombra", "sombras", "sombría", "arena", "arena",
-    "tormenta", "tormentas", "espíritu", "espíritus", "cristal",
+    "luna", "tiny", "sombra", "sombras", "sombría", "arena", "tormenta", "tormentas", "espíritu", "espíritus", "cristal",
     "cristales", "muerte", "muertes", "naturaleza", "guerrero",
     "guerreros", "torre", "torres", "niebla", "nieblas", "brisa",
     "brisas", "noche", "noches", "aurora", "auroras", "sirena",
@@ -72,9 +69,7 @@ _SPANISH_SAFE: set[str] = {
     "hechizo", "hechizos", "poción", "pociones", "veneno",
     "venenos", "venenoso", "escarcha", "escarchas", "llama",
     "llamas", "brasa", "brasas", "ceniza", "cenizas",
-    "polvo", "polvos", "humo", "humos", "niebla", "nieblas",
-    "eco", "ecos", "eco", "ecos", "eco", "ecos",
-    "como", "cómo",
+    "polvo", "polvos", "humo", "humos", "eco", "ecos", "como", "cómo",
 }
 
 # Threshold for fuzzy matching (0-100). High enough to avoid false

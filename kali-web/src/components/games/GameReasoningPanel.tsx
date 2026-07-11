@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Brain, Trash2 } from "lucide-react";
 import { gameSessionStore } from "../../games/core/game-session-store";
-import type { GameTurnData } from "../../games/core/game-session-types";
+import type { GameTurnData } from "../../lib/game-session-types";
 
 interface Props {
   getSessionId: () => string;

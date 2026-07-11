@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Trash2, Eye } from "lucide-react";
 import { useGameWS } from "../../lib/gameWSClient";
 import { GAME_SESSION_WS_EVENT } from "../../games/core/game-session-constants";
-import type { GameSessionMeta } from "../../games/core/game-session-types";
+import type { GameSessionMeta } from "../../lib/game-session-types";
 import type { WorkspaceAPI } from "../../workspace/types";
 
 interface Props {

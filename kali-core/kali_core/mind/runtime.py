@@ -28,9 +28,9 @@ from typing import Any
 
 from kali_core.lang_map import normalize
 
+from .artifact_stream import ArtifactStreamEvent, ArtifactStreamProcessor
 from .llm.provider import LLMProvider, StreamEvent
 from .marker_suppressor import MarkerSuppressor
-from .artifact_stream import ArtifactStreamProcessor, ArtifactStreamEvent
 
 logger = logging.getLogger("kali_core.mind.runtime")
 
@@ -309,6 +309,13 @@ class AgentRuntime:
                         yield StreamEvent(kind="delta", text=result.chat_text)
                     for art_evt in result.artifact_events:
                         await self._emit_artifact_event(art_evt, session_id)
+                elif event.kind == "error":
+                    # Provider error. Yield as a structured error event and
+                    # do NOT append a fake assistant message to history.
+                    # The connection layer will forward this as a user_error
+                    # WS event for the frontend to render as a toast.
+                    yield event
+                    return
                 elif event.kind == "reasoning":
                     # Filter reasoning the same way as delta: hold back
                     # [TOOL_CALL: ...] blocks so the reasoning panel does

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -213,7 +212,7 @@ def _load_piper_voices() -> dict:
     if _piper_voices_cache is not None:
         return _piper_voices_cache
     try:
-        with open(_PIPER_VOICES_JSON, "r", encoding="utf-8") as fh:
+        with open(_PIPER_VOICES_JSON, encoding="utf-8") as fh:
             _piper_voices_cache = json.load(fh)
         logger.info("Loaded Piper voices catalog: %d voices", len(_piper_voices_cache))
     except Exception as exc:

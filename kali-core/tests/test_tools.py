@@ -151,9 +151,9 @@ async def test_executor_safe_tool():
     gw = PermissionGateway()
     consent = ConsentManager()
     register(FsReadTool())
-    executor = Executor(gateway=gw, consent=consent, working_dir=".", profile="dev")
+    executor = Executor(gateway=gw, consent=consent, working_dir=".", profile="general")
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, dir=Path.home()) as f:
         f.write("test content")
         path = f.name
     try:

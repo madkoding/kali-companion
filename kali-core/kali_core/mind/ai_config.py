@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from kali_core.config import settings
@@ -55,7 +55,7 @@ def load() -> AIConfig:
         )
 
     try:
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+        with open(_CONFIG_PATH, encoding="utf-8") as fh:
             raw = json.load(fh)
         cfg = AIConfig(**{k: v for k, v in raw.items() if k in AIConfig.__dataclass_fields__})
         logger.info("Loaded AI config from %s", _CONFIG_PATH)

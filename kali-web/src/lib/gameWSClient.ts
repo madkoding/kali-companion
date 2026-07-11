@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { WSClient } from "./wsClient";
-import { getSidecarPort } from "../hooks/useChat";
+import { getSidecarPort } from "./sidecar";
 
 let client: WSClient | null = null;
 let connectPromise: Promise<WSClient> | null = null;

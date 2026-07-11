@@ -1,15 +1,30 @@
-"""Filesystem tools — fs_read.
+"""Filesystem tools — fs_read, fs_list.
 
-fs_read reads a file within the working directory (safe risk level).
-The working_dir is provided by the ToolContext and must match a
-working_dirs entry in the active profile.
+Both tools respect the profile's working_dirs glob patterns. If the
+resolved path does not match any pattern, the tool returns an error.
 """
 
 from __future__ import annotations
 
+import fnmatch
 from pathlib import Path
 
 from .base import ToolContext, ToolResult
+
+
+def _is_path_allowed(path: Path, working_dirs: list[str] | None) -> bool:
+    if not working_dirs:
+        return True
+    resolved = path.resolve()
+    for pattern in working_dirs:
+        expanded = Path(pattern).expanduser()
+        if expanded.is_absolute():
+            base = str(expanded.resolve()).rstrip("*/")
+            if str(resolved).startswith(base):
+                return True
+        elif fnmatch.fnmatch(str(resolved), pattern):
+            return True
+    return False
 
 
 class FsReadTool:
@@ -44,6 +59,9 @@ class FsReadTool:
             path = path.resolve()
         except (OSError, ValueError) as e:
             return ToolResult(error=f"Invalid path: {e}")
+
+        if not _is_path_allowed(path, ctx.working_dirs):
+            return ToolResult(error=f"Path not allowed by profile working_dirs: {path}")
 
         if not path.exists():
             return ToolResult(error=f"File not found: {path}")
@@ -92,6 +110,9 @@ class FsListTool:
             path = path.resolve()
         except (OSError, ValueError) as e:
             return ToolResult(error=f"Invalid path: {e}")
+
+        if not _is_path_allowed(path, ctx.working_dirs):
+            return ToolResult(error=f"Path not allowed by profile working_dirs: {path}")
 
         if not path.exists():
             return ToolResult(error=f"Directory not found: {path}")

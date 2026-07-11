@@ -3,8 +3,6 @@ for native create_artifact tool-call arguments)."""
 
 from __future__ import annotations
 
-import pytest
-
 from kali_core.mind.json_stream_extractor import StreamingArtifactArgParser
 
 

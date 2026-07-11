@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .base import TTSProvider
 
-_providers: dict[str, "TTSProvider"] = {}
+_providers: dict[str, TTSProvider] = {}
 
 TTS_FALLBACK_CHAIN: dict[str, str] = {
     "qwen3": "piper",
@@ -30,7 +30,7 @@ _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
 }
 
 
-def get_tts_provider(provider_id: str) -> "TTSProvider":
+def get_tts_provider(provider_id: str) -> TTSProvider:
     """Return (or create) the singleton TTS provider for *provider_id*."""
     if provider_id in _providers:
         return _providers[provider_id]
@@ -38,9 +38,11 @@ def get_tts_provider(provider_id: str) -> "TTSProvider":
         from .piper import PiperTTSProvider
         _providers[provider_id] = PiperTTSProvider()
     elif provider_id == "qwen3":
-        from .qwen import QwenTTSProvider
-        from kali_core.config import settings
         from pathlib import Path
+
+        from kali_core.config import settings
+
+        from .qwen import QwenTTSProvider
         # Discover codec/tokenizer in the models dir.
         models_dir = Path(settings.tts_models_dir)
         codec_files = list(models_dir.glob("qwen-tokenizer-12hz-*.gguf")) if models_dir.exists() else []

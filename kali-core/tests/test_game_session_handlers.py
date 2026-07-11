@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from kali_core.mind.game_session_service import (
-    GameSessionRecord,
-    GameSessionService,
-)
 from kali_core.mind.game_session_constants import (
     GameParadigm,
     GameSessionStatus,
     GameSessionWSEvent,
+)
+from kali_core.mind.game_session_service import (
+    GameSessionRecord,
+    GameSessionService,
 )
 from kali_core.server import Connection
 

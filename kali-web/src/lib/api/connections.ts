@@ -15,22 +15,16 @@ import type {
   ConnectionTestResult,
   ApiFormat,
 } from "../protocol";
+import { getSidecarPort } from "../sidecar";
 
 let baseUrlCache: string | null = null;
 
 async function baseUrl(): Promise<string> {
   if (baseUrlCache !== null) return baseUrlCache;
-  const kali = (window as unknown as { kali?: { getSidecarPort: () => Promise<unknown> } }).kali;
-  if (kali?.getSidecarPort) {
-    try {
-      const port = await kali.getSidecarPort();
-      if (typeof port === "number") {
-        baseUrlCache = `http://127.0.0.1:${port}`;
-        return baseUrlCache;
-      }
-    } catch {
-      // fall through
-    }
+  const port = await getSidecarPort();
+  if (port !== 8900) {
+    baseUrlCache = `http://127.0.0.1:${port}`;
+    return baseUrlCache;
   }
   baseUrlCache = "";
   return baseUrlCache;

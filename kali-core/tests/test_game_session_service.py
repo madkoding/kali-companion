@@ -1,18 +1,16 @@
 """Tests para GameSessionService — persistencia de sesiones de juego."""
 
-import json
 import os
-import tempfile
 
 import pytest
 
-from kali_core.mind.game_session_service import (
-    GameSessionRecord,
-    GameSessionService,
-)
 from kali_core.mind.game_session_constants import (
     GameParadigm,
     GameSessionStatus,
+)
+from kali_core.mind.game_session_service import (
+    GameSessionRecord,
+    GameSessionService,
 )
 
 

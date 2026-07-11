@@ -41,7 +41,24 @@ import type {
   DownloadSttModelProgressEvent,
   DownloadSttModelCompleteEvent,
   DownloadSttModelErrorEvent,
+  UserErrorEvent,
 } from "../lib/protocol";
+import {
+  type ErrorCategory,
+  isRetryableCategory,
+  sanitizeErrorString,
+} from "../lib/errorSanitize";
+
+export interface ChatError {
+  code: string;
+  category: ErrorCategory;
+  i18n_key: string;
+  params?: Record<string, string>;
+  detail: string;
+  retryable: boolean;
+  correlation_id: string;
+  timestamp: number;
+}
 
 export interface ChatMessage {
   id: string;
@@ -87,7 +104,7 @@ export interface ChatState {
   ttsTotal: number;
   ttsFilteredRaw: number;
   ttsFilteredOut: number;
-  error: string | null;
+  error: ChatError | null;
   systemStatus: StatusEvent | null;
   wsClient: WSClient | null;
   consentRequest: ConsentRequestEvent | null;
@@ -102,6 +119,8 @@ export interface ChatState {
   sendEvent: (event: IncomingEvent) => void;
   setSelectedArtifactsProvider: (fn: (() => SelectedArtifactRef[]) | null) => void;
   stop: () => void;
+  clearError: () => void;
+  lastUserInput: string | null;
   stopped: boolean;
   newSession: () => void;
   listSessions: () => void;
@@ -138,21 +157,7 @@ function nextId(): string {
   return `m${Date.now()}_${idCounter}`;
 }
 
-// The Electron shell exposes a `window.kali.getSidecarPort()` API via
-// contextBridge (see kali-shell/src/preload.ts). Outside Electron (plain
-// browser dev) we fall back to the env-provided port.
-export async function getSidecarPort(): Promise<number | undefined> {
-  const kali = (window as unknown as { kali?: { getSidecarPort: () => Promise<unknown> } }).kali;
-  if (kali?.getSidecarPort) {
-    try {
-      const port = await kali.getSidecarPort();
-      return typeof port === "number" ? port : undefined;
-    } catch {
-      // not running under Electron yet
-    }
-  }
-  return Number(import.meta.env.VITE_KALI_PORT ?? 8900);
-}
+import { getSidecarPort } from "../lib/sidecar";
 
 export function useChat(): ChatState {
   const [status, setStatus] = useState<ConnStatus>("connecting");
@@ -167,7 +172,7 @@ export function useChat(): ChatState {
   const [ttsTotal, setTtsTotal] = useState(0);
   const [ttsFilteredRaw, setTtsFilteredRaw] = useState(0);
   const [ttsFilteredOut, setTtsFilteredOut] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ChatError | null>(null);
   const [systemStatus, setSystemStatus] = useState<StatusEvent | null>(null);
   const [consentRequest, setConsentRequest] = useState<ConsentRequestEvent | null>(null);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
@@ -309,16 +314,43 @@ export function useChat(): ChatState {
         }]);
       });
       client.on("disconnected", () => setStatus("disconnected"));
+      client.on("user_error", (p) => {
+        const ev = p as UserErrorEvent;
+        const safeDetail = sanitizeErrorString(ev.detail);
+        const cat = (ev.category || "internal") as ErrorCategory;
+        setError({
+          code: ev.code,
+          category: cat,
+          i18n_key: ev.i18n_key,
+          params: ev.params,
+          detail: safeDetail,
+          retryable: ev.retryable ?? isRetryableCategory(cat),
+          correlation_id: ev.correlation_id,
+          timestamp: Date.now(),
+        });
+        if (cat === "network" || cat === "auth" || cat === "billing" || cat === "server") {
+          setStatus("error");
+        }
+      });
       client.on("error", (p) => {
+        // Legacy error event. Best-effort: try to parse category from detail.
         const ev = p as ErrorEvent;
-        setError(ev.detail ?? "connection error");
-        // Only mark connection as broken for transport-level errors,
-        // not operational errors like "Cannot change STT provider...".
-        const isTransportError = ev.detail?.includes("connection")
-          || ev.detail?.includes("WebSocket")
-          || ev.detail?.includes("handshake")
-          || !ev.detail;
-        if (isTransportError) {
+        const safeDetail = sanitizeErrorString(ev.detail ?? "");
+        const lower = safeDetail.toLowerCase();
+        const cat: ErrorCategory =
+          lower.includes("connection") || lower.includes("websocket") || lower.includes("handshake")
+            ? "network"
+            : "internal";
+        setError({
+          code: "LEGACY",
+          category: cat,
+          i18n_key: "error.unknown",
+          detail: safeDetail,
+          retryable: isRetryableCategory(cat),
+          correlation_id: "",
+          timestamp: Date.now(),
+        });
+        if (cat === "network") {
           setStatus("error");
         }
       });
@@ -665,8 +697,11 @@ export function useChat(): ChatState {
     };
   }, []);
 
+  const lastUserInputRef = useRef<string | null>(null);
+
   const send = useCallback((text: string) => {
     if (!text.trim() || !clientRef.current) return;
+    lastUserInputRef.current = text;
     setMessages((prev) => [
       ...prev,
       { id: nextId(), role: "user", content: text },
@@ -679,6 +714,10 @@ export function useChat(): ChatState {
       source: "text",
       ...(selected.length > 0 ? { selected_artifacts: selected } : {}),
     });
+  }, []);
+
+  const clearError = useCallback(() => {
+    setError(null);
   }, []);
 
   const setSelectedArtifactsProvider = useCallback(
@@ -871,6 +910,8 @@ export function useChat(): ChatState {
     sendEvent,
     setSelectedArtifactsProvider,
     stop,
+    clearError,
+    lastUserInput: lastUserInputRef.current,
     newSession,
     listSessions,
     attachSession,

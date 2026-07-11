@@ -21,10 +21,10 @@ from fastapi.testclient import TestClient
 from kali_core.collar.consent import ConsentManager
 from kali_core.collar.gateway import PermissionGateway
 from kali_core.config import settings
+from kali_core.mind.connections_store import ConnectionsStore
+from kali_core.mind.console_requester import ConsoleRequester
 from kali_core.mind.executor import Executor
 from kali_core.mind.llm.provider import StreamEvent, ToolDef
-from kali_core.mind.console_requester import ConsoleRequester
-from kali_core.mind.connections_store import ConnectionsStore
 from kali_core.mind.runtime import AgentRuntime
 from kali_core.nest.store import SessionStore
 from kali_core.server import Server
@@ -105,8 +105,8 @@ def server() -> Server:
     s.agent.set_tools([])
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as _tmp_db:
         s.session_store = SessionStore(_tmp_db.name)
-    from kali_core.nest.job_store import JobStore
     from kali_core.mind.jobs import JobManager
+    from kali_core.nest.job_store import JobStore
     s.job_store = JobStore(_tmp_db.name)
     s.job_mgr = JobManager(s.job_store)
     s._register_routes()

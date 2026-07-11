@@ -1,11 +1,12 @@
 """Tests for the extended TTSProvider Protocol and model-management dataclasses."""
 
 from dataclasses import asdict
+
 from kali_core.voice.providers.base import (
+    StartupError,
     TTSModelInfo,
     TTSModelVoice,
     TTSProvider,
-    StartupError,
 )
 
 

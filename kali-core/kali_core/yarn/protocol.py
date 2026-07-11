@@ -56,6 +56,7 @@ EventTypeOut = Literal[
     "job_list",
     "image_ready",
     "turn_stats",
+    "user_error",
 ]
 
 
